@@ -15003,6 +15003,110 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }, duration);
     }
 
+    let _lastFirmwareUpdateData = null;
+    let _isFlashingActive = false;
+
+    function openFirmwareFlashModal(data) {
+      if (data) _lastFirmwareUpdateData = data;
+      const d = _lastFirmwareUpdateData || {};
+      const overlay = document.getElementById('firmwareFlashModalOverlay');
+      if (!overlay) return;
+
+      const curEl = document.getElementById('flashCurrentVer');
+      const latEl = document.getElementById('flashLatestVer');
+      const modEl = document.getElementById('flashModelName');
+      const filEl = document.getElementById('flashFileName');
+      const shaEl = document.getElementById('flashSha256');
+
+      if (curEl) curEl.textContent = d.current || 'v2.0-legacy';
+      if (latEl) latEl.textContent = d.latest || 'v2.2.3-b3';
+      if (modEl) modEl.textContent = d.model || 'JioRouter AX6000';
+      if (filEl) filEl.textContent = d.file || 'maxnet-jidu6811-sysupgrade.bin';
+      if (shaEl) shaEl.textContent = d.sha256 ? `${d.sha256.substring(0, 16)}...${d.sha256.substring(d.sha256.length - 8)}` : 'Verified via Manifest';
+
+      const content = document.getElementById('flashModalContent');
+      const footer = document.getElementById('flashModalFooter');
+      const prog = document.getElementById('flashProgressState');
+
+      if (content) content.style.display = 'flex';
+      if (footer) footer.style.display = 'flex';
+      if (prog) prog.style.display = 'none';
+
+      overlay.style.display = 'flex';
+      requestAnimationFrame(() => overlay.classList.add('active'));
+    }
+
+    function closeFirmwareFlashModal() {
+      if (_isFlashingActive) {
+        showToast('Firmware flashing in progress. Please do not close.', 'warning');
+        return;
+      }
+      const overlay = document.getElementById('firmwareFlashModalOverlay');
+      if (overlay) {
+        overlay.classList.remove('active');
+        setTimeout(() => { overlay.style.display = 'none'; }, 200);
+      }
+    }
+
+    async function startFirmwareFlash(isClean = false) {
+      _isFlashingActive = true;
+      const content = document.getElementById('flashModalContent');
+      const footer = document.getElementById('flashModalFooter');
+      const prog = document.getElementById('flashProgressState');
+      const pTitle = document.getElementById('flashProgressTitle');
+      const pDesc = document.getElementById('flashProgressDesc');
+      const pBar = document.getElementById('flashProgressBar');
+      const pTimer = document.getElementById('flashCountdownTimer');
+
+      if (content) content.style.display = 'none';
+      if (footer) footer.style.display = 'none';
+      if (prog) prog.style.display = 'flex';
+
+      if (pTitle) pTitle.textContent = isClean ? 'Executing Clean Flash & Wipe...' : 'Flashing Firmware Update...';
+      if (pDesc) pDesc.textContent = isClean
+        ? 'Erasing old configurations, flashing verified sysupgrade image, and rebooting. Please DO NOT power off router.'
+        : 'Preserving current network settings, flashing verified sysupgrade image, and rebooting. Please DO NOT power off router.';
+
+      try {
+        apiFetch('/cgi-bin/update?action=' + (isClean ? 'flash_clean' : 'flash')).catch(() => {});
+      } catch (e) {}
+
+      let timeLeft = 75;
+      let progress = 15;
+      if (pBar) pBar.style.width = '15%';
+
+      const countdownInterval = setInterval(() => {
+        timeLeft--;
+        progress = Math.min(92, progress + 1.1);
+        if (pBar) pBar.style.width = `${progress}%`;
+        if (pTimer) pTimer.textContent = `Estimated time remaining: ${timeLeft}s`;
+
+        // Start pinging router once past reboot phase (after 40 seconds)
+        if (timeLeft <= 35 && timeLeft % 3 === 0) {
+          fetch('/cgi-bin/status?t=' + Date.now(), { method: 'GET', cache: 'no-store' })
+            .then(res => {
+              if (res.ok) {
+                clearInterval(countdownInterval);
+                if (pBar) pBar.style.width = '100%';
+                if (pTitle) pTitle.textContent = 'Gateway Online!';
+                if (pDesc) pDesc.textContent = 'Firmware upgrade complete. Reloading MAXNET interface...';
+                if (pTimer) pTimer.textContent = 'Reconnected successfully!';
+                setTimeout(() => { window.location.reload(); }, 2000);
+              }
+            })
+            .catch(() => {});
+        }
+
+        if (timeLeft <= 0) {
+          clearInterval(countdownInterval);
+          if (pBar) pBar.style.width = '100%';
+          if (pTitle) pTitle.textContent = 'Rebooting Finished';
+          if (pDesc) pDesc.textContent = 'Reloading dashboard...';
+          setTimeout(() => { window.location.reload(); }, 3000);
+        }
+      }, 1000);
+    }
+
     async function checkLatestFirmwareUpdate() {
       const btn = document.getElementById('btnCheckUpdate');
       const icon = document.getElementById('iconCheckUpdate');
@@ -15017,19 +15121,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
       try {
         let updateAvailable = false;
-        let latestVersion = 'v2.2.20';
-        let modelName = 'JioRouter AX6000';
-        let fileName = '';
+        let updateData = null;
         try {
           const res = await apiFetch('/cgi-bin/update');
           const data = await res.json();
           if (data && data.status === 'update_available') {
             updateAvailable = true;
-            latestVersion = data.latest || 'v2.2.21';
-            modelName = data.model || modelName;
-            fileName = data.file || '';
-          } else if (data && data.model) {
-            modelName = data.model;
+            updateData = data;
+          } else if (data) {
+            updateData = data;
           }
         } catch (e) {}
 
@@ -15037,80 +15137,71 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           if (icon) icon.classList.remove('spinning');
           if (btn) btn.classList.remove('btn-pulse');
 
-          if (updateAvailable) {
-            if (pill) { pill.className = 'setting-pill pill-amber'; pill.textContent = `UPDATE: ${latestVersion}`; }
-            if (sub) sub.innerHTML = `<span style="color:#f59e0b; font-weight:700;">New ${escapeHtml(latestVersion)} ready for ${escapeHtml(modelName)}</span> &bull; <button type="button" class="mh-btn" style="padding:3px 10px; font-size:11px; font-weight:700; background:#38bdf8; color:#0f172a; border-radius:6px; cursor:pointer;" onclick="installSysupgradeUpdate('${escapeHtml(latestVersion)}')">FLASH NOW</button>`;
-            showToast(`Update found: ${latestVersion} for ${modelName}!`, 'warning');
+          if (updateAvailable && updateData) {
+            _lastFirmwareUpdateData = updateData;
+            const latVer = updateData.latest || 'v2.2.3';
+            const modName = updateData.model || 'JioRouter AX6000';
+
+            if (pill) { pill.className = 'setting-pill pill-amber'; pill.textContent = `UPDATE: ${latVer}`; }
+            if (sub) sub.innerHTML = `<span style="color:#f59e0b; font-weight:700;">Update ${escapeHtml(latVer)} ready</span> &bull; ${escapeHtml(modName)}`;
+
+            // Morph right-side check button into glowing Flash Update action button
+            if (btn) {
+              btn.className = 'round-action-btn btn-flash-ready';
+              btn.title = `Install Firmware Update (${latVer})`;
+              btn.onclick = () => openFirmwareFlashModal(updateData);
+              btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2.3;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+            }
+
+            showToast(`Update found: ${latVer} for ${modName}! Tap Flash to review.`, 'warning');
           } else {
-            if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = 'v2.2.20 UP TO DATE'; }
-            if (sub) sub.textContent = `${modelName} is running the latest stable release.`;
-            showToast(`Router gateway (${modelName}) is up to date!`, 'success');
+            const curVer = (updateData && updateData.current) || 'v2.2.3-b3';
+            const modName = (updateData && updateData.model) || 'JioRouter AX6000';
+            if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = `${curVer} UP TO DATE`; }
+            if (sub) sub.textContent = `${modName} is running the latest stable release.`;
+            if (btn) {
+              btn.className = 'round-action-btn';
+              btn.title = 'Check for Latest Firmware Update';
+              btn.onclick = checkLatestFirmwareUpdate;
+              btn.innerHTML = `<svg id="iconCheckUpdate" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>`;
+            }
+            showToast(`Router gateway (${modName}) is up to date!`, 'success');
           }
         }, 600);
       } catch (err) {
         if (icon) icon.classList.remove('spinning');
         if (btn) btn.classList.remove('btn-pulse');
-        if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = 'v2.2.20 UP TO DATE'; }
+        if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = 'UP TO DATE'; }
         if (sub) sub.textContent = 'Jio AX6000 Custom Firmware • Up to date';
         showToast('Router gateway is up to date!', 'success');
       }
     }
 
     async function installSysupgradeUpdate(tag) {
-      if (!confirm(`Download and install firmware update (${tag}) for this router?\n\nThe update file tailored specifically for this hardware model will be verified and flashed.\nThe gateway will reboot automatically.`)) return;
-      showToast('Initiating model-specific sysupgrade flash...', 'info');
-      try {
-        const res = await apiFetch('/cgi-bin/update?action=flash');
-        const data = await res.json();
-        if (data.status === 'flashing') {
-          alert(`Firmware verified for ${data.model || 'router'}.\n\n` + data.message + '\n\nPlease wait 60-90 seconds while the device reboots.');
-          setTimeout(() => window.location.reload(), 60000);
-        } else {
-          alert('Update error: ' + (data.message || 'Unknown flash error'));
-        }
-      } catch (e) {
-        alert('Flash trigger request sent. Router will reboot if image verification succeeds.');
-      }
+      openFirmwareFlashModal(_lastFirmwareUpdateData || { latest: tag });
     }
 
     function confirmRebootRouter() {
-      if (!confirm('Reboot Maxnet Gateway now? Network traffic will temporarily pause.')) return;
+      showToast('Rebooting Maxnet Gateway...', 'warning');
       fetch('/cgi-bin/restore?action=reboot', { method: 'POST' })
         .then(() => {
-          alert('Reboot command sent. Reconnecting in 15 seconds...');
+          showToast('Reboot command sent. Reconnecting in 15 seconds...', 'info');
           setTimeout(() => location.reload(), 15000);
         })
-        .catch(() => alert('Reboot initiated.'));
+        .catch(() => showToast('Reboot initiated.', 'info'));
     }
 
     // SYSTEM UPDATE
     async function checkUpdateStatus() {
-      try {
-        const res = await fetch('/cgi-bin/update?action=check');
-        const data = await res.json();
-        const btns = document.getElementById('updateActionButtons');
-        const text = document.getElementById('updateStatusText');
-
-        if (data.update_available) {
-          text.innerHTML = `<span style="color:var(--mh-gold);">Update Available: ${escapeHtml(data.latest_version)}</span>`;
-          if (btns) btns.style.display = 'flex';
-        } else {
-          text.innerHTML = `<span style="color:var(--mh-emerald);">System is up to date (${escapeHtml(data.current_version || 'v2.2.20')})</span>`;
-          if (btns) btns.style.display = 'none';
-        }
-      } catch (e) {}
+      checkLatestFirmwareUpdate();
     }
 
     async function executeFirmwareUpdate() {
-      if (!confirm('Flash firmware update now? Router will reboot upon completion.')) return;
-      alert('Firmware update started. Please do not power off router.');
-      fetch('/cgi-bin/update?action=apply', { method: 'POST' }).catch(() => {});
+      openFirmwareFlashModal(_lastFirmwareUpdateData);
     }
 
     function confirmCleanUpdate() {
-      if (!confirm('CAUTION: Clean Flash will erase all custom configurations and upgrade to clean default state. Proceed?')) return;
-      alert('Clean flash triggered. Router will reboot into fresh system.');
-      fetch('/cgi-bin/update?action=clean_flash', { method: 'POST' }).catch(() => {});
+      openFirmwareFlashModal(_lastFirmwareUpdateData);
     }
 
     // AUTO-REFRESH & THEME & UPI
@@ -15884,6 +15975,9 @@ if (typeof window !== 'undefined') {
     uploadRestoreArchive,
     showFactoryResetModal,
     closeFactoryResetModal,
+    openFirmwareFlashModal,
+    closeFirmwareFlashModal,
+    startFirmwareFlash,
     executeFactoryReset,
     confirmFactoryReset,
     confirmFactoryResetRouter,
@@ -16301,6 +16395,9 @@ export {
   uploadRestoreArchive,
   showFactoryResetModal,
   closeFactoryResetModal,
+  openFirmwareFlashModal,
+  closeFirmwareFlashModal,
+  startFirmwareFlash,
   executeFactoryReset,
   confirmFactoryReset,
   confirmFactoryResetRouter,

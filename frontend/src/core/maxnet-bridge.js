@@ -90,6 +90,9 @@ import {
   confirmRebootRouter,
   showFactoryResetModal,
   closeFactoryResetModal,
+  openFirmwareFlashModal,
+  closeFirmwareFlashModal,
+  startFirmwareFlash,
   executeFactoryReset,
   downloadBackupArchive,
   handleRestoreFileChosen,
@@ -229,6 +232,9 @@ if (typeof window !== 'undefined') {
   window.confirmRebootRouter = confirmRebootRouter;
   window.showFactoryResetModal = showFactoryResetModal;
   window.closeFactoryResetModal = closeFactoryResetModal;
+  window.openFirmwareFlashModal = openFirmwareFlashModal;
+  window.closeFirmwareFlashModal = closeFirmwareFlashModal;
+  window.startFirmwareFlash = startFirmwareFlash;
   window.executeFactoryReset = executeFactoryReset;
   window.downloadBackupArchive = downloadBackupArchive;
   window.handleRestoreFileChosen = handleRestoreFileChosen;
@@ -462,6 +468,9 @@ export {
   confirmRebootRouter,
   showFactoryResetModal,
   closeFactoryResetModal,
+  openFirmwareFlashModal,
+  closeFirmwareFlashModal,
+  startFirmwareFlash,
   executeFactoryReset,
   downloadBackupArchive,
   handleRestoreFileChosen,
