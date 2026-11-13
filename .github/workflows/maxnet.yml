@@ -137,6 +137,13 @@ jobs:
           sed -i "s/#BUILD_NUM_PLACEHOLDER/#${{ github.run_number }}/g" files/etc/banner package/base-files/files/etc/banner 2>/dev/null || true
           sed -i "s/BUILD_TIMESTAMP_PLACEHOLDER/${NOW}/g" files/etc/banner package/base-files/files/etc/banner 2>/dev/null || true
           
+          mkdir -p files/etc package/base-files/files/etc
+          echo "VERSION=${{ needs.version.outputs.semver }}" > files/etc/maxnet_version
+          echo "BUILD=${{ github.run_number }}" >> files/etc/maxnet_version
+          echo "TAG=${{ needs.version.outputs.tag_name }}" >> files/etc/maxnet_version
+          echo "BUILD_TIMESTAMP=${NOW}" >> files/etc/maxnet_version
+          cp -f files/etc/maxnet_version package/base-files/files/etc/maxnet_version 2>/dev/null || true
+          
           python3 ../custom/.github/scripts/write_config.py .config --target "${{ matrix.target }}"
           make defconfig
           python3 ../custom/.github/scripts/write_config.py .config --target "${{ matrix.target }}"

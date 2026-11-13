@@ -16,10 +16,25 @@ ACTION="$1"
 BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "jiorouter,ax6000-jidu6j11-6811")
 MODEL_NAME=$(cat /tmp/sysinfo/model 2>/dev/null || echo "JioRouter AX6000")
 
-CURRENT_BUILD=$(grep -o '#[0-9]*' /etc/banner 2>/dev/null | tr -d '#' | head -n 1)
-CURRENT_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1)
-[ -z "$CURRENT_BUILD" ] && CURRENT_BUILD=20
-[ -z "$CURRENT_VER" ] && CURRENT_VER="v2.2.20"
+CURRENT_BUILD=""
+CURRENT_VER=""
+
+if [ -f /etc/maxnet_version ]; then
+    CURRENT_VER=$(grep '^VERSION=' /etc/maxnet_version 2>/dev/null | cut -d'=' -f2 | tr -d '"'\')
+    CURRENT_BUILD=$(grep '^BUILD=' /etc/maxnet_version 2>/dev/null | cut -d'=' -f2 | tr -d '"'\')
+fi
+
+if [ -z "$CURRENT_VER" ]; then
+    CURRENT_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1)
+fi
+
+if [ -z "$CURRENT_BUILD" ]; then
+    CURRENT_BUILD=$(grep -o '#[0-9]*' /etc/banner 2>/dev/null | tr -d '#' | head -n 1)
+fi
+
+# Fallback for initial legacy installs that lack the version stamp
+[ -z "$CURRENT_VER" ] && CURRENT_VER="v2.0-legacy"
+[ -z "$CURRENT_BUILD" ] && CURRENT_BUILD=0
 
 REPO="ohhmax/maxnet"
 
@@ -52,8 +67,17 @@ RESOLVED_FILE=""
 rm -f /tmp/manifest.json
 curl -s -L --connect-timeout 6 --max-time 15 -o /tmp/manifest.json "$MANIFEST_URL" 2>/dev/null
 
-if [ -s /tmp/manifest.json ] && command -v python3 >/dev/null 2>&1; then
-    RESOLVED_DATA=$(python3 -c "
+if [ -s /tmp/manifest.json ]; then
+    if command -v jq >/dev/null 2>&1; then
+        RESOLVED_DATA=$(jq -r --arg b "$BOARD_NAME" '
+            .devices[$b] // (.devices | to_entries[] | select(.key | ascii_downcase | contains($b | ascii_downcase)) | .value)
+            | "\(.download_url // "")|\(.sha256 // "")|\(.filename // "")"
+        ' /tmp/manifest.json 2>/dev/null | head -n 1)
+        BIN_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f1)
+        EXPECTED_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f2)
+        RESOLVED_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f3)
+    elif command -v python3 >/dev/null 2>&1; then
+        RESOLVED_DATA=$(python3 -c "
 import json, sys
 try:
     with open('/tmp/manifest.json') as f:
@@ -83,9 +107,10 @@ except Exception as e:
     print('||')
 " 2>/dev/null)
 
-    BIN_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f1)
-    EXPECTED_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f2)
-    RESOLVED_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f3)
+        BIN_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f1)
+        EXPECTED_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f2)
+        RESOLVED_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f3)
+    fi
 fi
 
 # Fallback resolution if manifest is unavailable or model not mapped in manifest
