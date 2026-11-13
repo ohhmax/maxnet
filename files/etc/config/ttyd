@@ -1,5 +1,5 @@
 config ttyd
-	option command '/bin/login -f root'
+	option command '/bin/login'
 	option port '7681'
 	option index '/www/ttyd.html'
 	list client_option 'allowTransparency=true'

@@ -128,7 +128,7 @@ fi
 if [ "$ACTION" = "dufs_get" ]; then
     CONF_FILE="/etc/dufs.json"
     if [ ! -f "$CONF_FILE" ]; then
-        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"","has_auth":false}'
+        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"root","has_auth":true}'
     else
         cat "$CONF_FILE"
     fi
@@ -138,7 +138,7 @@ fi
 if [ "$ACTION" = "dufs_set" ]; then
     CONF_FILE="/etc/dufs.json"
     if [ ! -f "$CONF_FILE" ]; then
-        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"","has_auth":false}' > "$CONF_FILE"
+        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"root","has_auth":true}' > "$CONF_FILE"
     fi
 
     # Merge incoming JSON over existing configuration
@@ -147,14 +147,12 @@ if [ "$ACTION" = "dufs_set" ]; then
         echo "$MERGED" > "$CONF_FILE"
     fi
 
-    # Update has_auth flag if user and pass exist
+    # Enforce secure authentication
     U_CHECK=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
     P_CHECK=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
-    if [ -n "$U_CHECK" ] && [ -n "$P_CHECK" ]; then
-        jq '. + {"has_auth": true}' "$CONF_FILE" > "$CONF_FILE.tmp" && mv "$CONF_FILE.tmp" "$CONF_FILE"
-    else
-        jq '. + {"has_auth": false}' "$CONF_FILE" > "$CONF_FILE.tmp" && mv "$CONF_FILE.tmp" "$CONF_FILE"
-    fi
+    [ -z "$U_CHECK" ] && U_CHECK="root"
+    [ -z "$P_CHECK" ] && P_CHECK="admin"
+    jq '. + {"user": $u, "pass": $p, "has_auth": true}' --arg u "$U_CHECK" --arg p "$P_CHECK" "$CONF_FILE" > "$CONF_FILE.tmp" && mv "$CONF_FILE.tmp" "$CONF_FILE"
 
     ENABLED=$(jq -r '.enabled // false' "$CONF_FILE" 2>/dev/null)
     if [ "$ENABLED" = "true" ]; then

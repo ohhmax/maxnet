@@ -3024,8 +3024,8 @@
                 <input type="text" id="dufsPathInput" value="/mnt/storage">
                 <input type="text" id="dufsAllowUpload" value="true">
                 <input type="text" id="dufsAllowDelete" value="true">
-                <input type="text" id="dufsUserInput" value="">
-                <input type="password" id="dufsPassInput" value="">
+                <input type="text" id="dufsUserInput" value="root">
+                <input type="password" id="dufsPassInput" value="admin">
               </div>
 
               <!-- SERVICE BANNER -->
@@ -3095,7 +3095,7 @@
               <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('dufs_auth')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">WebDAV Access Authentication</span>
-                  <span class="setting-label-sub" id="disp_dufs_auth">Anonymous Public Access (No Password Required)</span>
+                  <span class="setting-label-sub" id="disp_dufs_auth">Authentication Enforced (Default: root / admin)</span>
                 </div>
                 <div class="setting-arrow-col">
                   <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>

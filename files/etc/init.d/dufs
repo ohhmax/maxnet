@@ -25,16 +25,19 @@ start_service() {
     USER=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
     PASS=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
 
+    # Enforce strict authentication by default so port 5000 is never exposed publicly without login
+    [ -z "$USER" ] && USER="root"
+    [ -z "$PASS" ] && PASS="admin"
+
     if [ "$ALLOW_UPLOAD" = "true" ] && [ "$ALLOW_DELETE" = "true" ]; then
         FLAGS="-A --enable-cors"
+        AUTH="-a $USER:$PASS@/:rw"
     elif [ "$ALLOW_UPLOAD" = "true" ]; then
         FLAGS="--enable-cors --allow-upload --allow-search --allow-archive"
+        AUTH="-a $USER:$PASS@/:rw"
     else
         FLAGS="--enable-cors --allow-search --allow-archive"
-    fi
-
-    if [ -n "$USER" ] && [ -n "$PASS" ]; then
-        AUTH="-a $USER:$PASS@/:rw"
+        AUTH="-a $USER:$PASS@/:ro"
     fi
 
     ASSETS_FLAG=""

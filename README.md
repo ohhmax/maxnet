@@ -30,20 +30,23 @@ Official enterprise-grade OpenWrt **Linux 6.18 (AArch64 64-bit)** firmware engin
    - [Dual-Modem Multi-Link Load Balancing](#dual-modem-multi-link-load-balancing)
    - [Hardware Flow Offloading & PPE Acceleration](#hardware-flow-offloading--ppe-acceleration)
    - [Android Debug Bridge (ADB) Integration](#android-debug-bridge-adb-integration)
-   - [Samba 4 & DUFS WebDAV Storage Engine](#samba-4--dufs-webdav-storage-engine)
-   - [Embedded Web Terminal CLI](#embedded-web-terminal-cli)
+   - [Samba 4 & Secure DUFS WebDAV Storage Engine](#samba-4--secure-dufs-webdav-storage-engine)
+   - [Hardened Web Terminal CLI](#hardened-web-terminal-cli)
    - [Mesh VPN & Remote Access (Tailscale / DuckDNS)](#mesh-vpn--remote-access)
 4. [First-Time Installation & Flashing Guide via U-Boot](#4-first-time-installation--flashing-guide-via-u-boot)
-   - [Step 4.1: Hardware Serial UART Connection](#step-41-hardware-serial-uart-connection)
-   - [Step 4.2: Host PC TFTP Setup](#step-42-host-pc-tftp-setup)
-   - [Step 4.3: Safe RAM Boot via TFTP (Testing Without Modifying Flash)](#step-43-safe-ram-boot-via-tftp-testing-without-modifying-flash)
-     - [Qualcomm IPQ9574 U-Boot Commands](#qualcomm-ipq9574-u-boot-ram-boot-commands)
-     - [MediaTek MT7986A Filogic U-Boot Commands](#mediatek-mt7986a-filogic-u-boot-ram-boot-commands)
-     - [MediaTek Web Failsafe Recovery Method](#mediatek-web-failsafe-recovery-method)
-   - [Step 4.4: Permanent Production Flash (Writing to Flash)](#step-44-permanent-production-flash-writing-to-flash)
-     - [Method A: Terminal Flash via SSH (Recommended)](#method-a-terminal-flash-via-ssh-recommended)
-     - [Method B: Web UI Upgrade Flow](#method-b-web-ui-upgrade-flow)
-   - [Step 4.5: Permanent U-Boot Autoboot Configuration](#step-45-permanent-u-boot-autoboot-configuration)
+   - [Architectural Separation: Qualcomm vs MediaTek](#architectural-separation-qualcomm-vs-mediatek)
+   - [Step 4.1: Hardware Serial UART Connection & Pinouts](#step-41-hardware-serial-uart-connection--pinouts)
+   - [Step 4.2: U-Boot Login & Password Retrieval (For Locked Consoles)](#step-42-u-boot-login--password-retrieval)
+   - [Step 4.3: Host PC Network & TFTP Server Setup](#step-43-host-pc-network--tftp-server-setup)
+   - [Step 4.4: Qualcomm IPQ95xx Installation Guide](#step-44-qualcomm-ipq95xx-installation-guide)
+     - [Qualcomm Safe RAM Boot via TFTP](#qualcomm-step-1-safe-ram-boot-via-tftp)
+     - [Qualcomm Permanent Production Flash](#qualcomm-step-2-permanent-production-flash)
+     - [Qualcomm Permanent U-Boot Autoboot Configuration](#qualcomm-step-3-permanent-u-boot-autoboot-configuration)
+   - [Step 4.5: MediaTek MT7986A Filogic 830 Installation Guide](#step-45-mediatek-mt7986a-filogic-830-installation-guide)
+     - [MediaTek Method 1: Web Failsafe Recovery (No Serial Cable Required)](#mediatek-method-1-web-failsafe-recovery-recommended)
+     - [MediaTek Method 2: Serial UART TFTP RAM Boot](#mediatek-method-2-serial-uart-tftp-ram-boot)
+     - [MediaTek Permanent Production Flash](#mediatek-step-3-permanent-production-flash)
+     - [MediaTek Permanent U-Boot Autoboot Configuration](#mediatek-step-4-permanent-u-boot-autoboot-configuration)
 5. [In-Router Automated OTA Updates](#5-in-router-automated-ota-updates)
    - [WebUI One-Click Update Flow](#webui-one-click-update-flow)
    - [Command Line OTA Execution](#command-line-ota-execution)
@@ -176,17 +179,17 @@ MAXNET integrates a native ADB daemon and wrapper:
 - Real-time telemetry: battery temperature, battery health, voltage, CPU load, and 5G signal metrics (RSRP, RSRQ, SINR, 5G NR band).
 - Remote management commands: SMS inbox viewing, contact lookup, phone reboot, and screen captures.
 
-### Samba 4 & DUFS WebDAV Storage Engine
+### Samba 4 & Secure DUFS WebDAV Storage Engine
 
 - Hotplug automount daemon (`50-pendrive-smb`) detects USB pendrives, SSDs, and hard drives formatted in NTFS (via `ntfs-3g`), exFAT, FAT32, EXT4, and F2FS.
 - **Samba 4**: Multi-user SMB sharing with pre-configured guest access.
-- **DUFS WebDAV**: Lightweight file server running on port 5000 with a dedicated MAXNET file browser interface.
+- **Secure DUFS WebDAV Engine**: Lightweight file server running on port 5000 with a dedicated MAXNET file browser interface. **Hardened with mandatory HTTP Basic & Digest authentication by default** (`root:admin` or user-defined credentials), strictly prohibiting unauthenticated read/write/delete operations on connected storage media.
 
-### Embedded Web Terminal CLI
+### Hardened Web Terminal CLI
 
-- Embedded `ttyd` terminal running on port 7681 with xterm.js integration.
-- Full root shell access directly inside the WebUI without requiring third-party SSH clients.
-- Clean transparency matching the active desktop theme.
+- Embedded `ttyd` interactive console with xterm.js integration.
+- **Multi-Layer Access Control**: Direct standalone browser access on `http://10.0.0.1:7681/` is intercepted by the MAXNET Security Gateway and redirected to the authenticated WebUI (`/#terminal`).
+- **Cryptographic Backend Verification**: Spawned PTY processes enforce Linux shadow credential checks via `/bin/login`, preventing any unauthorized access across local WebSocket sockets or network endpoints.
 
 ### Mesh VPN & Remote Access
 
@@ -197,51 +200,73 @@ MAXNET integrates a native ADB daemon and wrapper:
 
 ## 4. First-Time Installation & Flashing Guide via U-Boot
 
-If your router is currently running stock Jio firmware or needs recovery, flash MAXNET using U-Boot serial console access.
+If your router is currently running stock Jio firmware or needs recovery, flash MAXNET using U-Boot bootloader access.
 
-### Step 4.1: Hardware Serial UART Connection
+> [!IMPORTANT]
+> ### Architectural Separation: Qualcomm vs MediaTek
+> **Qualcomm IPQ9574/IPQ9554** and **MediaTek MT7986A Filogic 830** use entirely different SoC bootloaders, UART serial controllers, RAM address maps, and flash partitions:
+> - **Qualcomm IPQ95xx** uses Qualcomm MSM serial UART (`ttyMSM0`), requires disabling D-Cache/I-Cache (`dcache off; icache off`) before jumping into Linux, and writes to SPI Serial NAND UBI partitions.
+> - **MediaTek MT7986A** uses standard 8250 UART (`ttyS0`), ARM Trusted Firmware (BL2/BL31) with hardware PSCI cache management (**DO NOT run `dcache off` on MediaTek—it will freeze the CPU**), and features a built-in **HTTP Web Failsafe Recovery Mode** requiring **zero serial cables**.
+> 
+> Follow only the specific guide matching your router model below.
+
+---
+
+### Step 4.1: Hardware Serial UART Connection & Pinouts
 
 1. Disconnect the power adapter from the router.
 2. Remove the router casing to access the 4-pin UART serial header on the PCB:
    - **GND** -> Connect to adapter GND
    - **TX** -> Connect to adapter RX
    - **RX** -> Connect to adapter TX
-   - **VCC (3.3V)** -> **LEAVE DISCONNECTED**. Do not connect the power pin.
+   - **VCC (3.3V)** -> **LEAVE DISCONNECTED**. Do not connect the power pin under any circumstances.
 3. Plug your USB-to-UART serial adapter (set to 3.3V TTL logic level) into your computer.
 4. Open a serial terminal on your host machine:
    ```bash
    picocom -b 115200 -d 8 -p n -f n /dev/ttyUSB0
    ```
-5. Plug the router power adapter in. As text begins streaming, repeatedly press `Enter` or `Space` to interrupt the autoboot counter until you reach the U-Boot prompt:
-   - Qualcomm: `IPQ9574#`
-   - MediaTek: `MT7986#`
+5. Plug the router power adapter in. As boot text streams, repeatedly press `Enter` or `Space` to interrupt autoboot:
+   - Qualcomm prompt: `IPQ9574#`
+   - MediaTek prompt: `MT7986#` (or `Filogic#`)
 
 ---
 
-### Step 4.2: Host PC TFTP Setup
+### Step 4.2: U-Boot Login & Password Retrieval
+
+Some factory Jio IDU routers prompt for a password when interrupting U-Boot over UART:
+- **Username**: `root`
+- **Default Password**: On factory units, the password is derived by taking the **MD5 hash of the router MAC address or Serial Number** (printed on the bottom barcode label).
+  ```bash
+  # Example: calculate MD5 of MAC address (uppercase, no colons)
+  echo -n "A0B1C2D3E4F5" | md5sum | cut -d ' ' -f 1
+  ```
+  Enter the resulting 32-character hexadecimal string as the password when prompted.
+
+---
+
+### Step 4.3: Host PC Network & TFTP Server Setup
 
 1. Assign a static IP address to your computer Ethernet interface:
    - **IP Address**: `192.168.1.2`
    - **Subnet Mask**: `255.255.255.0` (`/24`)
    - **Gateway**: `192.168.1.1`
 2. Connect an Ethernet cable directly from your computer to **LAN Port 4** (or LAN Port 1) on the router.
-3. Set up a TFTP server on your PC (e.g. `tftpd-hpa` on Linux or `Tftpd64` on Windows).
+3. Set up a TFTP server on your PC (`tftpd-hpa` on Linux or `Tftpd64` on Windows).
 4. Download the model-matched files from [GitHub Releases](https://github.com/ohhmax/maxnet/releases):
    - Safe RAM-boot file: `maxnet-<model>-initramfs.itb`
    - Permanent sysupgrade file: `maxnet-<model>-sysupgrade.bin`
 5. Place both files in your TFTP server root directory (e.g., `/srv/tftp/`).
-6. If using Linux, temporarily disable firewalls that block TFTP:
+6. If using Linux, temporarily disable firewalls that block TFTP UDP port 69:
    ```bash
    sudo ufw disable
    ```
 
 ---
 
-### Step 4.3: Safe RAM Boot via TFTP (Testing Without Modifying Flash)
+### Step 4.4: Qualcomm IPQ95xx Installation Guide
+*(Models: JIDU6811, JIDU6911, JIDU6611, JIDU6411, JIDU6111)*
 
-Before flashing permanent storage, boot MAXNET directly into RAM. This tests hardware compatibility, network routing, and the WebUI without writing to flash. If you power cycle the router, it returns to stock untouched.
-
-#### Qualcomm IPQ9574 U-Boot RAM Boot Commands:
+#### Qualcomm Step 1: Safe RAM Boot via TFTP
 Enter these commands **one by one** at the `IPQ9574#` prompt:
 
 ```text
@@ -256,69 +281,28 @@ dcache off; icache off
 setenv fdt_high
 setenv initrd_high
 setenv bootargs "console=ttyMSM0,115200n8 earlycon"
-tftpboot 0x46000000 maxnet-jidu6811-initramfs.itb
+tftpboot 0x46000000 maxnet-jidu6911-initramfs.itb
 bootm 0x46000000
 ```
+*(Replace `jidu6911` with your exact model name).*
 
-#### MediaTek MT7986A Filogic U-Boot RAM Boot Commands:
-Enter these commands at the `MT7986#` prompt:
+The router boots directly into MAXNET in RAM (~25 seconds). Flash memory is completely untouched in this mode.
 
-```text
-setenv ipaddr 192.168.1.1
-setenv serverip 192.168.1.2
-ping 192.168.1.2
-```
-Verify `host 192.168.1.2 is alive`. Then run:
-
-```text
-tftpboot 0x46000000 maxnet-jidu6401-initramfs.itb
-bootm 0x46000000
-```
-
-#### MediaTek Web Failsafe Recovery Method:
-1. Power off the router.
-2. Press and hold the **RESET** button.
-3. While holding RESET, plug in the power cable.
-4. Continue holding RESET for 8–10 seconds until the LAN LEDs flash rapidly.
-5. Set your PC IP to `192.168.1.2/24` and open `http://192.168.1.1` in your browser.
-6. Select `maxnet-jidu6401-sysupgrade.bin` and click **Upload and Flash**.
-
----
-
-### Step 4.4: Permanent Production Flash (Writing to Flash)
-
-Once the router finishes booting into RAM (approx. 30 seconds), access OpenWrt:
-- **WebUI**: `http://10.0.0.1/` (User: `root`, Pass: `1024` or empty)
-- **SSH**: `ssh root@10.0.0.1`
-
-#### Method A: Terminal Flash via SSH (Recommended)
-
-1. From your host computer, transfer the permanent sysupgrade binary:
+#### Qualcomm Step 2: Permanent Production Flash
+Once booted into RAM:
+1. Transfer the permanent sysupgrade binary to the router:
    ```bash
-   cat maxnet-jidu6811-sysupgrade.bin | ssh root@10.0.0.1 "cat > /tmp/sysupgrade.bin"
+   cat maxnet-jidu6911-sysupgrade.bin | ssh root@10.0.0.1 "cat > /tmp/sysupgrade.bin"
    ```
-2. On the router SSH terminal, execute sysupgrade:
+2. Execute sysupgrade on the router:
    ```bash
-   sysupgrade -F -v -n /tmp/sysupgrade.bin
+   ssh root@10.0.0.1 "sysupgrade -F -v -n /tmp/sysupgrade.bin"
    ```
-   *(The `-F` flag forces upgrade past initial board check differences; `-n` writes a clean overlay).*
-3. The router writes the NAND/eMMC flash partitions and reboots in ~30 seconds.
+   *(The `-F` flag forces past initial board-check differences; `-n` creates a fresh persistent overlay).*
+3. The router writes the Winbond NAND flash partitions and reboots automatically in ~30 seconds.
 
-#### Method B: Web UI Upgrade Flow
-
-1. Open `http://10.0.0.1/` in your browser.
-2. Navigate to **System -> Maintenance -> Firmware Update**.
-3. Under **Flash new firmware image**, upload `maxnet-<model>-sysupgrade.bin`.
-4. Check the **Force upgrade** box if prompted and proceed.
-
----
-
-### Step 4.5: Permanent U-Boot Autoboot Configuration
-
-To ensure the router automatically boots MAXNET from flash on every power cycle:
-
-#### For Qualcomm IPQ9574:
-Interrupt U-Boot at the `IPQ9574#` prompt and execute:
+#### Qualcomm Step 3: Permanent U-Boot Autoboot Configuration
+Interrupt U-Boot at the `IPQ9574#` prompt and execute **one by one**:
 
 ```text
 setenv bootcmd "ubi part ubi; ubi read 0x44000000 kernel; bootm 0x44000000"
@@ -327,17 +311,55 @@ setenv initrd_high
 saveenv
 reset
 ```
+Your Qualcomm Jio router will now boot MAXNET permanently in 1 second on every boot!
 
-#### For MediaTek MT7986A Filogic:
-Interrupt U-Boot at the `MT7986#` prompt and execute:
+---
 
+### Step 4.5: MediaTek MT7986A Filogic 830 Installation Guide
+*(Models: JIDU6801, JIDU6401, JIDU6601, JIDU6701, JIDU6101, JIDU6J01)*
+
+#### MediaTek Method 1: Web Failsafe Recovery (Recommended - No Serial Cable Required)
+MediaTek Filogic 830 features a built-in HTTP recovery server embedded in U-Boot:
+1. Power off the router.
+2. Press and hold the physical **RESET** button on the back panel.
+3. While holding the RESET button, plug in the power adapter.
+4. Continue holding RESET for **8 to 10 seconds** until the Ethernet LAN LEDs start flashing rapidly, then release the button.
+5. Connect your PC via Ethernet cable to **LAN Port 1**. Set your PC static IP to `192.168.1.2` (Subnet: `255.255.255.0`, Gateway: `192.168.1.1`).
+6. Open your web browser and navigate to:
+   ```text
+   http://192.168.1.1
+   ```
+7. The MediaTek Web Failsafe Recovery interface will load. Click **Browse / Choose File**, select `maxnet-jidu6801-sysupgrade.bin` (or `maxnet-jidu6401-sysupgrade.bin`), and click **Upload & Update Firmware**.
+8. Wait ~90 seconds while the image is written to flash. The router reboots automatically into MAXNET!
+
+#### MediaTek Method 2: Serial UART TFTP RAM Boot
+If you prefer UART console access or need to test RAM boot first:
+1. Connect UART (3.3V TTL, 115200 8N1) and interrupt autoboot at the `MT7986#` (or `Filogic#`) prompt.
+2. Configure network and verify TFTP reachability:
+   ```text
+   setenv ipaddr 192.168.1.1
+   setenv serverip 192.168.1.2
+   ping 192.168.1.2
+   ```
+3. Boot the RAM image directly into memory (**DO NOT run `dcache off`**):
+   ```text
+   tftpboot 0x46000000 maxnet-jidu6801-initramfs.itb
+   bootm 0x46000000
+   ```
+4. The router boots into OpenWrt RAM. Once booted (`10.0.0.1` reachable):
+   ```bash
+   cat maxnet-jidu6801-sysupgrade.bin | ssh root@10.0.0.1 "cat > /tmp/sysupgrade.bin"
+   ssh root@10.0.0.1 "sysupgrade -F -v -n /tmp/sysupgrade.bin"
+   ```
+
+#### MediaTek Permanent U-Boot Autoboot Configuration
+To ensure MediaTek U-Boot boots MAXNET on every reboot:
 ```text
 setenv bootcmd "bootm"
 saveenv
 reset
 ```
-
-The router will now boot permanently in 1 second on all future reboots.
+The router will now boot permanently in 1 second on all future power cycles.
 
 ---
 

@@ -10140,19 +10140,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         `;
       } else if (key === 'dufs_auth') {
         titleEl.textContent = 'WebDAV Access Authentication';
-        descEl.textContent = 'Require a username and password to connect to WebDAV and the file explorer.';
-        const curUser = (document.getElementById('dufsUserInput') ? document.getElementById('dufsUserInput').value : '') || '';
+        descEl.textContent = 'Enforce secure credentials to access WebDAV storage and file manager on port 5000.';
+        const curUser = (document.getElementById('dufsUserInput') ? document.getElementById('dufsUserInput').value : 'root') || 'root';
         bodyEl.innerHTML = `
           <div>
-            <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">Username (Leave empty for public access)</label>
-            <input type="text" id="modalInput_dufs_user" class="mh-input" value="${escapeHtml(curUser)}" placeholder="e.g. max" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);">
+            <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">WebDAV Username</label>
+            <input type="text" id="modalInput_dufs_user" class="mh-input" value="${escapeHtml(curUser)}" placeholder="root" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);">
           </div>
-          <div>
-            <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">Password</label>
-            <input type="password" id="modalInput_dufs_pass" class="mh-input" placeholder="Password (if username is set)" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);">
+          <div style="margin-top:10px;">
+            <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">WebDAV Password</label>
+            <input type="password" id="modalInput_dufs_pass" class="mh-input" placeholder="Enter secure password (default: admin)" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);">
           </div>
-          <div>
-            <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_dufs_user').value=''; document.getElementById('modalInput_dufs_pass').value='';">Disable Password (Public Anonymous)</button>
+          <div style="margin-top:12px; display:flex; gap:8px;">
+            <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_dufs_user').value='root'; document.getElementById('modalInput_dufs_pass').value='admin';">Use Default Credentials (root / admin)</button>
           </div>
         `;
       } else if (key === 'pppoe_client_creds') {
@@ -10907,12 +10907,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (document.getElementById('dufsAllowDelete')) document.getElementById('dufsAllowDelete').value = allowDel;
         saveDufsConfig();
       } else if (currentModalKey === 'dufs_auth') {
-        const user = (document.getElementById('modalInput_dufs_user')?.value || '').trim();
-        const pass = document.getElementById('modalInput_dufs_pass')?.value || '';
-        if (user && !pass) {
-          showToast('Please enter a password for user ' + user, 'error');
-          return;
-        }
+        const user = (document.getElementById('modalInput_dufs_user')?.value || 'root').trim();
+        const pass = (document.getElementById('modalInput_dufs_pass')?.value || 'admin').trim();
         if (document.getElementById('dufsUserInput')) document.getElementById('dufsUserInput').value = user;
         if (document.getElementById('dufsPassInput')) document.getElementById('dufsPassInput').value = pass;
         saveDufsConfig();
@@ -12947,7 +12943,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
           const dispAuth = document.getElementById('disp_dufs_auth');
           if (dispAuth) {
-            dispAuth.textContent = hasAuth ? `Protected: User "${user}" configured` : 'Anonymous Public Access (No Password Required)';
+            dispAuth.textContent = hasAuth ? `Protected: User "${user || 'root'}" (Auth Required)` : 'Authentication Enforced (Default: root / admin)';
           }
 
           const host = window.location.hostname || '10.0.0.1';
