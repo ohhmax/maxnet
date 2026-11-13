@@ -15117,7 +15117,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (icon) icon.classList.add('spinning');
       if (pill) { pill.className = 'setting-pill pill-cyan'; pill.textContent = 'CHECKING...'; }
       if (sub) sub.textContent = 'Contacting remote firmware release mirror...';
-      showToast('Checking for latest router firmware updates...', 'info');
 
       try {
         let updateAvailable = false;
@@ -15153,7 +15152,22 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2.3;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
             }
 
-            showToast(`Update found: ${latVer} for ${modName}! Tap Flash to review.`, 'warning');
+            // Dispatch notification once; suppress duplicates if same build was already notified
+            const alertId = 'update_b' + (updateData.latest_build || updateData.latest || 'avail');
+            if (!window._notifiedUpdates) window._notifiedUpdates = new Set();
+            if (!window._notifiedUpdates.has(alertId)) {
+              window._notifiedUpdates.add(alertId);
+              if (typeof dispatchAlertNotification === 'function') {
+                dispatchAlertNotification({
+                  id: alertId,
+                  title: `MAXNET Update Available (${latVer})`,
+                  message: `New firmware build ${updateData.latest_build || latVer} is ready for installation on ${modName}. Tap to review & flash.`,
+                  level: 'info',
+                  event_type: 'system_update',
+                  action: () => openFirmwareFlashModal(updateData)
+                });
+              }
+            }
           } else {
             const curVer = (updateData && updateData.current) || 'v2.2.3-b3';
             const modName = (updateData && updateData.model) || 'JioRouter AX6000';
@@ -15165,7 +15179,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               btn.onclick = checkLatestFirmwareUpdate;
               btn.innerHTML = `<svg id="iconCheckUpdate" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>`;
             }
-            showToast(`Router gateway (${modName}) is up to date!`, 'success');
           }
         }, 600);
       } catch (err) {
@@ -15173,7 +15186,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (btn) btn.classList.remove('btn-pulse');
         if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = 'UP TO DATE'; }
         if (sub) sub.textContent = 'Jio AX6000 Custom Firmware • Up to date';
-        showToast('Router gateway is up to date!', 'success');
       }
     }
 
