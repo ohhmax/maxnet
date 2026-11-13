@@ -1,0 +1,38 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+
+if [ "$ACTION" = "reset" ]; then
+    echo '{"status": "ok", "message": "Factory reset initiated. Gateway rebooting..."}'
+    ( sleep 2 && firstboot -y && reboot ) >/dev/null 2>&1 &
+    exit 0
+fi
+
+if [ "$ACTION" = "reboot" ]; then
+    echo '{"status": "ok", "message": "Reboot initiated. Gateway restarting..."}'
+    ( sleep 1 && /etc/init.d/trafficd stop && sync && sleep 1 && reboot ) >/dev/null 2>&1 &
+    exit 0
+fi
+
+RESTORE_FILE="/tmp/restore_upload.tar.gz"
+cat > "$RESTORE_FILE"
+
+if [ -s "$RESTORE_FILE" ]; then
+    if tar -tzf "$RESTORE_FILE" >/dev/null 2>&1; then
+        tar -xzf "$RESTORE_FILE" -C / >/dev/null 2>&1
+        rm -f "$RESTORE_FILE"
+        echo '{"status": "ok", "message": "Configuration restored successfully. Gateway rebooting..."}'
+        ( sleep 1 && /etc/init.d/trafficd stop && sync && sleep 1 && reboot ) >/dev/null 2>&1 &
+        exit 0
+    else
+        rm -f "$RESTORE_FILE"
+        echo '{"status": "error", "message": "Invalid configuration backup archive format."}'
+        exit 0
+    fi
+fi
+
+echo '{"status": "error", "message": "No backup file uploaded"}'

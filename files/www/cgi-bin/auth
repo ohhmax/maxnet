@@ -1,0 +1,380 @@
+#!/bin/sh
+# ==============================================================================
+# MAXNET ENTERPRISE SECURE CRYPTOGRAPHIC AUTHENTICATION ENGINE
+# Hardware-Accelerated RSA-OAEP Encryption | Zero Plain-Text Network Exposure
+# Low-CPU Verification | Replay-Resistant Single-Use Nonce Validation
+# Engineered & Developed by Mahendra Mali - Max (c) 2026
+# Donation & Support via UPI: 9824584454@ybl
+# ==============================================================================
+
+PRIV_KEY="/etc/maxnet_auth_priv.pem"
+PUB_KEY="/etc/maxnet_auth_pub.pem"
+NONCE_DIR="/tmp/auth_nonces"
+SESS_DIR="/tmp/sessions"
+LOGIN_ATTEMPTS_DIR="/tmp/login_attempts"
+
+mkdir -p "$SESS_DIR" "$NONCE_DIR" "$LOGIN_ATTEMPTS_DIR"
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
+
+# Extract params
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | sed -n 's/.*"action"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+
+USER=$(echo "$POST_DATA" | jq -r '.user // empty' 2>/dev/null)
+[ -z "$USER" ] && USER=$(echo "$POST_DATA" | sed -n 's/.*"user"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+[ -z "$USER" ] && USER="root"
+
+PASS=$(echo "$POST_DATA" | jq -r '.pass // empty' 2>/dev/null)
+[ -z "$PASS" ] && PASS=$(echo "$POST_DATA" | sed -n 's/.*"pass"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+
+OLD_PASS=$(echo "$POST_DATA" | jq -r '.old_pass // empty' 2>/dev/null)
+NEW_PASS=$(echo "$POST_DATA" | jq -r '.new_pass // empty' 2>/dev/null)
+
+TOKEN=$(echo "$POST_DATA" | jq -r '.token // empty' 2>/dev/null)
+[ -z "$TOKEN" ] && TOKEN=$(echo "$POST_DATA" | sed -n 's/.*"token"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+[ -z "$TOKEN" ] && TOKEN=$(echo "$QUERY_STRING" | sed -n 's/^.*token=\([^&]*\).*$/\1/p')
+
+TARGET_TOKEN=$(echo "$POST_DATA" | jq -r '.target_token // empty' 2>/dev/null)
+[ -z "$TARGET_TOKEN" ] && TARGET_TOKEN=$(echo "$QUERY_STRING" | sed -n 's/^.*target_token=\([^&]*\).*$/\1/p')
+
+CLIENT_IP="${REMOTE_ADDR:-127.0.0.1}"
+UA="${HTTP_USER_AGENT:-Web Browser}"
+NOW=$(date +%s)
+
+# Response Compression & Delivery
+send_json_str() {
+    if echo "$HTTP_ACCEPT_ENCODING" | grep -qi "gzip"; then
+        echo "Content-Type: application/json"
+        echo "Content-Encoding: gzip"
+        echo "Cache-Control: no-cache, no-store, must-revalidate"
+        echo "Access-Control-Allow-Origin: *"
+        echo ""
+        printf "%s\n" "$1" | gzip -c -1
+    else
+        echo "Content-Type: application/json"
+        echo "Cache-Control: no-cache, no-store, must-revalidate"
+        echo "Access-Control-Allow-Origin: *"
+        echo ""
+        printf "%s\n" "$1"
+    fi
+}
+
+ensure_auth_keys() {
+    if [ ! -f "$PRIV_KEY" ] || [ ! -f "$PUB_KEY" ]; then
+        mkdir -p /etc
+        openssl genpkey -algorithm RSA -out "$PRIV_KEY" -pkeyopt rsa_keygen_bits:2048 2>/dev/null
+        chmod 600 "$PRIV_KEY"
+        openssl rsa -in "$PRIV_KEY" -pubout -out "$PUB_KEY" 2>/dev/null
+        chmod 644 "$PUB_KEY"
+    fi
+}
+
+dispatch_login_alert() {
+    _title="$1"
+    _msg="$2"
+    _level="$3"
+    _ev_type="$4"
+    if [ -x "/www/cgi-bin/webhooks" ]; then
+        payload=$(jq -n --arg t "$_title" --arg m "$_msg" --arg l "$_level" --arg et "$_ev_type" \
+            '{action:"dispatch", title:$t, message:$m, level:$l, event_type:$et}')
+        POST_DATA="$payload" REQUEST_METHOD="POST" CONTENT_LENGTH=${#payload} /www/cgi-bin/webhooks >/dev/null 2>&1 &
+    fi
+}
+
+# ==================== ACTION: CHALLENGE / PUBLIC_KEY ====================
+if [ "$ACTION" = "challenge" ] || [ "$ACTION" = "public_key" ]; then
+    ensure_auth_keys
+    # Clean expired nonces older than 5 minutes
+    find "$NONCE_DIR" -type f -mmin +5 -delete 2>/dev/null
+    NONCE=$(head -c 16 /dev/urandom | hexdump -ve '1/1 "%02x"')
+    touch "$NONCE_DIR/$NONCE"
+
+    PUB_KEY_JSON=$(jq -Rs . "$PUB_KEY" 2>/dev/null)
+    RESP=$(jq -n \
+        --arg status "ok" \
+        --arg nonce "$NONCE" \
+        --arg ts "$NOW" \
+        --argjson pubkey "$PUB_KEY_JSON" \
+        '{status: $status, nonce: $nonce, timestamp: ($ts | tonumber), public_key: $pubkey}')
+    send_json_str "$RESP"
+    exit 0
+fi
+
+# ==================== ACTION: LOGIN_ENCRYPTED (RSA-OAEP SHA-256) ====================
+if [ "$ACTION" = "login_encrypted" ]; then
+    IP_FILE="$LOGIN_ATTEMPTS_DIR/$(echo "$CLIENT_IP" | tr -c 'a-zA-Z0-9.' '_')"
+
+    FAIL_COUNT=0
+    if [ -f "$IP_FILE" ]; then
+        FAIL_COUNT=$(awk 'NR==1{print $1}' "$IP_FILE" 2>/dev/null || echo 0)
+        LOCK_TIME=$(awk 'NR==1{print $2}' "$IP_FILE" 2>/dev/null || echo 0)
+        if [ "$FAIL_COUNT" -ge 5 ]; then
+            REMAIN=$((LOCK_TIME + 900 - NOW))
+            if [ "$REMAIN" -gt 0 ]; then
+                send_json_str "{\"status\": \"error\", \"message\": \"Security Lockout: Too many failed login attempts. Retry in ${REMAIN} seconds.\"}"
+                exit 0
+            else
+                rm -f "$IP_FILE"
+                FAIL_COUNT=0
+            fi
+        fi
+    fi
+
+    ENC_PAYLOAD=$(echo "$POST_DATA" | jq -r '.payload // empty' 2>/dev/null)
+    REQ_NONCE=$(echo "$POST_DATA" | jq -r '.nonce // empty' 2>/dev/null)
+
+    ensure_auth_keys
+
+    if [ -z "$ENC_PAYLOAD" ] || [ ! -f "$PRIV_KEY" ]; then
+        send_json_str '{"status": "error", "message": "Cryptographic payload missing or gateway keys uninitialized."}'
+        exit 0
+    fi
+
+    # Verify and invalidate single-use nonce
+    if [ -n "$REQ_NONCE" ]; then
+        if [ ! -f "$NONCE_DIR/$REQ_NONCE" ]; then
+            send_json_str '{"status": "error", "message": "Security replay error: Expired or invalid cryptographic nonce."}'
+            exit 0
+        fi
+        rm -f "$NONCE_DIR/$REQ_NONCE"
+    fi
+
+    # Decrypt using OpenSSL RSA-OAEP SHA-256 (CPU consumption: ~0.002s)
+    DECRYPTED_JSON=$(echo "$ENC_PAYLOAD" | openssl base64 -d -A 2>/dev/null | openssl pkeyutl -decrypt -inkey "$PRIV_KEY" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)
+
+    if [ -z "$DECRYPTED_JSON" ]; then
+        send_json_str '{"status": "error", "message": "Decryption failed. Security key mismatch."}'
+        exit 0
+    fi
+
+    USER=$(echo "$DECRYPTED_JSON" | jq -r '.user // empty' 2>/dev/null)
+    PASS=$(echo "$DECRYPTED_JSON" | jq -r '.pass // empty' 2>/dev/null)
+    [ -z "$USER" ] && USER="root"
+
+    if /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+        rm -f "$IP_FILE"
+        T=$(head -c 16 /dev/urandom | md5sum | awk '{print $1}')
+        cat << SESS > "$SESS_DIR/$T"
+{
+  "token": "$T",
+  "user": "$USER",
+  "ip": "$CLIENT_IP",
+  "ua": "$UA",
+  "created": $NOW,
+  "last_active": $NOW,
+  "encrypted": true
+}
+SESS
+        dispatch_login_alert "Router WebUI Login: $USER" "Administrator '$USER' logged into MAXNET Gateway WebUI via RSA-OAEP encrypted session from IP $CLIENT_IP." "info" "router_login"
+        send_json_str "{\"status\": \"ok\", \"token\": \"$T\", \"user\": \"$USER\", \"ip\": \"$CLIENT_IP\", \"encrypted\": true}"
+    else
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        echo "$FAIL_COUNT $NOW" > "$IP_FILE"
+        ATTEMPTS_LEFT=$((5 - FAIL_COUNT))
+        if [ "$ATTEMPTS_LEFT" -le 0 ]; then
+            dispatch_login_alert "Security Lockout: Brute-Force Blocked" "IP $CLIENT_IP locked out for 15 minutes after 5 consecutive failed WebUI login attempts." "danger" "security_alert"
+            send_json_str '{"status": "error", "message": "Security Lockout: Too many failed login attempts. Account locked for 15 minutes."}'
+        else
+            dispatch_login_alert "Failed Router Login Attempt" "Failed WebUI login attempt for user '$USER' from IP $CLIENT_IP ($ATTEMPTS_LEFT attempts remaining)." "warning" "router_login"
+            send_json_str "{\"status\": \"error\", \"message\": \"Invalid username or password. ${ATTEMPTS_LEFT} attempts remaining before temporary lockout.\"}"
+        fi
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: LOGIN (LEGACY / FALLBACK) ====================
+if [ "$ACTION" = "login" ]; then
+    IP_FILE="$LOGIN_ATTEMPTS_DIR/$(echo "$CLIENT_IP" | tr -c 'a-zA-Z0-9.' '_')"
+    
+    FAIL_COUNT=0
+    if [ -f "$IP_FILE" ]; then
+        FAIL_COUNT=$(awk 'NR==1{print $1}' "$IP_FILE" 2>/dev/null || echo 0)
+        LOCK_TIME=$(awk 'NR==1{print $2}' "$IP_FILE" 2>/dev/null || echo 0)
+        if [ "$FAIL_COUNT" -ge 5 ]; then
+            REMAIN=$((LOCK_TIME + 900 - NOW))
+            if [ "$REMAIN" -gt 0 ]; then
+                send_json_str "{\"status\": \"error\", \"message\": \"Security Lockout: Too many failed login attempts. Retry in ${REMAIN} seconds.\"}"
+                exit 0
+            else
+                rm -f "$IP_FILE"
+                FAIL_COUNT=0
+            fi
+        fi
+    fi
+
+    if [ -z "$PASS" ]; then
+        send_json_str '{"status": "error", "message": "Password required"}'
+        exit 0
+    fi
+
+    if /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+        rm -f "$IP_FILE"
+        T=$(head -c 16 /dev/urandom | md5sum | awk '{print $1}')
+        cat << SESS > "$SESS_DIR/$T"
+{
+  "token": "$T",
+  "user": "$USER",
+  "ip": "$CLIENT_IP",
+  "ua": "$UA",
+  "created": $NOW,
+  "last_active": $NOW,
+  "encrypted": false
+}
+SESS
+        dispatch_login_alert "Router WebUI Login: $USER" "Administrator '$USER' logged into MAXNET Gateway WebUI from IP $CLIENT_IP." "info" "router_login"
+        send_json_str "{\"status\": \"ok\", \"token\": \"$T\", \"user\": \"$USER\", \"ip\": \"$CLIENT_IP\"}"
+    else
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        echo "$FAIL_COUNT $NOW" > "$IP_FILE"
+        ATTEMPTS_LEFT=$((5 - FAIL_COUNT))
+        if [ "$ATTEMPTS_LEFT" -le 0 ]; then
+            dispatch_login_alert "Security Lockout: Brute-Force Blocked" "IP $CLIENT_IP locked out for 15 minutes after 5 consecutive failed WebUI login attempts." "danger" "security_alert"
+            send_json_str '{"status": "error", "message": "Security Lockout: Too many failed login attempts. Account locked for 15 minutes."}'
+        else
+            dispatch_login_alert "Failed Router Login Attempt" "Failed WebUI login attempt for user '$USER' from IP $CLIENT_IP ($ATTEMPTS_LEFT attempts remaining)." "warning" "router_login"
+            send_json_str "{\"status\": \"error\", \"message\": \"Invalid username or password. ${ATTEMPTS_LEFT} attempts remaining before temporary lockout.\"}"
+        fi
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: VERIFY ====================
+if [ "$ACTION" = "verify" ]; then
+    if [ -n "$TOKEN" ] && [ -f "$SESS_DIR/$TOKEN" ]; then
+        if grep -q '"token"' "$SESS_DIR/$TOKEN" 2>/dev/null; then
+            TMP_FILE="$SESS_DIR/.tmp_$TOKEN"
+            jq --arg now "$NOW" '.last_active = ($now | tonumber)' "$SESS_DIR/$TOKEN" > "$TMP_FILE" 2>/dev/null && mv "$TMP_FILE" "$SESS_DIR/$TOKEN"
+        fi
+        send_json_str '{"status": "ok", "authenticated": true}'
+    else
+        send_json_str '{"status": "unauthorized", "authenticated": false}'
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: LIST_SESSIONS ====================
+if [ "$ACTION" = "list_sessions" ]; then
+    if [ -n "$TOKEN" ] && [ ! -s "$SESS_DIR/$TOKEN" ]; then
+        cat << SESS > "$SESS_DIR/$TOKEN"
+{
+  "token": "$TOKEN",
+  "user": "$USER",
+  "ip": "$CLIENT_IP",
+  "ua": "$UA",
+  "created": $NOW,
+  "last_active": $NOW
+}
+SESS
+    fi
+
+    SESSIONS_JSON=""
+    for sf in "$SESS_DIR"/*; do
+        [ ! -f "$sf" ] && continue
+        bname=$(basename "$sf")
+        [ "${bname#\.tmp_}" != "$bname" ] && continue
+
+        if [ -s "$sf" ] && grep -q '"token"' "$sf" 2>/dev/null; then
+            s_ip=$(jq -r '.ip // "127.0.0.1"' "$sf" 2>/dev/null)
+            s_user=$(jq -r '.user // "root"' "$sf" 2>/dev/null)
+            s_ua=$(jq -r '.ua // "Web Browser"' "$sf" 2>/dev/null)
+            s_created=$(jq -r '.created // 0' "$sf" 2>/dev/null)
+            s_last=$(jq -r '.last_active // 0' "$sf" 2>/dev/null)
+        else
+            s_ip="10.0.0.1"
+            s_user="root"
+            s_ua="Active Web Session"
+            s_created=$(stat -c %Y "$sf" 2>/dev/null || echo "$NOW")
+            s_last="$s_created"
+        fi
+
+        is_curr="false"
+        [ "$bname" = "$TOKEN" ] && is_curr="true"
+
+        s_ua_clean=$(echo "$s_ua" | tr '"\\' '  ' | cut -c 1-255)
+        SESSIONS_JSON="${SESSIONS_JSON}{\"token\": \"$bname\", \"user\": \"$s_user\", \"ip\": \"$s_ip\", \"ua\": \"$s_ua_clean\", \"created\": $s_created, \"last_active\": $s_last, \"is_current\": $is_curr},"
+    done
+
+    if [ -z "$SESSIONS_JSON" ]; then
+        s_ua_clean=$(echo "$UA" | tr '"\\' '  ' | cut -c 1-255)
+        SESSIONS_JSON="{\"token\": \"$TOKEN\", \"user\": \"$USER\", \"ip\": \"$CLIENT_IP\", \"ua\": \"$s_ua_clean\", \"created\": $NOW, \"last_active\": $NOW, \"is_current\": true},"
+    fi
+
+    SESSIONS_JSON=$(echo "$SESSIONS_JSON" | sed 's/,$//')
+    RESP=$(jq -n \
+        --arg status "ok" \
+        --arg current_ip "$CLIENT_IP" \
+        --arg current_token "$TOKEN" \
+        --argjson sessions "[$SESSIONS_JSON]" \
+        '{status: $status, current_ip: $current_ip, current_token: $current_token, sessions: $sessions}' 2>/dev/null)
+    
+    if [ -n "$RESP" ]; then
+        send_json_str "$RESP"
+    else
+        send_json_str "{\"status\": \"ok\", \"current_ip\": \"$CLIENT_IP\", \"current_token\": \"$TOKEN\", \"sessions\": [${SESSIONS_JSON}]}"
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: LOGOUT_DEVICE ====================
+if [ "$ACTION" = "logout_device" ]; then
+    if [ -n "$TARGET_TOKEN" ]; then
+        rm -f "$SESS_DIR/$TARGET_TOKEN"
+        send_json_str '{"status": "ok", "message": "Device session terminated"}'
+    else
+        send_json_str '{"status": "error", "message": "Missing target token"}'
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: LOGOUT_OTHERS ====================
+if [ "$ACTION" = "logout_others" ]; then
+    if [ -n "$TOKEN" ]; then
+        for sf in "$SESS_DIR"/*; do
+            [ ! -f "$sf" ] && continue
+            bname=$(basename "$sf")
+            [ "$bname" != "$TOKEN" ] && rm -f "$sf"
+        done
+        send_json_str '{"status": "ok", "message": "All other sessions terminated"}'
+    else
+        send_json_str '{"status": "error", "message": "Missing current session token"}'
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: LOGOUT_ALL ====================
+if [ "$ACTION" = "logout_all" ]; then
+    rm -f "$SESS_DIR"/*
+    send_json_str '{"status": "ok", "message": "All sessions terminated"}'
+    exit 0
+fi
+
+# ==================== ACTION: LOGOUT ====================
+if [ "$ACTION" = "logout" ]; then
+    [ -n "$TOKEN" ] && rm -f "$SESS_DIR/$TOKEN"
+    send_json_str '{"status": "ok"}'
+    exit 0
+fi
+
+# ==================== ACTION: CHANGE_PASSWORD ====================
+if [ "$ACTION" = "change_password" ]; then
+    if [ -z "$OLD_PASS" ] || [ -z "$NEW_PASS" ]; then
+        send_json_str '{"status": "error", "message": "Both current and new password are required"}'
+        exit 0
+    fi
+    if ! /usr/bin/checkpass "$USER" "$OLD_PASS" >/dev/null 2>&1; then
+        send_json_str '{"status": "error", "message": "Current password is incorrect"}'
+        exit 0
+    fi
+    printf "%s\n%s\n" "$NEW_PASS" "$NEW_PASS" | passwd "$USER" >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        send_json_str '{"status": "ok", "message": "Password updated successfully for SSH and WebUI"}'
+    else
+        send_json_str '{"status": "error", "message": "Failed to update system password"}'
+    fi
+    exit 0
+fi
+
+send_json_str '{"status": "error", "message": "Unknown action"}'
+exit 0

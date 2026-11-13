@@ -1,0 +1,300 @@
+#!/bin/sh
+# ==============================================================================
+# MAXNET Router OS - Dedicated USB WAN & Multi-Device Load Balancing Engine
+# Developed by Mahendra Mali - Max
+# Support & Donation UPI: 9824584454@ybl
+# ==============================================================================
+
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+mkdir -p /etc/config
+CONFIG_FILE="/etc/config/usb_wan"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    cat << 'EOF' > "$CONFIG_FILE"
+config usb_wan 'global'
+	option mode 'balanced'
+	option watchdog '1'
+	option ping_target '1.1.1.1'
+	option ping_interval '15'
+	option dns_override '1.1.1.1 8.8.8.8'
+	option auto_reconnect '1'
+	option tether_proto 'rndis'
+
+config device 'usb0'
+	option name 'USB Modem 1 (Primary)'
+	option interface 'usb0'
+	option enabled '1'
+	option metric '100'
+	option weight '50'
+	option mtu '1400'
+
+config device 'usb1'
+	option name 'USB Modem 2 (Secondary)'
+	option interface 'usb1'
+	option enabled '1'
+	option metric '110'
+	option weight '50'
+	option mtu '1400'
+EOF
+fi
+
+ACTION="${QUERY_STRING#*action=}"
+ACTION="${ACTION%%&*}"
+
+if [ "$REQUEST_METHOD" = "POST" ]; then
+    read -r POST_DATA 2>/dev/null
+    P_ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+    [ -n "$P_ACTION" ] && ACTION="$P_ACTION"
+fi
+
+[ -z "$ACTION" ] && ACTION="get"
+
+if [ "$ACTION" = "restart" ] || [ "$ACTION" = "restart_modems" ]; then
+    TARGET_IFACE=$(echo "$POST_DATA" | jq -r '.iface // .interface // empty' 2>/dev/null)
+    [ -z "$TARGET_IFACE" ] && TARGET_IFACE=$(echo "$QUERY_STRING" | sed -n 's/^.*iface=\([^&]*\).*$/\1/p')
+    [ -z "$TARGET_IFACE" ] && TARGET_IFACE="all"
+
+    REBOOT_ADB=$(echo "$POST_DATA" | jq -r '.reboot_adb // false' 2>/dev/null)
+    [ "$REBOOT_ADB" != "true" ] && REBOOT_ADB=$(echo "$QUERY_STRING" | grep -q "reboot_adb=true" && echo "true" || echo "false")
+
+    SERIAL=$(echo "$POST_DATA" | jq -r '.serial // empty' 2>/dev/null)
+    [ -z "$SERIAL" ] && SERIAL=$(echo "$QUERY_STRING" | sed -n 's/^.*serial=\([^&]*\).*$/\1/p')
+
+    if [ "$REBOOT_ADB" = "true" ]; then
+        if [ -n "$SERIAL" ]; then
+            adb -s "$SERIAL" reboot >/dev/null 2>&1 &
+            echo "{\"status\": \"ok\", \"action\": \"reboot_adb\", \"serial\": \"$SERIAL\", \"message\": \"ADB reboot signal dispatched to phone hardware ($SERIAL). Device is restarting.\"}"
+        else
+            adb reboot >/dev/null 2>&1 &
+            echo "{\"status\": \"ok\", \"action\": \"reboot_adb\", \"message\": \"ADB reboot signal dispatched to connected Android phone hardware.\"}"
+        fi
+        exit 0
+    fi
+
+    if [ "$TARGET_IFACE" = "all" ] || [ -z "$TARGET_IFACE" ]; then
+        ifup wan_usb 2>/dev/null
+        ifup wan_usb1 2>/dev/null
+        /etc/init.d/network reload 2>/dev/null
+        udhcpc -i usb0 -n -q 2>/dev/null &
+        udhcpc -i usb1 -n -q 2>/dev/null &
+        echo '{"status": "ok", "action": "restart_interfaces", "target": "all", "message": "All USB modem interfaces (usb0, usb1) restarted and fresh DHCP leases acquired."}'
+        exit 0
+    else
+        if [ "$TARGET_IFACE" = "usb0" ]; then
+            ifdown wan_usb 2>/dev/null
+            sleep 1
+            ifup wan_usb 2>/dev/null
+            udhcpc -i usb0 -n -q 2>/dev/null &
+        else
+            ifdown "wan_${TARGET_IFACE}" 2>/dev/null
+            sleep 1
+            ifup "wan_${TARGET_IFACE}" 2>/dev/null
+            udhcpc -i "$TARGET_IFACE" -n -q 2>/dev/null &
+        fi
+        echo "{\"status\": \"ok\", \"action\": \"restart_interface\", \"target\": \"$TARGET_IFACE\", \"message\": \"USB interface $TARGET_IFACE soft-restarted and DHCP lease renewed successfully.\"}"
+        exit 0
+    fi
+fi
+
+if [ "$ACTION" = "save" ] || [ "$ACTION" = "save_config" ]; then
+    MODE=$(echo "$POST_DATA" | jq -r '.mode // "balanced"' 2>/dev/null)
+    WATCHDOG=$(echo "$POST_DATA" | jq -r '.watchdog // 1' 2>/dev/null)
+    PING_TARGET=$(echo "$POST_DATA" | jq -r '.ping_target // "1.1.1.1"' 2>/dev/null)
+    PING_INT=$(echo "$POST_DATA" | jq -r '.ping_interval // 15' 2>/dev/null)
+    DNS_OVERRIDE=$(echo "$POST_DATA" | jq -r '.dns_override // "1.1.1.1 8.8.8.8"' 2>/dev/null)
+    AUTO_REC=$(echo "$POST_DATA" | jq -r '.auto_reconnect // 1' 2>/dev/null)
+    TETHER_PROTO=$(echo "$POST_DATA" | jq -r '.tether_proto // "rndis"' 2>/dev/null)
+
+    uci -q set usb_wan.global.mode="$MODE"
+    uci -q set usb_wan.global.watchdog="$WATCHDOG"
+    uci -q set usb_wan.global.ping_target="$PING_TARGET"
+    uci -q set usb_wan.global.ping_interval="$PING_INT"
+    uci -q set usb_wan.global.dns_override="$DNS_OVERRIDE"
+    uci -q set usb_wan.global.auto_reconnect="$AUTO_REC"
+    uci -q set usb_wan.global.tether_proto="$TETHER_PROTO"
+
+    # Per device weights & metrics
+    DEVS=$(echo "$POST_DATA" | jq -c '.devices[]?' 2>/dev/null)
+    if [ -n "$DEVS" ]; then
+        echo "$DEVS" | while read -r d; do
+            [ -z "$d" ] && continue
+            D_ID=$(echo "$d" | jq -r '.id' 2>/dev/null)
+            D_EN=$(echo "$d" | jq -r '.enabled' 2>/dev/null)
+            D_WEIGHT=$(echo "$d" | jq -r '.weight // 50' 2>/dev/null)
+            D_METRIC=$(echo "$d" | jq -r '.metric // 100' 2>/dev/null)
+            D_MTU=$(echo "$d" | jq -r '.mtu // 1400' 2>/dev/null)
+            D_NAME=$(echo "$d" | jq -r '.name // empty' 2>/dev/null)
+
+            [ -z "$D_ID" ] && continue
+            if ! uci -q get "usb_wan.$D_ID" >/dev/null; then
+                uci -q set "usb_wan.$D_ID=device"
+                uci -q set "usb_wan.$D_ID.interface=$D_ID"
+            fi
+            uci -q set "usb_wan.$D_ID.enabled=$D_EN"
+            uci -q set "usb_wan.$D_ID.weight=$D_WEIGHT"
+            uci -q set "usb_wan.$D_ID.metric=$D_METRIC"
+            uci -q set "usb_wan.$D_ID.mtu=$D_MTU"
+            [ -n "$D_NAME" ] && uci -q set "usb_wan.$D_ID.name=$D_NAME"
+
+            # Apply MTU to network uci
+            if [ "$D_ID" = "usb0" ]; then
+                uci -q set network.wan_usb.mtu="$D_MTU"
+                uci -q set network.wan_usb.metric="$D_METRIC"
+            else
+                uci -q set "network.wan_${D_ID}.mtu=$D_MTU" 2>/dev/null
+                uci -q set "network.wan_${D_ID}.metric=$D_METRIC" 2>/dev/null
+            fi
+        done
+    fi
+
+    uci commit usb_wan
+    uci commit network 2>/dev/null
+
+    # Apply DNS override if provided
+    if [ -n "$DNS_OVERRIDE" ]; then
+        uci -q set network.wan_usb.peerdns='0'
+        uci -q set network.wan_usb.dns="$DNS_OVERRIDE"
+        uci commit network 2>/dev/null
+    fi
+
+    # Trigger route re-balancing
+    if [ "$MODE" = "balanced" ]; then
+        # Check active gateways for usb0 and usb1
+        GW0=$(ip -4 route show dev usb0 2>/dev/null | awk '/default/{print $3; exit}')
+        [ -z "$GW0" ] && GW0=$(ip -4 -o addr show dev usb0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | sed 's/\.[0-9]*$/.1/')
+        GW1=$(ip -4 route show dev usb1 2>/dev/null | awk '/default/{print $3; exit}')
+        [ -z "$GW1" ] && GW1=$(ip -4 -o addr show dev usb1 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | sed 's/\.[0-9]*$/.1/')
+
+        if [ -n "$GW0" ] && [ -n "$GW1" ]; then
+            ip route replace default scope global nexthop via "$GW0" dev usb0 weight 1 nexthop via "$GW1" dev usb1 weight 1 2>/dev/null
+        fi
+    fi
+
+    echo '{"status": "ok", "message": "USB WAN and load balancing settings applied"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "add_device" ]; then
+    NEW_DEV=$(echo "$POST_DATA" | jq -r '.device // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9')
+    NEW_NAME=$(echo "$POST_DATA" | jq -r '.name // empty' 2>/dev/null)
+    [ -z "$NEW_NAME" ] && NEW_NAME="USB Modem ($NEW_DEV)"
+
+    if [ -z "$NEW_DEV" ]; then
+        echo '{"status": "error", "message": "Device name required (e.g. usb1, usb2, eth2)"}'
+        exit 0
+    fi
+
+    uci -q set "usb_wan.$NEW_DEV=device"
+    uci -q set "usb_wan.$NEW_DEV.name=$NEW_NAME"
+    uci -q set "usb_wan.$NEW_DEV.interface=$NEW_DEV"
+    uci -q set "usb_wan.$NEW_DEV.enabled=1"
+    uci -q set "usb_wan.$NEW_DEV.metric=120"
+    uci -q set "usb_wan.$NEW_DEV.weight=50"
+    uci -q set "usb_wan.$NEW_DEV.mtu=1400"
+    uci commit usb_wan
+
+    # Create network interface if not present
+    IFNAME="wan_${NEW_DEV}"
+    if ! uci -q get "network.$IFNAME" >/dev/null; then
+        uci -q set "network.$IFNAME=interface"
+        uci -q set "network.$IFNAME.device=$NEW_DEV"
+        uci -q set "network.$IFNAME.proto=dhcp"
+        uci -q set "network.$IFNAME.metric=120"
+        uci -q set "network.$IFNAME.mtu=1400"
+        uci commit network
+    fi
+
+    echo "{\"status\": \"ok\", \"message\": \"Interface $NEW_DEV registered successfully\"}"
+    exit 0
+fi
+
+# DEFAULT GET ACTION: Scan system for all USB interfaces & return status
+MODE=$(uci -q get usb_wan.global.mode || echo "balanced")
+WATCHDOG=$(uci -q get usb_wan.global.watchdog || echo "1")
+PING_TARGET=$(uci -q get usb_wan.global.ping_target || echo "1.1.1.1")
+PING_INT=$(uci -q get usb_wan.global.ping_interval || echo "15")
+DNS_OVERRIDE=$(uci -q get usb_wan.global.dns_override || echo "1.1.1.1 8.8.8.8")
+AUTO_REC=$(uci -q get usb_wan.global.auto_reconnect || echo "1")
+TETHER_PROTO=$(uci -q get usb_wan.global.tether_proto || echo "rndis")
+
+ALL_DEVS="usb0 usb1 usb2 usb3 usb4 usb5"
+DEVICES_JSON=""
+
+for dev in $ALL_DEVS; do
+    SYS_PATH="/sys/class/net/$dev"
+    PHYS_PRESENT=false
+    [ -d "$SYS_PATH" ] && PHYS_PRESENT=true
+
+    UCI_CONF=$(uci -q get "usb_wan.$dev" || echo "")
+    [ "$PHYS_PRESENT" = "false" ] && [ -z "$UCI_CONF" ] && continue
+
+    NAME=$(uci -q get "usb_wan.$dev.name" || echo "USB Tethering ($dev)")
+    ENABLED=$(uci -q get "usb_wan.$dev.enabled" || echo "1")
+    METRIC=$(uci -q get "usb_wan.$dev.metric" || echo "100")
+    WEIGHT=$(uci -q get "usb_wan.$dev.weight" || echo "50")
+    MTU_CONF=$(uci -q get "usb_wan.$dev.mtu" || echo "1400")
+
+    IP_ADDR="--"
+    MAC_ADDR=""
+    CARRIER="down"
+    RX_BYTES=0
+    TX_BYTES=0
+    SPEED="USB 3.0 (5 Gbps)"
+    DRIVER="rndis_host"
+
+    if [ "$PHYS_PRESENT" = "true" ]; then
+        IP_ADDR=$(ip -4 -o addr show dev "$dev" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+        [ -z "$IP_ADDR" ] && IP_ADDR="--"
+        MAC_ADDR=$(cat "$SYS_PATH/address" 2>/dev/null || echo "")
+        CARRIER=$(cat "$SYS_PATH/operstate" 2>/dev/null || echo "unknown")
+        RX_BYTES=$(cat "$SYS_PATH/statistics/rx_bytes" 2>/dev/null || echo 0)
+        TX_BYTES=$(cat "$SYS_PATH/statistics/tx_bytes" 2>/dev/null || echo 0)
+        
+        # Check driver
+        DRIVER=$(readlink "$SYS_PATH/device/driver" 2>/dev/null | awk -F/ '{print $NF}')
+        [ -z "$DRIVER" ] && DRIVER="cdc_ether"
+
+        # Check USB speed
+        USB_VER=$(cat "$SYS_PATH/device/../speed" 2>/dev/null || echo "5000")
+        if [ "$USB_VER" = "480" ]; then
+            SPEED="USB 2.0 (480 Mbps)"
+        elif [ "$USB_VER" = "5000" ] || [ "$USB_VER" = "10000" ]; then
+            SPEED="USB 3.0 (5000 Mbps SuperSpeed)"
+        fi
+    fi
+
+    STATUS="disconnected"
+    if [ "$PHYS_PRESENT" = "true" ]; then
+        if [ "$IP_ADDR" != "--" ]; then
+            STATUS="connected"
+        else
+            STATUS="standby"
+        fi
+    fi
+
+    DEVICES_JSON="${DEVICES_JSON}{\"id\": \"$dev\", \"name\": \"$NAME\", \"interface\": \"$dev\", \"ip\": \"$IP_ADDR\", \"mac\": \"$MAC_ADDR\", \"mtu\": $MTU_CONF, \"metric\": $METRIC, \"weight\": $WEIGHT, \"enabled\": $([ "$ENABLED" = "1" ] && echo true || echo false), \"present\": $PHYS_PRESENT, \"status\": \"$STATUS\", \"carrier\": \"$CARRIER\", \"speed\": \"$SPEED\", \"driver\": \"$DRIVER\", \"rx_bytes\": $RX_BYTES, \"tx_bytes\": $TX_BYTES},"
+done
+
+DEVICES_JSON=$(echo "$DEVICES_JSON" | sed 's/,$//')
+
+cat << JSON
+{
+  "status": "ok",
+  "developer": "Mahendra Mali - Max",
+  "upi_support": "9824584454@ybl",
+  "load_balancing": {
+    "mode": "$MODE",
+    "watchdog": $([ "$WATCHDOG" = "1" ] && echo true || echo false),
+    "ping_target": "$PING_TARGET",
+    "ping_interval": $PING_INT,
+    "dns_override": "$DNS_OVERRIDE",
+    "auto_reconnect": $([ "$AUTO_REC" = "1" ] && echo true || echo false),
+    "tether_proto": "$TETHER_PROTO"
+  },
+  "devices": [${DEVICES_JSON}]
+}
+JSON

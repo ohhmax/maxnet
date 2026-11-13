@@ -1,0 +1,149 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+
+PREFS_FILE="/etc/tailscale_prefs.json"
+
+if [ "$ACTION" = "set_prefs" ] || [ "$ACTION" = "apply" ]; then
+    SHARE_LAN=$(echo "$POST_DATA" | jq -r '.share_lan // empty' 2>/dev/null)
+    EXIT_NODE=$(echo "$POST_DATA" | jq -r '.exit_node // empty' 2>/dev/null)
+    ACCEPT_ROUTES=$(echo "$POST_DATA" | jq -r '.accept_routes // empty' 2>/dev/null)
+    SSH_MODE=$(echo "$POST_DATA" | jq -r '.ssh // empty' 2>/dev/null)
+    HOSTNAME=$(echo "$POST_DATA" | jq -r '.hostname // empty' 2>/dev/null)
+    [ -z "$HOSTNAME" ] && HOSTNAME="Maxnet-USB"
+
+    ROUTES=""
+    [ "$SHARE_LAN" = "true" ] && ROUTES="10.0.0.0/24"
+
+    SET_CMD="tailscale set --advertise-routes=\"$ROUTES\" --snat-subnet-routes=true"
+    [ "$EXIT_NODE" = "true" ] && SET_CMD="$SET_CMD --advertise-exit-node=true" || SET_CMD="$SET_CMD --advertise-exit-node=false"
+    [ "$ACCEPT_ROUTES" = "true" ] && SET_CMD="$SET_CMD --accept-routes=true" || SET_CMD="$SET_CMD --accept-routes=false"
+    [ "$SSH_MODE" = "true" ] && SET_CMD="$SET_CMD --ssh=true" || SET_CMD="$SET_CMD --ssh=false"
+    [ -n "$HOSTNAME" ] && SET_CMD="$SET_CMD --hostname=\"$HOSTNAME\""
+
+    eval "$SET_CMD" >/tmp/ts_set.log 2>&1
+
+    cat << PREF > "$PREFS_FILE"
+{
+  "share_lan": ${SHARE_LAN:-false},
+  "exit_node": ${EXIT_NODE:-false},
+  "accept_routes": ${ACCEPT_ROUTES:-true},
+  "ssh": ${SSH_MODE:-false},
+  "hostname": "${HOSTNAME}"
+}
+PREF
+
+    echo '{"status": "ok", "message": "Tailscale preferences updated successfully."}'
+    exit 0
+fi
+
+if [ "$ACTION" = "up" ]; then
+    KEY=$(echo "$POST_DATA" | jq -r '.authkey // empty' 2>/dev/null)
+    SHARE_LAN=$(echo "$POST_DATA" | jq -r '.share_lan // empty' 2>/dev/null)
+    EXIT_NODE=$(echo "$POST_DATA" | jq -r '.exit_node // empty' 2>/dev/null)
+    ACCEPT_ROUTES=$(echo "$POST_DATA" | jq -r '.accept_routes // empty' 2>/dev/null)
+    HOSTNAME=$(echo "$POST_DATA" | jq -r '.hostname // empty' 2>/dev/null)
+    [ -z "$HOSTNAME" ] && HOSTNAME="Maxnet-USB"
+
+    ROUTES=""
+    [ "$SHARE_LAN" = "true" ] && ROUTES="--advertise-routes=10.0.0.0/24 --snat-subnet-routes=true"
+    EXIT_FLAG=""
+    [ "$EXIT_NODE" = "true" ] && EXIT_FLAG="--advertise-exit-node"
+    ACCEPT_FLAG="--accept-routes=true"
+    [ "$ACCEPT_ROUTES" = "false" ] && ACCEPT_FLAG="--accept-routes=false"
+
+    if [ -n "$KEY" ]; then
+        tailscale up --reset --authkey="$KEY" --hostname="$HOSTNAME" $ROUTES $EXIT_FLAG $ACCEPT_FLAG --timeout=10s >/tmp/ts_up.log 2>&1 &
+        echo '{"status": "ok", "message": "Connecting Tailscale with Auth Key..."}'
+    else
+        CUR_URL=$(tailscale status --json 2>/dev/null | grep -o '"AuthURL": "[^"]*"' | cut -d'"' -f4)
+        if [ -z "$CUR_URL" ]; then
+            tailscale up --reset --hostname="$HOSTNAME" $ROUTES $EXIT_FLAG $ACCEPT_FLAG >/tmp/ts_up.log 2>&1 &
+        fi
+        echo '{"status": "ok", "message": "Tailscale login requested."}'
+    fi
+    exit 0
+fi
+
+if [ "$ACTION" = "down" ]; then
+    tailscale down >/dev/null 2>&1
+    echo '{"status": "ok", "message": "Tailscale disconnected"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "logout" ]; then
+    tailscale logout >/dev/null 2>&1
+    tailscale down >/dev/null 2>&1
+    rm -f /tmp/ts_up.log 2>/dev/null
+    echo '{"status": "ok", "message": "Tailscale logged out"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "restart" ]; then
+    /etc/init.d/tailscale restart >/dev/null 2>&1
+    echo '{"status": "ok", "message": "Tailscale daemon restarted"}'
+    exit 0
+fi
+
+DEBUG_PREFS=$(tailscale debug prefs 2>/dev/null)
+ACTUAL_ROUTES=$(echo "$DEBUG_PREFS" | jq -r '.AdvertiseRoutes // []' 2>/dev/null)
+HAS_LAN=$(echo "$ACTUAL_ROUTES" | grep -q "10.0.0.0/24" && echo true || echo false)
+HAS_EXIT=$(echo "$DEBUG_PREFS" | jq -r '.AdvertiseExitNode // false' 2>/dev/null)
+ACCEPT_R=$(echo "$DEBUG_PREFS" | jq -r '.RouteAll // true' 2>/dev/null)
+
+TS_STATUS=$(tailscale status --json 2>/dev/null)
+AUTH_URL=""
+if [ -f "/tmp/ts_up.log" ]; then
+    AUTH_URL=$(grep -o 'https://login\.tailscale\.com/a/[^ "]*' /tmp/ts_up.log | head -n1)
+fi
+
+if [ -n "$TS_STATUS" ]; then
+  echo "$TS_STATUS" | jq --arg has_lan "$HAS_LAN" --arg has_exit "$HAS_EXIT" --arg accept_r "$ACCEPT_R" --arg file_auth "$AUTH_URL" '{
+    status: "ok",
+    backend_state: (.BackendState // "Stopped"),
+    online: (if .BackendState == "Running" then (.Self.Online // false) else false end),
+    tailscale_ip: (if .BackendState == "Running" then (.Self.TailscaleIPs[0] // "") else "" end),
+    hostname: (.Self.HostName // "Maxnet-USB"),
+    auth_url: (if .AuthURL and .AuthURL != "" then .AuthURL else $file_auth end),
+    share_lan: ($has_lan == "true"),
+    exit_node: ($has_exit == "true"),
+    accept_routes: ($accept_r == "true"),
+    user: (if .BackendState == "Running" then (.Self.UserID as $uid | .User[$uid | tostring] // {}) else {} end),
+    tailnet: (if .BackendState == "Running" then (.Self.DNSName // "") else "" end),
+    devices_total: (if .BackendState == "Running" then (((.Peer // {}) | length) + 1) else 0 end),
+    devices_online: (if .BackendState == "Running" then ((((.Peer // {}) | to_entries | map(select(.value.Online == true)) | length)) + (if .Self.Online then 1 else 0 end)) else 0 end),
+    peers: (if .BackendState == "Running" then ((.Peer // {}) | to_entries | map({
+      name: .value.HostName,
+      os: .value.OS,
+      ip: .value.TailscaleIPs[0],
+      online: .value.Online,
+      last_seen: .value.LastSeen
+    })) else [] end)
+  }'
+else
+  cat << JSON
+{
+  "status": "ok",
+  "backend_state": "Stopped",
+  "online": false,
+  "tailscale_ip": "",
+  "hostname": "Maxnet-USB",
+  "share_lan": false,
+  "exit_node": false,
+  "accept_routes": true,
+  "auth_url": "",
+  "user": {},
+  "tailnet": "",
+  "devices_total": 0,
+  "devices_online": 0,
+  "peers": []
+}
+JSON
+fi

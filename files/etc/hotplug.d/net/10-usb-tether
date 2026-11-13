@@ -1,0 +1,34 @@
+#!/bin/sh
+# Bring up wan_usb automatically and update firewall DNAT redirect for port 5555
+[ "$DEVICENAME" = "usb0" -o "$INTERFACE" = "usb0" ] || exit 0
+
+if [ "$ACTION" = "add" ]; then
+    sleep 1
+    ethtool -K usb0 gro off gso off tso off 2>/dev/null || true
+    ifconfig usb0 txqueuelen 5000 2>/dev/null || true
+    ifconfig usb0 mtu 1400 2>/dev/null || true
+
+    # Disable USB autosuspend on controller and root hub
+    for f in /sys/bus/usb/devices/*/power/control; do echo on > "$f" 2>/dev/null; done
+    for f in /sys/bus/usb/devices/*/power/autosuspend; do echo -1 > "$f" 2>/dev/null; done
+
+    # Disable USB 3.0 LPM on Samsung Galaxy device
+    echo "04e8:6864:k" > /sys/module/usbcore/parameters/quirks 2>/dev/null || true
+
+    ifup wan_usb
+    
+    # Wait for gateway IP address assignment and update ADB-Forward redirect
+    (
+        for i in $(seq 1 15); do
+            sleep 1
+            gw=$(ip route show default dev usb0 2>/dev/null | awk '{print $3}' | head -n 1)
+            if [ -n "$gw" ]; then
+                uci set firewall.adb_forward.dest_ip="$gw"
+                uci commit firewall
+                /etc/init.d/firewall reload >/dev/null 2>&1
+                break
+            fi
+        done
+    ) &
+fi
+exit 0

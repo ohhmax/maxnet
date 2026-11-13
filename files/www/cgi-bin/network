@@ -1,0 +1,430 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+
+is_valid_ipv4() {
+    local ip="$1"
+    [ -z "$ip" ] && return 1
+    echo "$ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+    local o1 o2 o3 o4
+    o1=$(echo "$ip" | cut -d. -f1)
+    o2=$(echo "$ip" | cut -d. -f2)
+    o3=$(echo "$ip" | cut -d. -f3)
+    o4=$(echo "$ip" | cut -d. -f4)
+    [ "$o1" -ge 0 ] && [ "$o1" -le 255 ] && \
+    [ "$o2" -ge 0 ] && [ "$o2" -le 255 ] && \
+    [ "$o3" -ge 0 ] && [ "$o3" -le 255 ] && \
+    [ "$o4" -ge 0 ] && [ "$o4" -le 255 ] || return 1
+    return 0
+}
+
+is_valid_mac() {
+    echo "$1" | grep -Eq '^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$'
+}
+
+# ACTION: ADD STATIC LEASE
+if [ "$ACTION" = "add_lease" ]; then
+    L_NAME=$(echo "$POST_DATA" | jq -r '.name // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9._-')
+    L_MAC=$(echo "$POST_DATA" | jq -r '.mac // empty' 2>/dev/null | tr 'A-Z' 'a-z' | tr -cd '0-9a-f:')
+    L_IP=$(echo "$POST_DATA" | jq -r '.ip // empty' 2>/dev/null | tr -cd '0-9.')
+
+    [ -z "$L_NAME" ] && L_NAME="host-$(echo "$L_MAC" | tr -cd '0-9a-f' | tail -c 4)"
+
+    if ! is_valid_mac "$L_MAC"; then
+        echo '{"status": "error", "message": "Invalid MAC address (format AA:BB:CC:DD:EE:FF)."}'
+        exit 0
+    fi
+    if ! is_valid_ipv4 "$L_IP"; then
+        echo '{"status": "error", "message": "Invalid static IPv4 address."}'
+        exit 0
+    fi
+
+    for idx in $(uci -q show dhcp | grep '=host$' | cut -d'=' -f1 | cut -d'.' -f2); do
+        cur_mac=$(uci -q get "dhcp.$idx.mac")
+        if [ "$cur_mac" = "$L_MAC" ]; then
+            uci -q delete "dhcp.$idx"
+        fi
+    done
+
+    SEC=$(uci add dhcp host)
+    uci set "dhcp.$SEC.name=$L_NAME"
+    uci set "dhcp.$SEC.mac=$L_MAC"
+    uci set "dhcp.$SEC.ip=$L_IP"
+    uci commit dhcp
+    (/etc/init.d/dnsmasq restart >/dev/null 2>&1) &
+    echo '{"status": "ok", "message": "Static lease added successfully."}'
+    exit 0
+fi
+
+# ACTION: DELETE STATIC LEASE
+if [ "$ACTION" = "del_lease" ]; then
+    D_MAC=$(echo "$POST_DATA" | jq -r '.mac // empty' 2>/dev/null | tr 'A-Z' 'a-z' | tr -cd '0-9a-f:')
+    if [ -n "$D_MAC" ]; then
+        for idx in $(uci -q show dhcp | grep '=host$' | cut -d'=' -f1 | cut -d'.' -f2); do
+            cur_mac=$(uci -q get "dhcp.$idx.mac")
+            if [ "$cur_mac" = "$D_MAC" ]; then
+                uci -q delete "dhcp.$idx"
+            fi
+        done
+        uci commit dhcp
+        (/etc/init.d/dnsmasq restart >/dev/null 2>&1) &
+        echo '{"status": "ok", "message": "Static lease removed."}'
+        exit 0
+    fi
+    echo '{"status": "error", "message": "No MAC provided to delete."}'
+    exit 0
+fi
+
+# ACTION: CONFIGURE WAN INTERFACE (DHCP / PPPOE / STATIC WITH CUSTOM MAC)
+if [ "$ACTION" = "set_wan" ]; then
+    WAN_P=$(echo "$POST_DATA" | jq -r '.proto // "dhcp"' 2>/dev/null)
+    WAN_U=$(echo "$POST_DATA" | jq -r '.username // empty' 2>/dev/null)
+    WAN_PW=$(echo "$POST_DATA" | jq -r '.password // empty' 2>/dev/null)
+    WAN_SRV=$(echo "$POST_DATA" | jq -r '.service // empty' 2>/dev/null)
+    WAN_MTU=$(echo "$POST_DATA" | jq -r '.mtu // empty' 2>/dev/null)
+    WAN_MAC=$(echo "$POST_DATA" | jq -r '.custom_mac // empty' 2>/dev/null | tr 'A-Z' 'a-z' | tr -cd '0-9a-f:')
+    WAN_IP_VAL=$(echo "$POST_DATA" | jq -r '.ip // .ipaddr // empty' 2>/dev/null)
+    WAN_NM=$(echo "$POST_DATA" | jq -r '.netmask // empty' 2>/dev/null)
+    WAN_GW=$(echo "$POST_DATA" | jq -r '.gateway // empty' 2>/dev/null)
+    WAN_DNS=$(echo "$POST_DATA" | jq -r '.dns // empty' 2>/dev/null)
+
+    if [ "$WAN_P" = "pppoe" ]; then
+        uci set network.wan.proto="pppoe"
+        uci set network.wan.username="$WAN_U"
+        uci set network.wan.password="$WAN_PW"
+        [ -n "$WAN_SRV" ] && uci set network.wan.service="$WAN_SRV" || uci -q delete network.wan.service
+        [ -n "$WAN_MTU" ] && [ "$WAN_MTU" -ge 576 ] && [ "$WAN_MTU" -le 1500 ] && uci set network.wan.mtu="$WAN_MTU" || uci set network.wan.mtu="1492"
+        uci -q delete network.wan.ipaddr
+        uci -q delete network.wan.netmask
+        uci -q delete network.wan.gateway
+    elif [ "$WAN_P" = "static" ]; then
+        uci set network.wan.proto="static"
+        [ -n "$WAN_IP_VAL" ] && uci set network.wan.ipaddr="$WAN_IP_VAL"
+        [ -n "$WAN_NM" ] && uci set network.wan.netmask="$WAN_NM"
+        [ -n "$WAN_GW" ] && uci set network.wan.gateway="$WAN_GW"
+        if [ -n "$WAN_DNS" ]; then
+            uci -q delete network.wan.dns
+            for s in $WAN_DNS; do uci add_list network.wan.dns="$s"; done
+        fi
+        uci -q delete network.wan.username
+        uci -q delete network.wan.password
+    else
+        uci set network.wan.proto="dhcp"
+        [ -n "$WAN_MTU" ] && [ "$WAN_MTU" -ge 576 ] && [ "$WAN_MTU" -le 1500 ] && uci set network.wan.mtu="$WAN_MTU" || uci set network.wan.mtu="1500"
+        uci -q delete network.wan.username
+        uci -q delete network.wan.password
+        uci -q delete network.wan.ipaddr
+        uci -q delete network.wan.netmask
+        uci -q delete network.wan.gateway
+    fi
+
+    # Custom MAC address for WAN (MAC Clone)
+    if [ "$WAN_MAC" = "reset" ] || [ "$WAN_MAC" = "default" ] || [ -z "$WAN_MAC" ]; then
+        uci -q delete network.wan.macaddr
+    elif is_valid_mac "$WAN_MAC"; then
+        uci set network.wan.macaddr="$WAN_MAC"
+    fi
+
+    uci commit network
+    (/sbin/ifup wan >/dev/null 2>&1) &
+    echo '{"status": "ok", "message": "WAN interface configuration applied successfully."}'
+    exit 0
+fi
+
+# ACTION: SET NETWORK SETTINGS
+if [ "$ACTION" = "set" ]; then
+    LAN_IP=$(echo "$POST_DATA" | jq -r '.lan_ip // empty' 2>/dev/null)
+    NETMASK=$(echo "$POST_DATA" | jq -r '.netmask // empty' 2>/dev/null)
+    GATEWAY=$(echo "$POST_DATA" | jq -r '.gateway // empty' 2>/dev/null)
+    DNS=$(echo "$POST_DATA" | jq -r '.dns // empty' 2>/dev/null)
+    DHCP_START=$(echo "$POST_DATA" | jq -r '.dhcp_start // empty' 2>/dev/null)
+    DHCP_LIMIT=$(echo "$POST_DATA" | jq -r '.dhcp_limit // empty' 2>/dev/null)
+    DHCP_LEASE=$(echo "$POST_DATA" | jq -r '.dhcp_leasetime // empty' 2>/dev/null)
+    DHCP_IGN=$(echo "$POST_DATA" | jq -r '.dhcp_ignore // empty' 2>/dev/null)
+    MTU_VAL=$(echo "$POST_DATA" | jq -r '.mtu // empty' 2>/dev/null)
+
+    # IPv6 & Acceleration Settings
+    IPV6_EN=$(echo "$POST_DATA" | jq -r '.ipv6_enabled // empty' 2>/dev/null)
+    IPV6_WAN=$(echo "$POST_DATA" | jq -r '.ipv6_wan_mode // empty' 2>/dev/null)
+    IPV6_RA=$(echo "$POST_DATA" | jq -r '.ipv6_ra // empty' 2>/dev/null)
+    IPV6_DHCP6=$(echo "$POST_DATA" | jq -r '.ipv6_dhcp6 // empty' 2>/dev/null)
+    IPV6_ULA=$(echo "$POST_DATA" | jq -r '.ipv6_ula // empty' 2>/dev/null)
+    IPV6_PRIV=$(echo "$POST_DATA" | jq -r '.ipv6_privacy // empty' 2>/dev/null)
+    FLOW_OFF=$(echo "$POST_DATA" | jq -r '.flow_offloading // empty' 2>/dev/null)
+    FLOW_OFF_HW=$(echo "$POST_DATA" | jq -r '.flow_offloading_hw // empty' 2>/dev/null)
+    MSS_CLAMP=$(echo "$POST_DATA" | jq -r '.mss_clamping // empty' 2>/dev/null)
+    DNS_REBIND=$(echo "$POST_DATA" | jq -r '.dns_rebind // empty' 2>/dev/null)
+    DEV_HOST=$(echo "$POST_DATA" | jq -r '.hostname // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9.-')
+    CUST_MAC=$(echo "$POST_DATA" | jq -r '.custom_mac // empty' 2>/dev/null | tr 'A-Z' 'a-z' | tr -cd '0-9a-f:')
+    RESET_MAC=$(echo "$POST_DATA" | jq -r '.reset_mac // empty' 2>/dev/null)
+
+    # Device Hostname
+    if [ -n "$DEV_HOST" ]; then
+        uci -q set system.@system[0].hostname="$DEV_HOST"
+        uci commit system
+        echo "$DEV_HOST" > /proc/sys/kernel/hostname 2>/dev/null
+        h_lower=$(echo "$DEV_HOST" | tr 'A-Z' 'a-z')
+        sed -i "s/127.0.0.1 localhost.*/127.0.0.1 localhost $DEV_HOST/" /etc/hosts 2>/dev/null
+        sed -i "/^10\.0\.0\.1 /d" /etc/hosts 2>/dev/null
+        echo "10.0.0.1 maxnet.local maxnet.lan maxnet ${h_lower}.lan ${h_lower}.local ${DEV_HOST} smb.local smb.lan disk.local disk.lan" >> /etc/hosts
+        echo "10.0.0.1 maxnet.local maxnet.lan maxnet ${h_lower}.local" > /etc/avahi/hosts 2>/dev/null
+        killall -HUP dnsmasq 2>/dev/null
+        /etc/init.d/avahi-daemon reload 2>/dev/null || /etc/init.d/avahi-daemon restart 2>/dev/null
+    fi
+
+    # Custom MAC Address Override
+    if [ "$RESET_MAC" = "1" ] || [ "$CUST_MAC" = "default" ] || [ "$CUST_MAC" = "reset" ]; then
+        uci -q delete network.lan.macaddr
+    elif [ -n "$CUST_MAC" ] && is_valid_mac "$CUST_MAC"; then
+        uci set network.lan.macaddr="$CUST_MAC"
+    fi
+
+    if [ -n "$LAN_IP" ]; then
+        if ! is_valid_ipv4 "$LAN_IP"; then
+            echo '{"status": "error", "message": "Invalid LAN IP address."}'
+            exit 0
+        fi
+        uci set network.lan.ipaddr="$LAN_IP"
+    fi
+
+    [ -n "$NETMASK" ] && uci set network.lan.netmask="$NETMASK"
+
+    if [ -n "$GATEWAY" ] && [ "$GATEWAY" != "null" ] && [ "$GATEWAY" != "" ]; then
+        if is_valid_ipv4 "$GATEWAY"; then
+            uci set network.lan.gateway="$GATEWAY"
+        fi
+    else
+        uci -q delete network.lan.gateway
+    fi
+
+    if [ -n "$DNS" ] && [ "$DNS" != "null" ]; then
+        uci -q delete network.lan.dns
+        for srv in $DNS; do
+            [ -n "$srv" ] && uci add_list network.lan.dns="$srv"
+        done
+    fi
+
+    [ -n "$DHCP_START" ] && uci set dhcp.lan.start="$DHCP_START"
+    [ -n "$DHCP_LIMIT" ] && uci set dhcp.lan.limit="$DHCP_LIMIT"
+    [ -n "$DHCP_LEASE" ] && uci set dhcp.lan.leasetime="$DHCP_LEASE"
+    [ -n "$DHCP_IGN" ] && uci set dhcp.lan.ignore="$DHCP_IGN"
+
+    if [ -n "$MTU_VAL" ] && [ "$MTU_VAL" -ge 576 ] 2>/dev/null && [ "$MTU_VAL" -le 9000 ] 2>/dev/null; then
+        uci set network.lan.mtu="$MTU_VAL"
+    fi
+
+    # Apply IPv6 Configuration
+    if [ "$IPV6_EN" = "1" ]; then
+        uci set dhcp.lan.ra='server'
+        uci set dhcp.lan.ra_slaac='1'
+        uci set dhcp.lan.ra_default='1'
+        sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null 2>&1
+    elif [ "$IPV6_EN" = "0" ]; then
+        uci set dhcp.lan.ra='disabled'
+        uci set dhcp.lan.dhcpv6='disabled'
+        sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
+    fi
+
+    if [ -n "$IPV6_RA" ]; then
+        [ "$IPV6_RA" = "1" ] && uci set dhcp.lan.ra='server' || uci set dhcp.lan.ra='disabled'
+    fi
+
+    if [ -n "$IPV6_DHCP6" ]; then
+        [ "$IPV6_DHCP6" = "1" ] && uci set dhcp.lan.dhcpv6='server' || uci set dhcp.lan.dhcpv6='disabled'
+    fi
+
+    if [ -n "$IPV6_ULA" ] && [ "$IPV6_ULA" != "null" ]; then
+        uci set network.globals.ula_prefix="$IPV6_ULA"
+    fi
+
+    if [ -n "$IPV6_PRIV" ]; then
+        if [ "$IPV6_PRIV" = "1" ]; then
+            sysctl -w net.ipv6.conf.all.use_tempaddr=2 >/dev/null 2>&1
+            sysctl -w net.ipv6.conf.default.use_tempaddr=2 >/dev/null 2>&1
+        else
+            sysctl -w net.ipv6.conf.all.use_tempaddr=0 >/dev/null 2>&1
+            sysctl -w net.ipv6.conf.default.use_tempaddr=0 >/dev/null 2>&1
+        fi
+    fi
+
+    # Apply Firewall & Rocket Speed Flow Offload Settings
+    reload_fw=0
+    if [ -n "$FLOW_OFF" ]; then
+        uci set firewall.@defaults[0].flow_offloading="$FLOW_OFF"
+        reload_fw=1
+    fi
+    if [ -n "$FLOW_OFF_HW" ]; then
+        uci set firewall.@defaults[0].flow_offloading_hw="$FLOW_OFF_HW"
+        reload_fw=1
+    fi
+    if [ -n "$MSS_CLAMP" ]; then
+        uci set firewall.@zone[1].mtu_fix="$MSS_CLAMP"
+        reload_fw=1
+    fi
+    if [ -n "$DNS_REBIND" ]; then
+        uci set dhcp.@dnsmasq[0].rebind_protection="$DNS_REBIND"
+    fi
+
+    uci commit network
+    uci commit dhcp
+    [ $reload_fw -eq 1 ] && uci commit firewall && (/sbin/fw4 reload >/dev/null 2>&1) &
+    (/etc/init.d/dnsmasq restart >/dev/null 2>&1) &
+    echo '{"status": "ok", "message": "Network configuration applied successfully."}'
+    exit 0
+fi
+
+# DEFAULT: GET NETWORK CONFIG
+LAN_IP=$(uci -q get network.lan.ipaddr | cut -d' ' -f1)
+[ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+NETMASK=$(uci -q get network.lan.netmask || echo '255.255.255.0')
+GATEWAY=$(uci -q get network.lan.gateway || echo '')
+DNS_LIST=$(uci -q get network.lan.dns | tr '\n' ' ' | sed 's/ *$//')
+[ -z "$DNS_LIST" ] && DNS_LIST="1.1.1.1 8.8.8.8"
+DHCP_START=$(uci -q get dhcp.lan.start || echo '100')
+DHCP_LIMIT=$(uci -q get dhcp.lan.limit || echo '150')
+DHCP_LEASE=$(uci -q get dhcp.lan.leasetime || echo '12h')
+DHCP_IGN=$(uci -q get dhcp.lan.ignore || echo '0')
+MTU_VAL=$(uci -q get network.lan.mtu || echo '1500')
+
+# IPv6 status & settings
+DHCP_RA=$(uci -q get dhcp.lan.ra || echo 'disabled')
+DHCP_V6=$(uci -q get dhcp.lan.dhcpv6 || echo 'disabled')
+IPV6_EN=0
+[ "$DHCP_RA" = "server" ] && IPV6_EN=1
+IPV6_ULA=$(uci -q get network.globals.ula_prefix || echo 'fd00::/48')
+IPV6_WAN_MODE=$(uci -q get network.wan6.proto || echo 'auto')
+IPV6_PRIV=$(cat /proc/sys/net/ipv6/conf/all/use_tempaddr 2>/dev/null || echo '0')
+[ "$IPV6_PRIV" = "2" ] && IPV6_PRIV=1
+
+IPV6_LAN_ADDR=$(ip -6 -o addr show dev br-lan scope global 2>/dev/null | awk '{print $4}' | head -n 1)
+[ -z "$IPV6_LAN_ADDR" ] && IPV6_LAN_ADDR="fd00::1/60"
+IPV6_WAN_ADDR=$(ip -6 -o addr show dev usb0 scope global 2>/dev/null | awk '{print $4}' | head -n 1)
+[ -z "$IPV6_WAN_ADDR" ] && IPV6_WAN_ADDR="--"
+
+# Hardware acceleration & firewall tuning
+FLOW_OFF=$(uci -q get firewall.@defaults[0].flow_offloading || echo '1')
+FLOW_OFF_HW=$(uci -q get firewall.@defaults[0].flow_offloading_hw || echo '1')
+MSS_CLAMP=$(uci -q get firewall.@zone[1].mtu_fix || echo '1')
+DNS_REBIND=$(uci -q get dhcp.@dnsmasq[0].rebind_protection || echo '1')
+
+# Extract static leases
+LEASES_JSON=$(uci -q show dhcp | grep '=host$' | cut -d'=' -f1 | while read -r sec; do
+    h_name=$(uci -q get "$sec.name" || echo "Device")
+    h_mac=$(uci -q get "$sec.mac" || echo "")
+    h_ip=$(uci -q get "$sec.ip" || echo "")
+    [ -n "$h_mac" ] && printf "{\"name\":\"%s\",\"mac\":\"%s\",\"ip\":\"%s\"}\n" "$h_name" "$h_mac" "$h_ip"
+done | jq -s .)
+[ -z "$LEASES_JSON" ] || [ "$LEASES_JSON" = "null" ] && LEASES_JSON="[]"
+
+# WAN status & settings
+WAN_PROTO=$(uci -q get network.wan.proto || echo "dhcp")
+WAN_USER=$(uci -q get network.wan.username || echo "")
+WAN_SRV_VAL=$(uci -q get network.wan.service || echo "")
+WAN_MTU_VAL=$(uci -q get network.wan.mtu || echo "1500")
+WAN_CUST_MAC=$(uci -q get network.wan.macaddr || echo "")
+WAN_HW_MAC=$(cat /sys/class/net/wan/address 2>/dev/null || cat /sys/class/net/eth1/address 2>/dev/null || echo "ce:b2:bb:ae:4d:17")
+WAN_STATUS=$(ubus call network.interface.wan status 2>/dev/null || echo "{}")
+WAN_IP=$(echo "$WAN_STATUS" | jq -r '.["ipv4-address"][0].address // "--"' 2>/dev/null)
+[ -z "$WAN_IP" ] && WAN_IP="--"
+WAN_UP=$(echo "$WAN_STATUS" | jq -r '.up // false' 2>/dev/null)
+
+USB_WAN_IP=$(ip -4 -o addr show dev usb0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+[ -z "$USB_WAN_IP" ] && USB_WAN_IP="--"
+USB_WAN_MAC=$(cat /sys/class/net/usb0/address 2>/dev/null || echo "")
+USB_WAN_UP=$([ "$USB_WAN_IP" != "--" ] && echo true || echo false)
+
+DEV_HOST=$(uci -q get system.@system[0].hostname || cat /proc/sys/kernel/hostname 2>/dev/null || echo 'MAXNET')
+[ -z "$DEV_HOST" ] && DEV_HOST="MAXNET"
+HW_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo 'ca:e7:b7:34:8f:ac')
+CUST_MAC=$(uci -q get network.lan.macaddr || echo '')
+
+cat << JSON
+{
+  "hostname": "$DEV_HOST",
+  "custom_mac": "$CUST_MAC",
+  "hw_mac": "$HW_MAC",
+  "lan_ip": "$LAN_IP",
+  "netmask": "$NETMASK",
+  "gateway": "$GATEWAY",
+  "dns": "$DNS_LIST",
+  "dhcp_start": $DHCP_START,
+  "dhcp_limit": $DHCP_LIMIT,
+  "dhcp_leasetime": "$DHCP_LEASE",
+  "dhcp_ignore": $DHCP_IGN,
+  "mtu": "$MTU_VAL",
+  "ipv6_enabled": $IPV6_EN,
+  "ipv6_wan_mode": "$IPV6_WAN_MODE",
+  "ipv6_ra": $([ "$DHCP_RA" = "server" ] && echo 1 || echo 0),
+  "ipv6_dhcp6": $([ "$DHCP_V6" = "server" ] && echo 1 || echo 0),
+  "ipv6_ula": "$IPV6_ULA",
+  "ipv6_privacy": $IPV6_PRIV,
+  "ipv6_lan_addr": "$IPV6_LAN_ADDR",
+  "ipv6_wan_addr": "$IPV6_WAN_ADDR",
+  "flow_offloading": $FLOW_OFF,
+  "flow_offloading_hw": $FLOW_OFF_HW,
+  "mss_clamping": $MSS_CLAMP,
+  "dns_rebind": $DNS_REBIND,
+  "static_leases": $LEASES_JSON,
+  "wan": {
+    "proto": "$WAN_PROTO",
+    "ip": "$WAN_IP",
+    "up": $WAN_UP,
+    "mtu": "$WAN_MTU_VAL",
+    "username": "$WAN_USER",
+    "service": "$WAN_SRV_VAL",
+    "custom_mac": "$WAN_CUST_MAC",
+    "hw_mac": "$WAN_HW_MAC"
+  },
+  "interfaces": [
+    {
+      "id": "lan",
+      "name": "LAN Bridge",
+      "device": "br-lan",
+      "proto": "static",
+      "ip": "$LAN_IP",
+      "netmask": "$NETMASK",
+      "mac": "$HW_MAC",
+      "mtu": "$MTU_VAL",
+      "up": true
+    },
+    {
+      "id": "wan_usb",
+      "name": "USB WAN Uplink",
+      "device": "usb0",
+      "proto": "dhcp",
+      "ip": "$USB_WAN_IP",
+      "mac": "$USB_WAN_MAC",
+      "mtu": "1400",
+      "up": $USB_WAN_UP
+    },
+    {
+      "id": "wan",
+      "name": "Physical WAN",
+      "device": "wan",
+      "proto": "$WAN_PROTO",
+      "ip": "$WAN_IP",
+      "mac": "${WAN_CUST_MAC:-$WAN_HW_MAC}",
+      "custom_mac": "$WAN_CUST_MAC",
+      "hw_mac": "$WAN_HW_MAC",
+      "mtu": "$WAN_MTU_VAL",
+      "username": "$WAN_USER",
+      "up": $WAN_UP
+    },
+    {
+      "id": "wan6",
+      "name": "IPv6 WAN",
+      "device": "usb0",
+      "proto": "dhcpv6",
+      "ip6": "$IPV6_WAN_ADDR",
+      "up": true
+    }
+  ]
+}
+JSON

@@ -1,0 +1,11 @@
+#!/bin/sh
+export HOME=/root
+export ADB_MDNS_OPENSCREEN=0
+if [ -x /usr/bin/adb.real ]; then
+    exec /usr/bin/adb.real "$@"
+elif [ -x /usr/bin/adb.bin ]; then
+    exec /usr/bin/adb.bin "$@"
+else
+    # fallback to real binary if adb itself was replaced
+    exec /usr/libexec/adb "$@" 2>/dev/null || exit 127
+fi

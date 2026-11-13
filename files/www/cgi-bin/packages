@@ -1,0 +1,116 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+[ -z "$ACTION" ] && ACTION="list"
+
+PKG=$(echo "$QUERY_STRING" | sed -n 's/^.*pkg=\([^&]*\).*$/\1/p' | tr -cd 'a-zA-Z0-9._+-')
+[ -z "$PKG" ] && PKG=$(echo "$POST_DATA" | jq -r '.pkg // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9._+-')
+
+QUERY=$(echo "$QUERY_STRING" | sed -n 's/^.*query=\([^&]*\).*$/\1/p' | tr -cd 'a-zA-Z0-9._+-')
+[ -z "$QUERY" ] && QUERY=$(echo "$POST_DATA" | jq -r '.query // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9._+-')
+
+case "$ACTION" in
+  update)
+    OUT=$(apk update 2>&1)
+    RET=$?
+    OUT_JSON=$(echo "$OUT" | jq -Rs .)
+    if [ $RET -eq 0 ]; then
+      echo "{\"status\": \"ok\", \"message\": \"Package database updated successfully.\", \"output\": $OUT_JSON}"
+    else
+      echo "{\"status\": \"error\", \"message\": \"Failed to update package database.\", \"output\": $OUT_JSON}"
+    fi
+    exit 0
+    ;;
+
+  install)
+    if [ -z "$PKG" ]; then
+      echo '{"status": "error", "message": "No package specified."}'
+      exit 0
+    fi
+    OUT=$(apk add "$PKG" 2>&1)
+    RET=$?
+    OUT_JSON=$(echo "$OUT" | jq -Rs .)
+    if [ $RET -eq 0 ]; then
+      echo "{\"status\": \"ok\", \"message\": \"Package '$PKG' installed successfully.\", \"output\": $OUT_JSON}"
+    else
+      echo "{\"status\": \"error\", \"message\": \"Failed to install package '$PKG'.\", \"output\": $OUT_JSON}"
+    fi
+    exit 0
+    ;;
+
+  remove|uninstall)
+    if [ -z "$PKG" ]; then
+      echo '{"status": "error", "message": "No package specified."}'
+      exit 0
+    fi
+    OUT=$(apk del "$PKG" 2>&1)
+    RET=$?
+    OUT_JSON=$(echo "$OUT" | jq -Rs .)
+    if [ $RET -eq 0 ]; then
+      echo "{\"status\": \"ok\", \"message\": \"Package '$PKG' uninstalled successfully.\", \"output\": $OUT_JSON}"
+    else
+      echo "{\"status\": \"error\", \"message\": \"Failed to uninstall package '$PKG'.\", \"output\": $OUT_JSON}"
+    fi
+    exit 0
+    ;;
+
+  search)
+    PATTERN="${QUERY:-*}"
+    LIST_RAW=$(apk list "$PATTERN" 2>/dev/null | head -n 100)
+    ;;
+
+  list|*)
+    LIST_RAW=$(apk list --installed 2>/dev/null)
+    ;;
+esac
+
+# Parse list into structured JSON
+JSON_ITEMS=$(echo "$LIST_RAW" | awk '
+BEGIN { print "[" }
+NF >= 1 {
+    line = $0
+    name_ver = $1
+    sub(/^[[:space:]]+/, "", line)
+    
+    # Extract package name and version
+    # Format: name-version e.g. curl-8.23.0-r1 or hostapd-common-2026.08.07~831364bf-r6
+    match(name_ver, /-[0-9]/)
+    if (RSTART > 0) {
+        pkg_name = substr(name_ver, 1, RSTART - 1)
+        pkg_ver = substr(name_ver, RSTART + 1)
+    } else {
+        pkg_name = name_ver
+        pkg_ver = ""
+    }
+    
+    is_installed = (line ~ /\[installed\]/) ? "true" : "false"
+    
+    # Extract feed/section if present: {feeds/base/...}
+    feed = ""
+    if (match(line, /\{[^\}]+\}/)) {
+        feed = substr(line, RSTART + 1, RLENGTH - 2)
+    }
+
+    if (NR > 1) printf ",\n"
+    printf "{\"name\":\"%s\",\"version\":\"%s\",\"installed\":%s,\"feed\":\"%s\"}", pkg_name, pkg_ver, is_installed, feed
+}
+END { print "]" }
+')
+
+TOTAL_COUNT=$(echo "$LIST_RAW" | grep -c '^[a-zA-Z0-9]')
+
+cat << JSON
+{
+  "status": "ok",
+  "action": "$ACTION",
+  "total": $TOTAL_COUNT,
+  "packages": $JSON_ITEMS
+}
+JSON

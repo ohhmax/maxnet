@@ -1,0 +1,30 @@
+# OpenWrt build artifacts
+build_dir/
+dl/
+staging_dir/
+tmp/
+logs/
+/bin/
+raw_binaries/
+harvest/
+release_files/
+
+# Frontend dependencies and temporary build files
+frontend/node_modules/
+node_modules/
+.npm/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/

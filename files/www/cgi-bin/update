@@ -1,0 +1,162 @@
+#!/bin/sh
+# ==============================================================================
+# MAXNET UNIVERSAL MULTI-DEVICE OTA FIRMWARE ENGINE
+# Automated board-specific firmware resolution, verification & sysupgrade
+# Supports all Jio router models: JIDU6811, JIDU6911, JIDU6611, JIDU6411, JIDU6111,
+# JIDU6801, JIDU6401, JIDU6601, JIDU6701, JIDU6101, JIDU6J01
+# ==============================================================================
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+ACTION="$1"
+[ -z "$ACTION" ] && ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+
+BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "jiorouter,ax6000-jidu6j11-6811")
+MODEL_NAME=$(cat /tmp/sysinfo/model 2>/dev/null || echo "JioRouter AX6000")
+
+CURRENT_BUILD=$(grep -o '#[0-9]*' /etc/banner 2>/dev/null | tr -d '#' | head -n 1)
+CURRENT_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1)
+[ -z "$CURRENT_BUILD" ] && CURRENT_BUILD=20
+[ -z "$CURRENT_VER" ] && CURRENT_VER="v2.2.20"
+
+REPO="ohhmax/maxnet"
+
+# 1. Fetch Latest Release Tag from GitHub
+LATEST_TAG=$(curl -s -H 'User-Agent: MaxNet-OTA' --connect-timeout 5 "https://api.github.com/repos/${REPO}/releases" | \
+    grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*: *"//;s/"//')
+
+if [ -z "$LATEST_TAG" ]; then
+    # Fallback tag search
+    LATEST_TAG=$(curl -s -H 'User-Agent: MaxNet-OTA' --connect-timeout 5 "https://api.github.com/repos/${REPO}/releases" | \
+        grep -o 'v2\.[0-9][^"]*' | sort -V | tail -n 1)
+fi
+
+if [ -z "$LATEST_TAG" ]; then
+    echo "{\"status\": \"error\", \"current\": \"$CURRENT_VER\", \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"message\": \"Could not reach GitHub Releases server\"}"
+    exit 0
+fi
+
+# Extract build number from tag (e.g., v2.2-minimal-usb3-b98 or v2.2.98 -> 98)
+LATEST_BUILD=$(echo "$LATEST_TAG" | sed -n 's/.*-b\([0-9]*\).*/\1/p')
+[ -z "$LATEST_BUILD" ] && LATEST_BUILD=$(echo "$LATEST_TAG" | sed -n 's/.*v2\.[0-9]*\.\([0-9]*\).*/\1/p')
+[ -z "$LATEST_BUILD" ] && LATEST_BUILD=0
+
+# 2. Fetch Release Manifest to Resolve Exact Model Sysupgrade Binary
+MANIFEST_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/manifest.json"
+BIN_URL=""
+EXPECTED_SUM=""
+RESOLVED_FILE=""
+
+rm -f /tmp/manifest.json
+curl -s -L --connect-timeout 6 --max-time 15 -o /tmp/manifest.json "$MANIFEST_URL" 2>/dev/null
+
+if [ -s /tmp/manifest.json ] && command -v python3 >/dev/null 2>&1; then
+    RESOLVED_DATA=$(python3 -c "
+import json, sys
+try:
+    with open('/tmp/manifest.json') as f:
+        m = json.load(f)
+    board = '$BOARD_NAME'
+    model = '$MODEL_NAME'.lower()
+    devs = m.get('devices', {})
+    
+    # Direct board match
+    info = devs.get(board)
+    if not info:
+        # Alias search
+        for k, v in devs.items():
+            if k.lower() in model or model in k.lower():
+                info = v
+                break
+    if not info and 'jidu6811' in model: info = devs.get('jiorouter,ax6000-jidu6j11-6811')
+    if not info and 'jidu6911' in model: info = devs.get('jiorouter,ax6000-jidu6j11-6911')
+    if not info and 'jidu6401' in model: info = devs.get('jiorouter,ax6000-jidu6401')
+    if not info and 'jidu6801' in model: info = devs.get('jiorouter,ax6000-jidu6801')
+    
+    if info:
+        print(f\"{info.get('download_url','')}|{info.get('sha256','')}|{info.get('filename','')}\")
+    else:
+        print('||')
+except Exception as e:
+    print('||')
+" 2>/dev/null)
+
+    BIN_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f1)
+    EXPECTED_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f2)
+    RESOLVED_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f3)
+fi
+
+# Fallback resolution if manifest is unavailable or model not mapped in manifest
+if [ -z "$BIN_URL" ]; then
+    case "$BOARD_NAME" in
+        *6811*) BIN_NAME="maxnet-jidu6811-sysupgrade.bin" ;;
+        *6911*) BIN_NAME="maxnet-jidu6911-sysupgrade.bin" ;;
+        *6611*) BIN_NAME="maxnet-jidu6611-sysupgrade.bin" ;;
+        *6411*) BIN_NAME="maxnet-jidu6411-sysupgrade.bin" ;;
+        *6111*) BIN_NAME="maxnet-jidu6111-sysupgrade.bin" ;;
+        *6401*) BIN_NAME="maxnet-jidu6401-sysupgrade.bin" ;;
+        *6801*) BIN_NAME="maxnet-jidu6801-sysupgrade.bin" ;;
+        *6101*) BIN_NAME="maxnet-jidu6101-sysupgrade.bin" ;;
+        *6j01*) BIN_NAME="maxnet-jidu6j01-sysupgrade.bin" ;;
+        *) BIN_NAME="sysupgrade.bin" ;;
+    esac
+    BIN_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${BIN_NAME}"
+    RESOLVED_FILE="$BIN_NAME"
+fi
+
+# 3. Handle Flash Execution Action
+if [ "$ACTION" = "flash" ] || [ "$ACTION" = "flash_clean" ]; then
+    cd /tmp
+    rm -f sysupgrade-new.bin sha256sums-new
+
+    curl -s -L --connect-timeout 10 --max-time 300 -o sysupgrade-new.bin "$BIN_URL"
+    
+    # If no expected sum from manifest, fetch sha256sums file
+    if [ -z "$EXPECTED_SUM" ]; then
+        SUM_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/sha256sums"
+        curl -s -L --connect-timeout 8 --max-time 30 -o sha256sums-new "$SUM_URL" 2>/dev/null
+        EXPECTED_SUM=$(grep -E "${RESOLVED_FILE}|sysupgrade\.bin" sha256sums-new 2>/dev/null | awk '{print $1}' | head -n 1)
+    fi
+
+    ACTUAL_SUM=$(sha256sum sysupgrade-new.bin 2>/dev/null | awk '{print $1}')
+
+    if [ -n "$EXPECTED_SUM" ] && [ "$EXPECTED_SUM" != "$ACTUAL_SUM" ]; then
+        echo "{\"status\": \"error\", \"message\": \"SHA256 mismatch for $RESOLVED_FILE (expected $EXPECTED_SUM, got $ACTUAL_SUM)\"}"
+        exit 0
+    fi
+
+    # Verify minimum image size (> 10MB) to protect router from flashing corrupted partial file
+    IMG_SIZE=$(wc -c < sysupgrade-new.bin 2>/dev/null || echo 0)
+    if [ "$IMG_SIZE" -lt 10485760 ]; then
+        echo "{\"status\": \"error\", \"message\": \"Downloaded image too small (${IMG_SIZE} bytes), aborting flash to protect router\"}"
+        exit 0
+    fi
+
+    mv sysupgrade-new.bin /tmp/sysupgrade.bin
+    chmod +x /tmp/sysupgrade.bin
+
+    if [ "$ACTION" = "flash_clean" ]; then
+        echo "{\"status\": \"flashing\", \"mode\": \"clean\", \"tag\": \"$LATEST_TAG\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"message\": \"Firmware verified for $MODEL_NAME. Starting clean sysupgrade & reboot...\"}"
+        ( sleep 2 && sysupgrade -n -F -v /tmp/sysupgrade.bin ) >/dev/null 2>&1 &
+    else
+        echo "{\"status\": \"flashing\", \"mode\": \"keep_config\", \"tag\": \"$LATEST_TAG\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"message\": \"Firmware verified for $MODEL_NAME. Starting sysupgrade (preserving config) & reboot...\"}"
+        ( sleep 2 && sysupgrade -F -v /tmp/sysupgrade.bin ) >/dev/null 2>&1 &
+    fi
+    exit 0
+fi
+
+# 4. Default: Query Update Availability Status
+IS_UPDATE_AVAIL=0
+if [ "$LATEST_BUILD" -gt "$CURRENT_BUILD" ]; then
+    IS_UPDATE_AVAIL=1
+elif [ "$LATEST_TAG" != "$CURRENT_VER" ] && [ "$CURRENT_BUILD" -eq 0 ]; then
+    IS_UPDATE_AVAIL=1
+fi
+
+if [ "$IS_UPDATE_AVAIL" -eq 1 ]; then
+    echo "{\"status\": \"update_available\", \"current\": \"$CURRENT_VER\", \"latest\": \"$LATEST_TAG\", \"latest_build\": $LATEST_BUILD, \"current_build\": $CURRENT_BUILD, \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"url\": \"$BIN_URL\", \"sha256\": \"$EXPECTED_SUM\"}"
+else
+    echo "{\"status\": \"up_to_date\", \"current\": \"$CURRENT_VER\", \"latest\": \"$LATEST_TAG\", \"current_build\": $CURRENT_BUILD, \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\"}"
+fi

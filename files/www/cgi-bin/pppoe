@@ -1,0 +1,295 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+CONF_SERVER="/etc/pppoe-server.json"
+CHAP_SECRETS="/etc/ppp/chap-secrets"
+PAP_SECRETS="/etc/ppp/pap-secrets"
+OPTIONS_FILE="/etc/ppp/pppoe-server-options"
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+[ -z "$ACTION" ] && ACTION="get"
+
+# Ensure secrets files exist
+mkdir -p /etc/ppp
+[ ! -f "$CHAP_SECRETS" ] && touch "$CHAP_SECRETS" && chmod 600 "$CHAP_SECRETS"
+[ ! -f "$PAP_SECRETS" ] && touch "$PAP_SECRETS" && chmod 600 "$PAP_SECRETS"
+
+# Initialize default server config if missing
+if [ ! -f "$CONF_SERVER" ]; then
+    cat << 'EOF' > "$CONF_SERVER"
+{
+  "server_enabled": false,
+  "listen_iface": "br-lan",
+  "server_ip": "10.0.0.1",
+  "pool_start": "10.0.0.150",
+  "pool_end": "10.0.0.220",
+  "dns1": "10.0.0.1",
+  "dns2": "1.1.1.1",
+  "max_sessions": 32,
+  "service_name": "MAXNET"
+}
+EOF
+fi
+
+# ==================== ACTION: GET ====================
+if [ "$ACTION" = "get" ]; then
+    # Client settings from UCI
+    WAN_PROTO=$(uci get network.wan.proto 2>/dev/null || echo "dhcp")
+    WAN_USER=$(uci get network.wan.username 2>/dev/null || echo "")
+    WAN_PASS=$(uci get network.wan.password 2>/dev/null || echo "")
+    WAN_AC=$(uci get network.wan.ac 2>/dev/null || echo "")
+    WAN_SERVICE=$(uci get network.wan.service 2>/dev/null || echo "")
+    WAN_MAC=$(uci get network.wan.macaddr 2>/dev/null || echo "")
+    WAN_MTU=$(uci get network.wan.mtu 2>/dev/null || echo "1492")
+    WAN_DEV=$(uci get network.wan.device 2>/dev/null || echo "wan")
+
+    HAS_PASS=false
+    [ -n "$WAN_PASS" ] && HAS_PASS=true
+
+    IS_CLIENT_ENABLED=false
+    [ "$WAN_PROTO" = "pppoe" ] && IS_CLIENT_ENABLED=true
+
+    # Client live runtime telemetry
+    UBUS_STATUS=$(ubus call network.interface.wan status 2>/dev/null || echo "{}")
+    CLIENT_UP=$(echo "$UBUS_STATUS" | jq -r '.up // false' 2>/dev/null)
+    CLIENT_IP=$(echo "$UBUS_STATUS" | jq -r '.["ipv4-address"][0].address // empty' 2>/dev/null)
+    CLIENT_GW=$(echo "$UBUS_STATUS" | jq -r '.route[0].nexthop // empty' 2>/dev/null)
+    CLIENT_DNS=$(echo "$UBUS_STATUS" | jq -r '.["dns-server"] | join(", ")' 2>/dev/null)
+    CLIENT_UPTIME=$(echo "$UBUS_STATUS" | jq -r '.uptime // 0' 2>/dev/null)
+
+    # Server configuration
+    SRV_CONF=$(cat "$CONF_SERVER" 2>/dev/null || echo "{}")
+    SRV_RUNNING=false
+    pidof pppoe-server >/dev/null 2>&1 && SRV_RUNNING=true
+
+    # Active PPPoE sessions
+    ACTIVE_SESSIONS="[]"
+    SESS_LIST=""
+    for p in /sys/class/net/ppp*; do
+        [ -d "$p" ] || continue
+        ifname=$(basename "$p")
+        # Exclude wan pppoe-wan interface from server sessions
+        [ "$ifname" = "pppoe-wan" ] && continue
+        
+        pip=$(ip -4 addr show dev "$ifname" 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+        ppeer=$(ip -4 addr show dev "$ifname" 2>/dev/null | awk '/peer / {print $4}' | cut -d/ -f1)
+        [ -z "$ppeer" ] && ppeer=$(ip -4 addr show dev "$ifname" 2>/dev/null | awk '/inet / {print $4}')
+        
+        rx_b=$(cat "$p/statistics/rx_bytes" 2>/dev/null || echo 0)
+        tx_b=$(cat "$p/statistics/tx_bytes" 2>/dev/null || echo 0)
+
+        item=$(jq -n \
+            --arg iface "$ifname" \
+            --arg ip "${ppeer:-$pip}" \
+            --arg rx "$rx_b" \
+            --arg tx "$tx_b" \
+            '{interface: $iface, client_ip: $ip, rx_bytes: ($rx | tonumber), tx_bytes: ($tx | tonumber)}')
+
+        if [ -z "$SESS_LIST" ]; then
+            SESS_LIST="$item"
+        else
+            SESS_LIST="$SESS_LIST,$item"
+        fi
+    done
+    [ -n "$SESS_LIST" ] && ACTIVE_SESSIONS="[$SESS_LIST]"
+
+    # User secrets list (mask passwords)
+    USERS_LIST=""
+    while read -r u s p ip; do
+        # Ignore comments or empty lines
+        case "$u" in
+            \#*|"") continue ;;
+        esac
+        # Strip quotes
+        u_clean=$(echo "$u" | tr -d '"')
+        ip_clean=$(echo "$ip" | tr -d '"')
+        [ -z "$ip_clean" ] && ip_clean="*"
+        
+        u_item=$(jq -n --arg user "$u_clean" --arg ip "$ip_clean" '{user: $user, ip: $ip}')
+        if [ -z "$USERS_LIST" ]; then
+            USERS_LIST="$u_item"
+        else
+            USERS_LIST="$USERS_LIST,$u_item"
+        fi
+    done < "$CHAP_SECRETS"
+    USERS_JSON="[]"
+    [ -n "$USERS_LIST" ] && USERS_JSON="[$USERS_LIST]"
+
+    jq -n \
+        --arg status "ok" \
+        --argjson client_enabled "$IS_CLIENT_ENABLED" \
+        --arg wan_proto "$WAN_PROTO" \
+        --arg username "$WAN_USER" \
+        --argjson has_password "$HAS_PASS" \
+        --arg ac_name "$WAN_AC" \
+        --arg service_name "$WAN_SERVICE" \
+        --arg custom_mac "$WAN_MAC" \
+        --arg mtu "$WAN_MTU" \
+        --arg wan_dev "$WAN_DEV" \
+        --argjson client_connected "$CLIENT_UP" \
+        --arg client_ip "$CLIENT_IP" \
+        --arg client_gateway "$CLIENT_GW" \
+        --arg client_dns "$CLIENT_DNS" \
+        --arg client_uptime "$CLIENT_UPTIME" \
+        --argjson server_running "$SRV_RUNNING" \
+        --argjson server_config "$SRV_CONF" \
+        --argjson active_sessions "$ACTIVE_SESSIONS" \
+        --argjson users "$USERS_JSON" \
+        '{
+            status: $status,
+            client: {
+                enabled: $client_enabled,
+                proto: $wan_proto,
+                username: $username,
+                has_password: $has_password,
+                ac: $ac_name,
+                service: $service_name,
+                macaddr: $custom_mac,
+                mtu: $mtu,
+                device: $wan_dev,
+                connected: $client_connected,
+                ip: $client_ip,
+                gateway: $client_gateway,
+                dns: $client_dns,
+                uptime: $client_uptime
+            },
+            server: ($server_config + {
+                running: $server_running,
+                sessions: $active_sessions,
+                users: $users
+            })
+        }'
+    exit 0
+fi
+
+# ==================== ACTION: CLIENT_SET ====================
+if [ "$ACTION" = "client_set" ]; then
+    ENABLED=$(echo "$POST_DATA" | jq -r '.enabled // empty' 2>/dev/null)
+    USER_VAL=$(echo "$POST_DATA" | jq -r '.username // empty' 2>/dev/null)
+    PASS_VAL=$(echo "$POST_DATA" | jq -r '.password // empty' 2>/dev/null)
+    AC_VAL=$(echo "$POST_DATA" | jq -r '.ac // empty' 2>/dev/null)
+    SERV_VAL=$(echo "$POST_DATA" | jq -r '.service // empty' 2>/dev/null)
+    MAC_VAL=$(echo "$POST_DATA" | jq -r '.macaddr // empty' 2>/dev/null)
+    MTU_VAL=$(echo "$POST_DATA" | jq -r '.mtu // empty' 2>/dev/null)
+
+    if [ "$ENABLED" = "true" ]; then
+        uci set network.wan.proto='pppoe'
+        [ -n "$USER_VAL" ] && uci set network.wan.username="$USER_VAL"
+        [ -n "$PASS_VAL" ] && uci set network.wan.password="$PASS_VAL"
+        [ -n "$AC_VAL" ] && uci set network.wan.ac="$AC_VAL" || uci -q delete network.wan.ac
+        [ -n "$SERV_VAL" ] && uci set network.wan.service="$SERV_VAL" || uci -q delete network.wan.service
+        [ -n "$MTU_VAL" ] && uci set network.wan.mtu="$MTU_VAL" || uci set network.wan.mtu='1492'
+        
+        if [ -n "$MAC_VAL" ]; then
+            uci set network.wan.macaddr="$MAC_VAL"
+        else
+            uci -q delete network.wan.macaddr
+        fi
+        uci commit network
+        ifup wan
+        echo '{"status": "ok", "message": "PPPoE Client enabled and connecting..."}'
+    else
+        # Revert to standard DHCP client on WAN
+        uci set network.wan.proto='dhcp'
+        uci -q delete network.wan.username
+        uci -q delete network.wan.password
+        uci -q delete network.wan.ac
+        uci -q delete network.wan.service
+        uci commit network
+        ifup wan
+        echo '{"status": "ok", "message": "PPPoE Client disabled. WAN restored to DHCP."}'
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: SERVER_SET ====================
+if [ "$ACTION" = "server_set" ]; then
+    ENABLED=$(echo "$POST_DATA" | jq -r '.server_enabled // empty' 2>/dev/null)
+    IFACE=$(echo "$POST_DATA" | jq -r '.listen_iface // "br-lan"' 2>/dev/null)
+    L_IP=$(echo "$POST_DATA" | jq -r '.server_ip // "10.0.0.1"' 2>/dev/null)
+    P_START=$(echo "$POST_DATA" | jq -r '.pool_start // "10.0.0.150"' 2>/dev/null)
+    P_END=$(echo "$POST_DATA" | jq -r '.pool_end // "10.0.0.220"' 2>/dev/null)
+    DNS1=$(echo "$POST_DATA" | jq -r '.dns1 // "10.0.0.1"' 2>/dev/null)
+    DNS2=$(echo "$POST_DATA" | jq -r '.dns2 // "1.1.1.1"' 2>/dev/null)
+    MAX_SESS=$(echo "$POST_DATA" | jq -r '.max_sessions // 32' 2>/dev/null)
+    SERV_NAME=$(echo "$POST_DATA" | jq -r '.service_name // "MAXNET"' 2>/dev/null)
+
+    # Save to config file
+    echo "$POST_DATA" | jq '. + {"status":"ok"}' > "$CONF_SERVER" 2>/dev/null || echo "$POST_DATA" > "$CONF_SERVER"
+
+    # Write pppoe-server-options
+    cat << EOF > "$OPTIONS_FILE"
+# MAXNET High-Performance PPPoE Server Options
+auth
+require-chap
+login
+lcp-echo-interval 10
+lcp-echo-failure 3
+mru 1492
+mtu 1492
+ms-dns $DNS1
+ms-dns $DNS2
+netmask 255.255.255.0
+default-asyncmap
+proxyarp
+ktune
+EOF
+
+    # Stop any running instances
+    killall -9 pppoe-server >/dev/null 2>&1
+
+    if [ "$ENABLED" = "true" ]; then
+        # Launch pppoe-server in background
+        # -I iface -L local_ip -R pool_start -N max_sess -C ac_name -S service_name -k
+        pppoe-server -I "$IFACE" -L "$L_IP" -R "$P_START" -N "$MAX_SESS" -C "$SERV_NAME" -S "$SERV_NAME" -k >/dev/null 2>&1 &
+        echo '{"status": "ok", "message": "PPPoE Server started successfully."}'
+    else
+        echo '{"status": "ok", "message": "PPPoE Server stopped."}'
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: ADD_USER ====================
+if [ "$ACTION" = "add_user" ]; then
+    NEW_U=$(echo "$POST_DATA" | jq -r '.user // empty' 2>/dev/null)
+    NEW_P=$(echo "$POST_DATA" | jq -r '.pass // empty' 2>/dev/null)
+    NEW_IP=$(echo "$POST_DATA" | jq -r '.ip // "*"' 2>/dev/null)
+
+    if [ -z "$NEW_U" ] || [ -z "$NEW_P" ]; then
+        echo '{"status": "error", "message": "Username and password required"}'
+        exit 0
+    fi
+
+    # Remove existing entry if present
+    sed -i "/^\"$NEW_U\"/d; /^$NEW_U[[:space:]]/d" "$CHAP_SECRETS" 2>/dev/null
+    sed -i "/^\"$NEW_U\"/d; /^$NEW_U[[:space:]]/d" "$PAP_SECRETS" 2>/dev/null
+
+    # Add new entry: "username" * "password" ip
+    echo "\"$NEW_U\" * \"$NEW_P\" $NEW_IP" >> "$CHAP_SECRETS"
+    echo "\"$NEW_U\" * \"$NEW_P\" $NEW_IP" >> "$PAP_SECRETS"
+
+    echo '{"status": "ok", "message": "PPPoE user credentials registered successfully."}'
+    exit 0
+fi
+
+# ==================== ACTION: DEL_USER ====================
+if [ "$ACTION" = "del_user" ]; then
+    DEL_U=$(echo "$POST_DATA" | jq -r '.user // empty' 2>/dev/null)
+    if [ -n "$DEL_U" ]; then
+        sed -i "/^\"$DEL_U\"/d; /^$DEL_U[[:space:]]/d" "$CHAP_SECRETS" 2>/dev/null
+        sed -i "/^\"$DEL_U\"/d; /^$DEL_U[[:space:]]/d" "$PAP_SECRETS" 2>/dev/null
+        echo '{"status": "ok", "message": "PPPoE user removed."}'
+    else
+        echo '{"status": "error", "message": "No user specified"}'
+    fi
+    exit 0
+fi
+
+echo '{"status": "error", "message": "Unknown action"}'
+exit 0

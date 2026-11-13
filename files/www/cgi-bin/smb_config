@@ -1,0 +1,99 @@
+#!/bin/sh
+printf "Content-Type: application/json\r\n\r\n"
+
+SMB_USER=$(uci -q get samba4.pendrive.users || echo "max")
+SMB_IP="10.0.0.203"
+SMB_HOST="usb3-Disk-2-0.lan"
+
+# Check if pendrive is mounted
+MOUNTED=false
+FREE_SPACE="--"
+TOTAL_SPACE="--"
+DEV_NAME="--"
+if grep -qs "/mnt/pendrive" /proc/mounts; then
+    MOUNTED=true
+    DF_OUT=$(df -h /mnt/pendrive 2>/dev/null | tail -n1)
+    DEV_NAME=$(echo "$DF_OUT" | awk '{print $1}')
+    TOTAL_SPACE=$(echo "$DF_OUT" | awk '{print $2}')
+    FREE_SPACE=$(echo "$DF_OUT" | awk '{print $4}')
+fi
+
+RUNNING=false
+pgrep smbd >/dev/null && RUNNING=true
+
+if [ "$REQUEST_METHOD" = "POST" ]; then
+    read -r POST_DATA
+    ACTION=$(echo "$POST_DATA" | jq -r ".action // \"\"" 2>/dev/null)
+    NEW_USER=$(echo "$POST_DATA" | jq -r ".username // \"\"" 2>/dev/null | tr -cd "a-zA-Z0-9_-")
+    NEW_PASS=$(echo "$POST_DATA" | jq -r ".password // \"\"" 2>/dev/null)
+
+    if [ "$ACTION" = "toggle" ]; then
+        ENABLE_REQ=$(echo "$POST_DATA" | jq -r ".enable // empty" 2>/dev/null)
+        if [ "$ENABLE_REQ" = "true" ]; then
+            /etc/init.d/samba4 start >/dev/null 2>&1
+            /etc/init.d/samba4 enable >/dev/null 2>&1
+        elif [ "$ENABLE_REQ" = "false" ]; then
+            /etc/init.d/samba4 stop >/dev/null 2>&1
+            /etc/init.d/samba4 disable >/dev/null 2>&1
+        else
+            if pgrep smbd >/dev/null; then
+                /etc/init.d/samba4 stop >/dev/null 2>&1
+                /etc/init.d/samba4 disable >/dev/null 2>&1
+            else
+                /etc/init.d/samba4 start >/dev/null 2>&1
+                /etc/init.d/samba4 enable >/dev/null 2>&1
+            fi
+        fi
+        sleep 1
+        RUNNING=false
+        pgrep smbd >/dev/null && RUNNING=true
+        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state updated\"}" "$RUNNING"
+        exit 0
+    fi
+
+    if [ "$ACTION" = "set" ]; then
+        if [ -z "$NEW_USER" ] || [ -z "$NEW_PASS" ]; then
+            printf "{\"status\":\"error\",\"message\":\"Username and password cannot be empty\"}"
+            exit 0
+        fi
+
+        # Ensure user exists in /etc/passwd
+        if ! grep -q "^${NEW_USER}:" /etc/passwd; then
+            echo "${NEW_USER}:x:1000:1000:${NEW_USER}:/mnt/pendrive:/bin/false" >> /etc/passwd
+        fi
+
+        # Set Samba password
+        printf "%s\n%s\n" "$NEW_PASS" "$NEW_PASS" | smbpasswd -s -a "$NEW_USER" >/dev/null 2>&1
+
+        # Update UCI if changed
+        uci set samba4.pendrive.users="$NEW_USER"
+        uci commit samba4
+        /etc/init.d/samba4 restart >/dev/null 2>&1
+
+        printf "{\"status\":\"ok\",\"message\":\"SMB credentials updated successfully for user %s\"}" "$NEW_USER"
+        exit 0
+    fi
+fi
+
+# Support GET action=toggle
+if [ "$REQUEST_METHOD" = "GET" ]; then
+    QUERY_ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+    if [ "$QUERY_ACTION" = "toggle" ]; then
+        if pgrep smbd >/dev/null; then
+            /etc/init.d/samba4 stop >/dev/null 2>&1
+            /etc/init.d/samba4 disable >/dev/null 2>&1
+        else
+            /etc/init.d/samba4 start >/dev/null 2>&1
+            /etc/init.d/samba4 enable >/dev/null 2>&1
+        fi
+        sleep 1
+        RUNNING=false
+        pgrep smbd >/dev/null && RUNNING=true
+        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state toggled\"}" "$RUNNING"
+        exit 0
+    fi
+fi
+
+# Default response
+printf "{\"status\":\"ok\",\"username\":\"%s\",\"share_name\":\"Pendrive\",\"share_path\":\"/mnt/pendrive\",\"share_ip\":\"%s\",\"hostname\":\"%s\",\"mounted\":%s,\"smb_running\":%s,\"device\":\"%s\",\"total_space\":\"%s\",\"free_space\":\"%s\"}" \
+  "$SMB_USER" "$SMB_IP" "$SMB_HOST" "$MOUNTED" "$RUNNING" "$DEV_NAME" "$TOTAL_SPACE" "$FREE_SPACE"

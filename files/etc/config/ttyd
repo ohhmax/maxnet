@@ -1,0 +1,6 @@
+config ttyd
+	option command '/bin/login -f root'
+	option port '7681'
+	option index '/www/ttyd.html'
+	list client_option 'allowTransparency=true'
+	list client_option 'theme={"background": "transparent"}'

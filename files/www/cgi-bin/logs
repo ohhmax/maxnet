@@ -1,0 +1,41 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+TYPE=$(echo "$QUERY_STRING" | sed -n 's/^.*type=\([^&]*\).*$/\1/p')
+[ -z "$TYPE" ] && TYPE="system"
+
+FILTER=$(echo "$QUERY_STRING" | sed -n 's/^.*filter=\([^&]*\).*$/\1/p' | sed 's/%20/ /g' | tr -cd 'a-zA-Z0-9 ._-')
+
+LINES=$(echo "$QUERY_STRING" | sed -n 's/^.*lines=\([^&]*\).*$/\1/p' | tr -cd '0-9')
+[ -z "$LINES" ] && LINES=250
+[ "$LINES" -gt 1000 ] && LINES=1000
+
+if [ "$TYPE" = "kernel" ]; then
+    if [ -n "$FILTER" ]; then
+        RAW=$(dmesg 2>&1 | grep -i "$FILTER" | tail -n "$LINES")
+    else
+        RAW=$(dmesg 2>&1 | tail -n "$LINES")
+    fi
+else
+    if [ -n "$FILTER" ]; then
+        RAW=$(logread 2>&1 | grep -i "$FILTER" | tail -n "$LINES")
+    else
+        RAW=$(logread 2>&1 | tail -n "$LINES")
+    fi
+fi
+
+RAW_JSON=$(echo "$RAW" | jq -Rs .)
+LINE_COUNT=$(echo "$RAW" | grep -c '^')
+
+cat << JSON
+{
+  "status": "ok",
+  "type": "$TYPE",
+  "filter": "$FILTER",
+  "total_lines": $LINE_COUNT,
+  "raw": $RAW_JSON
+}
+JSON

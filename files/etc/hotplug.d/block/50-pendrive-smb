@@ -1,0 +1,68 @@
+#!/bin/sh
+# MAXNET Pendrive Hotplug Automounter for Samba4 with Auto-Filesystem Detection
+
+case "$ACTION" in
+    add)
+        DEVPATH="/dev/$DEVNAME"
+        [ -b "$DEVPATH" ] || exit 0
+        
+        # Avoid mounting internal flash partitions or loop devices
+        case "$DEVNAME" in
+            mtd*|ubi*|mmcblk*|loop*) exit 0 ;;
+        esac
+
+        # Ensure kernel modules are loaded
+        lsmod | grep -q usb_storage || insmod /lib/modules/6.18.60/usb-storage.ko 2>/dev/null
+        lsmod | grep -q fuse || insmod /lib/modules/6.18.60/fuse.ko 2>/dev/null
+
+        mkdir -p /mnt/pendrive
+
+        # Try mounting filesystem with filesystem-specific options
+        mounted=false
+        FSTYPE=$(blkid -s TYPE -o value "$DEVPATH" 2>/dev/null)
+
+        case "$FSTYPE" in
+            ntfs)
+                if [ -x /usr/bin/ntfs-3g ]; then
+                    /usr/bin/ntfs-3g "$DEVPATH" /mnt/pendrive -o rw,noatime,big_writes,allow_other,umask=000 2>/dev/null
+                    grep -qs "/mnt/pendrive" /proc/mounts && mounted=true
+                    if [ "$mounted" = "false" ]; then
+                        /usr/bin/ntfsfix -d "$DEVPATH" 2>/dev/null
+                        /usr/bin/ntfs-3g "$DEVPATH" /mnt/pendrive -o rw,noatime,big_writes,allow_other,umask=000 2>/dev/null
+                        grep -qs "/mnt/pendrive" /proc/mounts && mounted=true
+                    fi
+                fi
+                ;;
+            vfat|fat|msdos)
+                mount -t vfat -o rw,noatime,umask=000,iocharset=utf8 "$DEVPATH" /mnt/pendrive 2>/dev/null && mounted=true
+                ;;
+            exfat)
+                mount -t exfat -o rw,noatime,umask=000 "$DEVPATH" /mnt/pendrive 2>/dev/null && mounted=true
+                ;;
+            ext2|ext3|ext4)
+                mount -t ext4 -o rw,noatime "$DEVPATH" /mnt/pendrive 2>/dev/null && mounted=true
+                ;;
+            f2fs)
+                mount -t f2fs -o rw,noatime "$DEVPATH" /mnt/pendrive 2>/dev/null && mounted=true
+                ;;
+            *)
+                mount -o rw,noatime "$DEVPATH" /mnt/pendrive 2>/dev/null && mounted=true
+                ;;
+        esac
+
+        if grep -qs "/mnt/pendrive" /proc/mounts; then
+            chmod -R 0777 /mnt/pendrive 2>/dev/null
+            /etc/init.d/samba4 reload 2>/dev/null || /etc/init.d/samba4 restart 2>/dev/null
+            logger -t pendrive-smb "Mounted $DEVPATH ($FSTYPE) to /mnt/pendrive and refreshed Samba"
+        fi
+        ;;
+    remove)
+        case "$DEVNAME" in
+            mtd*|ubi*|mmcblk*|loop*) exit 0 ;;
+        esac
+        if ! [ -b "/dev/$DEVNAME" ]; then
+            umount -l /mnt/pendrive 2>/dev/null
+            logger -t pendrive-smb "Unmounted /mnt/pendrive ($DEVNAME removed)"
+        fi
+        ;;
+esac

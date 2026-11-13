@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadCertificateFileName</key>
+            <string>maxnet-root-ca.crt</string>
+            <key>PayloadContent</key>
+            <data>
+MIIDkzCCAnugAwIBAgIUHLt6O13sc+7tvQmJl+jnLxN5OpIwDQYJKoZIhvcNAQELBQAwWTELMAkGA1UEBhMCSU4xGDAWBgNVBAoMD01BWE5FVCBOZXR3b3JrczEXMBUGA1UECwwOTUFYTkVUIFJvb3QgQ0ExFzAVBgNVBAMMDk1BWE5FVCBSb290IENBMB4XDTI2MTExMTEwNTAzMFoXDTM2MTEwODEwNTAzMFowWTELMAkGA1UEBhMCSU4xGDAWBgNVBAoMD01BWE5FVCBOZXR3b3JrczEXMBUGA1UECwwOTUFYTkVUIFJvb3QgQ0ExFzAVBgNVBAMMDk1BWE5FVCBSb290IENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2Lj1ug0QAvNVbryaQp3d4RijI02STc6MJLZ9XT5UXy3etoBeFM9zEPQuS+MSPbocHJYW0oTOCYddnJ+XsQHr44O+fznQkVB7MtgxI5vN8ispFzFEChVDJSYZsmT7eVrTP8Mbz5dKAcoPQBrzVHWR61wx/Rxu2HpRXlmD5iGw8gS3qc1iscCGCZjd8sL2FtUetiabk0X8BSLJrKPqXQxeVW2+DxuIHrCXlvhfg+mm4ju3lpaDG0xaqFcXaZDnGSIpbRcByUqJe/+QazySEPSp3PPvkDoYsC9AJHMWh295ExDf5gAlExs3Jb7ZYU/EjV36e7B4CBatQDU3gH7FC5SUZQIDAQABo1MwUTAdBgNVHQ4EFgQU3CtBzQ8Ox0fhfrW1zFTCLBUqfx0wHwYDVR0jBBgwFoAU3CtBzQ8Ox0fhfrW1zFTCLBUqfx0wDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAILwmbAw+/2N9HbFeYw5jxnkGAOMAafwk92b71z+cNWBR6c/pblD3LbqQhfhL+s8Bb/2Z24mftTRPoQE4qw6nCdw93/rPWtNT5B2AnE9wdkHi5KAoGruk7EFbM/z7IgvZnTVvU/e1j/VrcOJCr/96fXi4M27G80IgR5Q3Euty1RMnAEwO8L2YJ6Uvm9XcnS/zvSDY8V+40fIzju3wrZQ6yGuJbMUhZmhfAIth3GuCOf+jN4QPblNrY/2z0MtLAw5PTInNsHOHTKq+IecqNArDpdRFo++mj5lMuiszpJX8W6jUKTfwfpUGZuUgl1UEHUD6b/QE4a4wDDGwjUH2GixC3g==
+            </data>
+            <key>PayloadDescription</key>
+            <string>Installs MAXNET Root CA for trusted HTTPS access to MAXNET Gateway</string>
+            <key>PayloadDisplayName</key>
+            <string>MAXNET Root CA</string>
+            <key>PayloadIdentifier</key>
+            <string>org.maxnet.rootca.cert</string>
+            <key>PayloadType</key>
+            <string>cops.x509</string>
+            <key>PayloadUUID</key>
+            <string>56E4231E-F328-4BC2-86FD-3D79124DE3F1</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>MAXNET Root CA Configuration Profile for Apple iOS and macOS</string>
+    <key>PayloadDisplayName</key>
+    <string>MAXNET Root CA Profile</string>
+    <key>PayloadIdentifier</key>
+    <string>org.maxnet.rootca.profile</string>
+    <key>PayloadOrganization</key>
+    <string>MAXNET Networks</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>A1F97904-749C-4CD8-87C2-113A32D65E8A</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>

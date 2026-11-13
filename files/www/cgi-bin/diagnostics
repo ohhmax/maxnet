@@ -1,0 +1,281 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+
+TOOL=$(echo "$QUERY_STRING" | sed -n 's/^.*tool=\([^&]*\).*$/\1/p')
+[ -z "$TOOL" ] && TOOL=$(echo "$POST_DATA" | jq -r '.tool // empty' 2>/dev/null)
+[ -z "$TOOL" ] && TOOL="ping"
+
+TARGET=$(echo "$QUERY_STRING" | sed -n 's/^.*target=\([^&]*\).*$/\1/p')
+[ -z "$TARGET" ] && TARGET=$(echo "$POST_DATA" | jq -r '.target // empty' 2>/dev/null)
+[ -z "$TARGET" ] && TARGET="1.1.1.1"
+
+# Sanitize target (domain, IPv4, IPv6)
+TARGET=$(echo "$TARGET" | tr -cd 'a-zA-Z0-9.:_-')
+[ -z "$TARGET" ] && TARGET="1.1.1.1"
+
+IPV6=$(echo "$QUERY_STRING" | sed -n 's/^.*ipv6=\([^&]*\).*$/\1/p')
+[ -z "$IPV6" ] && IPV6=$(echo "$POST_DATA" | jq -r '.ipv6 // false' 2>/dev/null)
+
+case "$TOOL" in
+  ping)
+    SIZE=$(echo "$QUERY_STRING" | sed -n 's/^.*size=\([^&]*\).*$/\1/p')
+    [ -z "$SIZE" ] && SIZE=$(echo "$POST_DATA" | jq -r '.size // 56' 2>/dev/null)
+    SIZE=$(echo "$SIZE" | tr -cd '0-9')
+    [ -z "$SIZE" ] && SIZE=56
+
+    SEQ_NUM=$(echo "$QUERY_STRING" | sed -n 's/^.*seq=\([^&]*\).*$/\1/p')
+    [ -z "$SEQ_NUM" ] && SEQ_NUM=$(echo "$POST_DATA" | jq -r '.seq // 1' 2>/dev/null)
+    SEQ_NUM=$(echo "$SEQ_NUM" | tr -cd '0-9')
+    [ -z "$SEQ_NUM" ] && SEQ_NUM=1
+
+    PING_BIN="ping"
+    [ "$IPV6" = "true" ] && PING_BIN="ping6"
+
+    OUT=$($PING_BIN -c 1 -W 2 -s "$SIZE" "$TARGET" 2>&1)
+    EXIT_CODE=$?
+
+    TIME=$(echo "$OUT" | awk -F'time=' '/time=/ {print $2}' | awk '{print $1}')
+    TTL=$(echo "$OUT" | awk -F'ttl=' '/ttl=/ {print $2}' | awk '{print $1}')
+    IP=$(echo "$OUT" | awk -F'from ' '/bytes from/ {print $2}' | awk -F'[: ]' '{print $1}')
+    [ -z "$IP" ] && IP="$TARGET"
+
+    if [ "$EXIT_CODE" -eq 0 ] && [ -n "$TIME" ]; then
+      SUCCESS=true
+    else
+      SUCCESS=false
+      TIME="0"
+      TTL="0"
+    fi
+
+    OUT_ESC=$(echo "$OUT" | jq -Rs .)
+    cat << JSON
+{
+  "status": "ok",
+  "tool": "ping",
+  "target": "$TARGET",
+  "seq": $SEQ_NUM,
+  "success": $SUCCESS,
+  "ip": "$IP",
+  "time_ms": ${TIME:-0},
+  "ttl": ${TTL:-0},
+  "bytes": ${SIZE:-56},
+  "raw": $OUT_ESC
+}
+JSON
+    ;;
+
+  route)
+    MAX_DELAY=$(echo "$QUERY_STRING" | sed -n 's/^.*max_delay=\([^&]*\).*$/\1/p')
+    [ -z "$MAX_DELAY" ] && MAX_DELAY=$(echo "$POST_DATA" | jq -r '.max_delay // "1.0"' 2>/dev/null)
+    MAX_DELAY_INT=$(echo "$MAX_DELAY" | awk '{print int($1)}')
+    [ "$MAX_DELAY_INT" -lt 1 ] 2>/dev/null && MAX_DELAY_INT=1
+
+    UDP=$(echo "$QUERY_STRING" | sed -n 's/^.*udp=\([^&]*\).*$/\1/p')
+    [ -z "$UDP" ] && UDP=$(echo "$POST_DATA" | jq -r '.udp // false' 2>/dev/null)
+
+    TR_BIN="traceroute"
+    [ "$IPV6" = "true" ] && TR_BIN="traceroute6"
+
+    MODE_FLAG="-I"
+    [ "$UDP" = "true" ] && MODE_FLAG=""
+
+    OUT=$($TR_BIN $MODE_FLAG -m 15 -w "$MAX_DELAY_INT" -q 1 "$TARGET" 2>&1)
+
+    HOPS_JSON=$(echo "$OUT" | awk '
+      NR > 1 {
+        hop = $1;
+        if ($2 == "*") {
+          printf "{\"hop\": %s, \"host\": \"*\", \"ip\": \"*\", \"time_ms\": \"*\"},", hop;
+        } else {
+          host = $2;
+          ip = $3;
+          gsub(/[()]/, "", ip);
+          time_ms = $4;
+          printf "{\"hop\": %s, \"host\": \"%s\", \"ip\": \"%s\", \"time_ms\": \"%s\"},", hop, host, ip, time_ms;
+        }
+      }
+    ' | sed 's/,$//')
+
+    OUT_ESC=$(echo "$OUT" | jq -Rs .)
+    echo "{\"status\": \"ok\", \"tool\": \"route\", \"target\": \"$TARGET\", \"hops\": [${HOPS_JSON}], \"raw\": $OUT_ESC}"
+    ;;
+
+  ports)
+    PORTS_ARG=$(echo "$QUERY_STRING" | sed -n 's/^.*ports=\([^&]*\).*$/\1/p')
+    [ -z "$PORTS_ARG" ] && PORTS_ARG=$(echo "$POST_DATA" | jq -r '.ports // empty' 2>/dev/null)
+    PORTS_ARG=$(echo "$PORTS_ARG" | tr -cd '0-9,')
+    [ -z "$PORTS_ARG" ] && PORTS_ARG="21,22,23,25,53,80,110,123,143,443,445,993,995,1723,3306,3389,7681,8080,8443"
+
+    NC_BIN="ncat"
+    [ "$IPV6" = "true" ] && NC_BIN="ncat -6"
+
+    RESULTS=""
+    for p in $(echo "$PORTS_ARG" | tr ',' ' '); do
+      [ -z "$p" ] && continue
+      svc="Custom"
+      case "$p" in
+        20) svc="FTP-Data" ;;
+        21) svc="FTP" ;;
+        22) svc="SSH" ;;
+        23) svc="Telnet" ;;
+        25) svc="SMTP" ;;
+        53) svc="DNS" ;;
+        67|68) svc="DHCP" ;;
+        69) svc="TFTP" ;;
+        80) svc="HTTP" ;;
+        110) svc="POP3" ;;
+        119) svc="NNTP" ;;
+        123) svc="NTP" ;;
+        135) svc="RPC" ;;
+        137|138|139) svc="NetBIOS" ;;
+        143) svc="IMAP" ;;
+        161|162) svc="SNMP" ;;
+        389) svc="LDAP" ;;
+        443) svc="HTTPS" ;;
+        445) svc="SMB" ;;
+        465) svc="SMTPS" ;;
+        514) svc="Syslog" ;;
+        587) svc="Submission" ;;
+        636) svc="LDAPS" ;;
+        873) svc="Rsync" ;;
+        993) svc="IMAPS" ;;
+        995) svc="POP3S" ;;
+        1080) svc="SOCKS" ;;
+        1194) svc="OpenVPN" ;;
+        1433) svc="MSSQL" ;;
+        1521) svc="Oracle" ;;
+        1723) svc="PPTP" ;;
+        1883) svc="MQTT" ;;
+        2049) svc="NFS" ;;
+        2082|2083) svc="cPanel" ;;
+        2086|2087) svc="WHM" ;;
+        2181) svc="Zookeeper" ;;
+        3000) svc="NodeJS" ;;
+        3128) svc="Squid" ;;
+        3306) svc="MySQL" ;;
+        3389) svc="RDP" ;;
+        4369) svc="Erlang" ;;
+        5000) svc="UPnP" ;;
+        5060) svc="SIP" ;;
+        5222) svc="XMPP" ;;
+        5432) svc="PostgreSQL" ;;
+        5672) svc="RabbitMQ" ;;
+        5900) svc="VNC" ;;
+        6379) svc="Redis" ;;
+        6443) svc="K8s API" ;;
+        6667) svc="IRC" ;;
+        7000|7001) svc="Cassandra" ;;
+        7681) svc="TTYD Terminal" ;;
+        8000|8008|8080|8081) svc="HTTP-Alt" ;;
+        8443) svc="HTTPS-Alt" ;;
+        8888) svc="Admin-Alt" ;;
+        9000) svc="Portainer" ;;
+        9090) svc="Prometheus" ;;
+        9092) svc="Kafka" ;;
+        9200) svc="Elastic" ;;
+        9418) svc="Git" ;;
+        9999|10000) svc="Webmin" ;;
+        27017|27018) svc="MongoDB" ;;
+        50000) svc="SAP" ;;
+        51820) svc="WireGuard" ;;
+      esac
+
+      if $NC_BIN -z -w 1 "$TARGET" "$p" >/dev/null 2>&1; then
+        st="open"
+      else
+        st="closed"
+      fi
+      RESULTS="${RESULTS}{\"port\": $p, \"service\": \"$svc\", \"status\": \"$st\"},"
+    done
+
+    RESULTS=$(echo "$RESULTS" | sed 's/,$//')
+    echo "{\"status\": \"ok\", \"tool\": \"ports\", \"target\": \"$TARGET\", \"ports\": [${RESULTS}]}"
+    ;;
+
+  whois)
+    SERVER=$(echo "$QUERY_STRING" | sed -n 's/^.*server=\([^&]*\).*$/\1/p')
+    [ -z "$SERVER" ] && SERVER=$(echo "$POST_DATA" | jq -r '.server // empty' 2>/dev/null)
+
+    WHOIS_CMD="/usr/bin/whois"
+    [ -n "$SERVER" ] && [ "$SERVER" != "auto" ] && WHOIS_CMD="/usr/bin/whois -h $SERVER"
+
+    OUT=$($WHOIS_CMD "$TARGET" 2>&1)
+
+    REGISTRAR=$(echo "$OUT" | grep -i "Registrar:" | head -n 1 | cut -d':' -f2- | sed 's/^[ \t]*//')
+    CREATION=$(echo "$OUT" | grep -i -E "Creation Date:|created:" | head -n 1 | cut -d':' -f2- | sed 's/^[ \t]*//')
+    EXPIRY=$(echo "$OUT" | grep -i -E "Registry Expiry Date:|paid-till:|Expiration Date:" | head -n 1 | cut -d':' -f2- | sed 's/^[ \t]*//')
+    NS=$(echo "$OUT" | grep -i -E "Name Server:|nserver:" | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//')
+
+    OUT_ESC=$(echo "$OUT" | jq -Rs .)
+    cat << JSON
+{
+  "status": "ok",
+  "tool": "whois",
+  "target": "$TARGET",
+  "registrar": "$REGISTRAR",
+  "creation_date": "$CREATION",
+  "expiry_date": "$EXPIRY",
+  "nameservers": "$NS",
+  "raw": $OUT_ESC
+}
+JSON
+    ;;
+
+  dns)
+    TYPE=$(echo "$QUERY_STRING" | sed -n 's/^.*type=\([^&]*\).*$/\1/p')
+    [ -z "$TYPE" ] && TYPE=$(echo "$POST_DATA" | jq -r '.type // "ALL"' 2>/dev/null)
+    [ -z "$TYPE" ] && TYPE="ALL"
+    TYPE=$(echo "$TYPE" | tr 'a-z' 'A-Z')
+
+    DNS_SERVER=$(echo "$QUERY_STRING" | sed -n 's/^.*server=\([^&]*\).*$/\1/p')
+    [ -z "$DNS_SERVER" ] && DNS_SERVER=$(echo "$POST_DATA" | jq -r '.server // empty' 2>/dev/null)
+
+    DNSSEC=$(echo "$QUERY_STRING" | sed -n 's/^.*dnssec=\([^&]*\).*$/\1/p')
+    [ -z "$DNSSEC" ] && DNSSEC=$(echo "$POST_DATA" | jq -r '.dnssec // false' 2>/dev/null)
+
+    ALL_SECTIONS=$(echo "$QUERY_STRING" | sed -n 's/^.*all_sections=\([^&]*\).*$/\1/p')
+    [ -z "$ALL_SECTIONS" ] && ALL_SECTIONS=$(echo "$POST_DATA" | jq -r '.all_sections // false' 2>/dev/null)
+
+    DIG_FLAGS=""
+    [ "$IPV6" = "true" ] && DIG_FLAGS="-6"
+    [ -n "$DNS_SERVER" ] && DIG_FLAGS="$DIG_FLAGS @$DNS_SERVER"
+    [ "$DNSSEC" = "true" ] && DIG_FLAGS="$DIG_FLAGS +dnssec"
+
+    if [ "$TYPE" = "ALL" ]; then
+      RAW_OUT=$(/usr/bin/dig $DIG_FLAGS "$TARGET" A "$TARGET" AAAA "$TARGET" MX "$TARGET" NS "$TARGET" TXT 2>&1)
+    else
+      RAW_OUT=$(/usr/bin/dig $DIG_FLAGS "$TARGET" "$TYPE" 2>&1)
+    fi
+
+    # Parse answer section
+    ANSWERS_JSON=$(echo "$RAW_OUT" | awk '
+      /;; ANSWER SECTION:/ { in_ans = 1; next }
+      /;; [A-Z]/ { in_ans = 0 }
+      in_ans && NF >= 5 && !/^;/ {
+        name = $1;
+        ttl = $2;
+        cls = $3;
+        type = $4;
+        val = "";
+        for (i=5; i<=NF; i++) val = val (i==5?"":" ") $i;
+        gsub(/^"/, "", val);
+        gsub(/"$/, "", val);
+        gsub(/\\/, "\\\\", val);
+        gsub(/"/, "\\\"", val);
+        printf "{\"name\": \"%s\", \"ttl\": \"%s\", \"type\": \"%s\", \"value\": \"%s\"},", name, ttl, type, val;
+      }
+    ' | sed 's/,$//')
+
+    OUT_ESC=$(echo "$RAW_OUT" | jq -Rs .)
+    echo "{\"status\": \"ok\", \"tool\": \"dns\", \"target\": \"$TARGET\", \"type\": \"$TYPE\", \"answers\": [${ANSWERS_JSON}], \"raw\": $OUT_ESC}"
+    ;;
+
+  *)
+    echo '{"status": "error", "message": "Unknown diagnostic tool"}'
+    ;;
+esac

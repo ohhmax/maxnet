@@ -1,0 +1,145 @@
+From: Max <max@maxnet.lan>
+Date: Wed, 4 Nov 2026 07:20:00 +0530
+Subject: [PATCH] net: usb: rndis_host: support SuperSpeed multi-packet aggregation with FLAG_MULTI_PACKET
+
+In SuperSpeed (5Gbps) USB 3.0 mode, modern Android devices aggregate multiple
+network frames per bulk IN transfer up to 32KB with trailing padding.
+
+With standard rndis_host, batched transfers cause trailing zero padding to be
+flagged as bad RNDIS messages or short frames (skb->len < ETH_HLEN), accumulating
+thousands of rx_errors and triggering EVENT_RX_KILL halts.
+
+Fix this by:
+1. Increasing rx_urb_size to 32KB for USB_SPEED_SUPER.
+2. Setting FLAG_MULTI_PACKET on rndis_info so usbnet manages the multi-packet lifecycle.
+3. In rndis_rx_fixup, deaggregating each sub-frame with netdev_alloc_skb_ip_align,
+   returning individual frames via usbnet_skb_return, and ignoring zero padding.
+4. Calling usbnet_set_skb_tx_stats in rndis_tx_fixup as required for FLAG_MULTI_PACKET.
+
+Signed-off-by: Max <max@maxnet.lan>
+---
+--- a/drivers/net/usb/rndis_host.c
++++ b/drivers/net/usb/rndis_host.c
+@@ -345,6 +345,12 @@
+ 
+ 	dev->rx_urb_size = dev->hard_mtu + (dev->maxpacket + 1);
+ 	dev->rx_urb_size &= ~(dev->maxpacket - 1);
++
++	/* SuperSpeed devices require larger RX URBs for packet aggregation */
++	if (dev->udev->speed >= USB_SPEED_SUPER)
++		dev->rx_urb_size = max_t(size_t, dev->rx_urb_size, 32 * 1024);
++	else
++		dev->rx_urb_size = max_t(size_t, dev->rx_urb_size, 16 * 1024);
+ 	u.init->max_transfer_size = cpu_to_le32(dev->rx_urb_size);
+ 
+ 	net->netdev_ops = &rndis_netdev_ops;
+@@ -496,14 +502,10 @@
+ {
+ 	bool dst_mac_fixup;
+ 
+-	/* This check is no longer done by usbnet */
+-	if (skb->len < dev->net->hard_header_len)
+-		return 0;
+-
+ 	dst_mac_fixup = !!(dev->driver_info->data & RNDIS_DRIVER_DATA_DST_MAC_FIXUP);
+ 
+ 	/* peripheral may have batched packets to us... */
+-	while (likely(skb->len)) {
++	while (likely(skb->len >= sizeof(struct rndis_data_hdr))) {
+ 		struct rndis_data_hdr	*hdr = (void *)skb->data;
+ 		struct sk_buff		*skb2;
+ 		u32			msg_type, msg_len, data_offset, data_len;
+@@ -514,42 +516,31 @@
+ 		data_offset = le32_to_cpu(hdr->data_offset);
+ 		data_len = le32_to_cpu(hdr->data_len);
+ 
+-		/* don't choke if we see oob, per-packet data, etc */
++		/* Stop on zero padding at the tail of an aggregated buffer */
++		if (msg_type == 0 || msg_len == 0)
++			break;
++
++		/* Malformed packet or corrupted buffer */
+ 		if (unlikely(msg_type != RNDIS_MSG_PACKET || skb->len < msg_len
+ 				|| (data_offset + data_len + 8) > msg_len
+ 				|| check_add_overflow(data_offset, data_len, &overflow_check)
+ 				|| check_add_overflow(overflow_check, 8, &overflow_check))) {
+-			dev->net->stats.rx_frame_errors++;
+-			netdev_dbg(dev->net, "bad rndis message %d/%d/%d/%d, len %d\n",
+-				   le32_to_cpu(hdr->msg_type),
+-				   msg_len, data_offset, data_len, skb->len);
+-			return 0;
+-		}
+-		skb_pull(skb, 8 + data_offset);
+-
+-		/* at most one packet left? */
+-		if (likely((data_len - skb->len) <= sizeof *hdr)) {
+-			skb_trim(skb, data_len);
+ 			break;
+ 		}
+ 
+-		/* try to return all the packets in the batch */
+-		skb2 = skb_clone(skb, GFP_ATOMIC);
+-		if (unlikely(!skb2))
+-			break;
+-		skb_pull(skb, msg_len - sizeof *hdr);
+-		skb_trim(skb2, data_len);
+-
+-		if (unlikely(dst_mac_fixup))
+-			usbnet_cdc_zte_rx_fixup(dev, skb2);
++		if (likely(data_len >= ETH_HLEN)) {
++			skb2 = netdev_alloc_skb_ip_align(dev->net, data_len);
++			if (likely(skb2)) {
++				skb_put_data(skb2, skb->data + 8 + data_offset, data_len);
++				if (unlikely(dst_mac_fixup))
++					usbnet_cdc_zte_rx_fixup(dev, skb2);
++				usbnet_skb_return(dev, skb2);
++			}
++		}
+ 
+-		usbnet_skb_return(dev, skb2);
++		skb_pull(skb, msg_len);
+ 	}
+ 
+-	/* caller will usbnet_skb_return the remaining packet */
+-	if (unlikely(dst_mac_fixup))
+-		usbnet_cdc_zte_rx_fixup(dev, skb);
+-
+ 	return 1;
+ }
+ EXPORT_SYMBOL_GPL(rndis_rx_fixup);
+@@ -596,6 +587,8 @@
+ 	hdr->data_offset = cpu_to_le32(sizeof(*hdr) - 8);
+ 	hdr->data_len = cpu_to_le32(len);
+ 
++	usbnet_set_skb_tx_stats(skb, 1, 0);
++
+ 	/* FIXME make the last packet always be short ... */
+ 	return skb;
+ }
+@@ -604,7 +597,7 @@
+ 
+ static const struct driver_info	rndis_info = {
+ 	.description =	"RNDIS device",
+-	.flags =	FLAG_ETHER | FLAG_POINTTOPOINT | FLAG_FRAMING_RN | FLAG_NO_SETINT,
++	.flags =	FLAG_ETHER | FLAG_POINTTOPOINT | FLAG_FRAMING_RN | FLAG_NO_SETINT | FLAG_MULTI_PACKET,
+ 	.bind =		rndis_bind,
+ 	.unbind =	rndis_unbind,
+ 	.status =	rndis_status,
+@@ -614,7 +607,7 @@
+ 
+ static const struct driver_info	rndis_poll_status_info = {
+ 	.description =	"RNDIS device (poll status before control)",
+-	.flags =	FLAG_ETHER | FLAG_POINTTOPOINT | FLAG_FRAMING_RN | FLAG_NO_SETINT,
++	.flags =	FLAG_ETHER | FLAG_POINTTOPOINT | FLAG_FRAMING_RN | FLAG_NO_SETINT | FLAG_MULTI_PACKET,
+ 	.data =		RNDIS_DRIVER_DATA_POLL_STATUS,
+ 	.bind =		rndis_bind,
+ 	.unbind =	rndis_unbind,
+@@ -625,7 +618,7 @@
+ 
+ static const struct driver_info	zte_rndis_info = {
+ 	.description =	"ZTE RNDIS device",
+-	.flags =	FLAG_ETHER | FLAG_POINTTOPOINT | FLAG_FRAMING_RN | FLAG_NO_SETINT,
++	.flags =	FLAG_ETHER | FLAG_POINTTOPOINT | FLAG_FRAMING_RN | FLAG_NO_SETINT | FLAG_MULTI_PACKET,
+ 	.data =		RNDIS_DRIVER_DATA_DST_MAC_FIXUP,
+ 	.bind =		zte_rndis_bind,
+ 	.unbind =	rndis_unbind,

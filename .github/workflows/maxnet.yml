@@ -1,0 +1,227 @@
+name: MaxNet Universal Router Firmware Engine
+
+on:
+  push:
+    branches:
+      - Max
+      - main
+      - usb-lan-adb
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '*.md'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target Architecture to build (all, qualcommbe, or mediatek)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - qualcommbe
+          - mediatek
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Generate Semantic Version
+    runs-on: ubuntu-22.04
+    outputs:
+      semver: ${{ steps.versioning.outputs.semver }}
+      tag_name: ${{ steps.versioning.outputs.tag_name }}
+    steps:
+      - name: Calculate Semantic Version
+        id: versioning
+        run: |
+          CDATE=$(date +'%Y.%m.%d')
+          RUN_NUM="${{ github.run_number }}"
+          BRANCH="${{ github.ref_name }}"
+          if [ "$BRANCH" = "usb-lan-adb" ]; then
+            SEM_VER="v2.2-minimal-usb3-b${RUN_NUM}"
+            TAG_NAME="v2.2-minimal-usb3-b${RUN_NUM}"
+          else
+            SEM_VER="v2.2.${RUN_NUM}"
+            TAG_NAME="v2.2.${RUN_NUM}-b${RUN_NUM}"
+          fi
+          echo "semver=${SEM_VER}" >> $GITHUB_OUTPUT
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: version
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == matrix.target
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: qualcommbe
+            subtarget: ipq95xx
+            name: "Qualcomm IPQ95xx (JIDU6811/6911/6611/6411/6111)"
+            device_script: "add_device.py"
+            mk_file: "target/linux/qualcommbe/image/ipq95xx.mk"
+            bindir: "bin/targets/qualcommbe/ipq95xx"
+          - target: mediatek
+            subtarget: filogic
+            name: "MediaTek Filogic (JIDU6801/6401/6601/6701/6101/6j01)"
+            device_script: "add_device_mediatek.py"
+            mk_file: "target/linux/mediatek/image/filogic.mk"
+            bindir: "bin/targets/mediatek/filogic"
+    steps:
+      - name: Checkout Custom Repository
+        uses: actions/checkout@v4
+        with:
+          path: custom
+
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+
+      - name: Setup Node.js & Compile Production Frontend
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build Vite Frontend
+        run: |
+          cd custom/frontend
+          npm ci || npm install
+          npm run build
+          # Synchronize compiled dist/ to files/www/
+          cp -a ../files/www/dist/. ../files/www/
+          chmod -R 0755 ../files/www/cgi-bin
+          chmod 0755 ../files/www/cgi-bin/*
+
+      - name: Clone OpenWrt Master Tree
+        run: |
+          rm -rf openwrt
+          git clone --depth 1 https://github.com/openwrt/openwrt.git openwrt
+          cp -r custom/files openwrt/
+
+      - name: Apply Hardware Device Trees & Overlays
+        run: |
+          if [ "${{ matrix.target }}" = "qualcommbe" ]; then
+            mkdir -p openwrt/target/linux/qualcommbe/dts/qcom/
+            cp -r custom/target/linux/qualcommbe/* openwrt/target/linux/qualcommbe/
+            # Force strip debug symbols in target config-6.18
+            sed -i 's/CONFIG_DEBUG_INFO=y/# CONFIG_DEBUG_INFO is not set\nCONFIG_DEBUG_INFO_NONE=y/g' openwrt/target/linux/qualcommbe/config-6.18 2>/dev/null || true
+            sed -i 's/CONFIG_DEBUG_BUGVERBOSE=y/# CONFIG_DEBUG_BUGVERBOSE is not set/g' openwrt/target/linux/qualcommbe/config-6.18 2>/dev/null || true
+            sed -i 's/CONFIG_LOCK_DEBUGGING_SUPPORT=y/# CONFIG_LOCK_DEBUGGING_SUPPORT is not set/g' openwrt/target/linux/qualcommbe/config-6.18 2>/dev/null || true
+            sed -i 's/CONFIG_ARM64_PTR_AUTH=y/# CONFIG_ARM64_PTR_AUTH is not set/g' openwrt/target/linux/qualcommbe/config-6.18 2>/dev/null || true
+            sed -i 's/CONFIG_ARM64_PTR_AUTH_KERNEL=y/# CONFIG_ARM64_PTR_AUTH_KERNEL is not set/g' openwrt/target/linux/qualcommbe/config-6.18 2>/dev/null || true
+            sed -i 's/CONFIG_ARM64_GCS=y/# CONFIG_ARM64_GCS is not set/g' openwrt/target/linux/qualcommbe/config-6.18 2>/dev/null || true
+            sed -i 's/CONFIG_ARM64_SVE=y/# CONFIG_ARM64_SVE is not set/g' openwrt/target/linux/qualcommbe/config-6.18 2>/dev/null || true
+          elif [ "${{ matrix.target }}" = "mediatek" ]; then
+            mkdir -p openwrt/target/linux/mediatek/dts/
+            cp -r custom/target/linux/mediatek/dts/* openwrt/target/linux/mediatek/dts/
+          fi
+
+      - name: Register Device Profiles
+        run: |
+          python3 "custom/.github/scripts/${{ matrix.device_script }}" "openwrt/${{ matrix.mk_file }}"
+
+      - name: Configure Feeds and Kconfig
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          rm -rf tmp
+          
+          # Populate release version and build timestamp in banner
+          NOW=$(date -u "+%Y-%m-%d %H:%M UTC")
+          sed -i "s/VERSION_PLACEHOLDER/${{ needs.version.outputs.semver }}/g" files/etc/banner package/base-files/files/etc/banner 2>/dev/null || true
+          sed -i "s/#BUILD_NUM_PLACEHOLDER/#${{ github.run_number }}/g" files/etc/banner package/base-files/files/etc/banner 2>/dev/null || true
+          sed -i "s/BUILD_TIMESTAMP_PLACEHOLDER/${NOW}/g" files/etc/banner package/base-files/files/etc/banner 2>/dev/null || true
+          
+          python3 ../custom/.github/scripts/write_config.py .config --target "${{ matrix.target }}"
+          make defconfig
+          python3 ../custom/.github/scripts/write_config.py .config --target "${{ matrix.target }}"
+          make defconfig
+
+      - name: Download Sources
+        run: |
+          cd openwrt
+          make download -j$(nproc)
+
+      - name: Compile Firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Harvest Binaries
+        run: |
+          mkdir -p custom/harvest/${{ matrix.target }}
+          BINDIR="openwrt/${{ matrix.bindir }}"
+          cp -r "$BINDIR"/* custom/harvest/${{ matrix.target }}/ 2>/dev/null || true
+          ls -la custom/harvest/${{ matrix.target }}/
+
+      - name: Upload Architecture Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.target }}
+          path: custom/harvest/${{ matrix.target }}/
+
+  release:
+    name: Generate Manifest & Publish Universal Release
+    needs: [version, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Custom Repository
+        uses: actions/checkout@v4
+        with:
+          path: custom
+
+      - name: Download Qualcomm Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-qualcommbe
+          path: custom/raw_binaries/qualcommbe
+        continue-on-error: true
+
+      - name: Download MediaTek Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-mediatek
+          path: custom/raw_binaries/mediatek
+        continue-on-error: true
+
+      - name: Generate Universal Manifest & Standard Binaries
+        run: |
+          python3 custom/.github/scripts/generate_release_manifest.py \
+            "custom/raw_binaries/qualcommbe,custom/raw_binaries/mediatek" \
+            custom/release_files \
+            "${{ needs.version.outputs.tag_name }}"
+          ls -lh custom/release_files/
+
+      - name: Publish Universal Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.version.outputs.tag_name }}
+          RELEASE_TITLE: ${{ needs.version.outputs.semver }}
+        run: |
+          gh release create "$TAG_NAME" custom/release_files/* \
+            --repo "${{ github.repository }}" \
+            --title "$RELEASE_TITLE" \
+            --notes "### Universal MAXNET OpenWrt Firmware for JioRouter Gateway Series
+            
+            Multi-Architecture Production Release supporting all Qualcomm and MediaTek Jio AirFiber IDU routers.
+            
+            #### Supported Hardware Models & Canonical Sysupgrade Files
+            - **JIDU6811 / JIDU6J11-6811**: \`maxnet-jidu6811-sysupgrade.bin\` (Qualcomm IPQ9574)
+            - **JIDU6911 / JIDU6J11-6911**: \`maxnet-jidu6911-sysupgrade.bin\` (Qualcomm IPQ9574)
+            - **JIDU6611 / JIDU6J11-6611**: \`maxnet-jidu6611-sysupgrade.bin\` (Qualcomm IPQ9574)
+            - **JIDU6411 / JIDU6J11-6411**: \`maxnet-jidu6411-sysupgrade.bin\` (Qualcomm IPQ9574)
+            - **JIDU6111 / JIDU6J11-6111**: \`maxnet-jidu6111-sysupgrade.bin\` (Qualcomm IPQ9574)
+            - **JIDU6801**: \`maxnet-jidu6801-sysupgrade.bin\` (MediaTek MT7986A Filogic 830)
+            - **JIDU6401**: \`maxnet-jidu6401-sysupgrade.bin\` (MediaTek MT7986A Filogic 830)
+            - **JIDU6601 / JIDU6701 / JIDU6201 / JIDU6J01**: \`maxnet-jidu6j01-sysupgrade.bin\` (MediaTek MT7986A)
+            - **JIDU6101**: \`maxnet-jidu6101-sysupgrade.bin\` (MediaTek MT7986A)
+            
+            #### Automated OTA Verification
+            Each binary is cataloged in \`manifest.json\` with cryptographic SHA256 integrity verification.
+            Routers running MAXNET automatically detect their model and download the exact corresponding sysupgrade image."

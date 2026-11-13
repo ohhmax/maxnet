@@ -1,0 +1,838 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | sed -n 's/.*"action"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+[ -z "$ACTION" ] && ACTION="telemetry"
+
+CMD_ARG=$(echo "$QUERY_STRING" | sed -n 's/^.*cmd=\([^&]*\).*$/\1/p')
+[ -z "$CMD_ARG" ] && CMD_ARG=$(echo "$POST_DATA" | sed -n 's/.*"cmd"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+
+export HOME=/root
+ADB_ATTACHED=$(adb devices 2>/dev/null | awk '$2=="device"{print $1}')
+TETHER_SERIAL=$(cat /sys/class/net/usb0/device/../serial 2>/dev/null)
+TETHER_IP=$(ip -4 addr show dev usb0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+
+# ==================== ACTION: SECURITY (GET / SET) ====================
+if [ "$ACTION" = "security" ] || [ "$ACTION" = "security_get" ]; then
+    SEC_FILE="/etc/maxnet_security.json"
+    if [ ! -f "$SEC_FILE" ]; then
+        DROPBEAR_EN=$(uci get dropbear.main.enable 2>/dev/null || echo 1)
+        [ "$DROPBEAR_EN" = "1" ] && SSH_DEFAULT=true || SSH_DEFAULT=false
+        SYN_EN=$(uci get firewall.@defaults[0].syn_flood 2>/dev/null || echo 1)
+        [ "$SYN_EN" = "1" ] && SYN_DEFAULT=true || SYN_DEFAULT=false
+
+        cat << EOF > "$SEC_FILE"
+{
+  "status": "ok",
+  "ssh_enable": ${SSH_DEFAULT},
+  "session_timeout": true,
+  "syn_flood": ${SYN_DEFAULT},
+  "wan_ping_drop": false,
+  "brute_force": true,
+  "force_https": false
+}
+EOF
+    fi
+    cat "$SEC_FILE"
+    exit 0
+fi
+
+if [ "$ACTION" = "security_set" ]; then
+    SEC_FILE="/etc/maxnet_security.json"
+    SSH_EN=$(echo "$POST_DATA" | jq -r '.ssh_enable // empty' 2>/dev/null)
+    SESS_TO=$(echo "$POST_DATA" | jq -r '.session_timeout // empty' 2>/dev/null)
+    SYN_FL=$(echo "$POST_DATA" | jq -r '.syn_flood // empty' 2>/dev/null)
+    WAN_PING=$(echo "$POST_DATA" | jq -r '.wan_ping_drop // empty' 2>/dev/null)
+    BRUTE_F=$(echo "$POST_DATA" | jq -r '.brute_force // empty' 2>/dev/null)
+    HTTPS_EN=$(echo "$POST_DATA" | jq -r '.force_https // empty' 2>/dev/null)
+
+    if [ -n "$SSH_EN" ]; then
+        if [ "$SSH_EN" = "true" ]; then
+            uci set dropbear.main.enable=1 2>/dev/null
+            uci commit dropbear 2>/dev/null
+            /etc/init.d/dropbear restart >/dev/null 2>&1
+        else
+            uci set dropbear.main.enable=0 2>/dev/null
+            uci commit dropbear 2>/dev/null
+            /etc/init.d/dropbear stop >/dev/null 2>&1
+        fi
+    fi
+
+    if [ -n "$SYN_FL" ]; then
+        [ "$SYN_FL" = "true" ] && uci set firewall.@defaults[0].syn_flood=1 2>/dev/null || uci set firewall.@defaults[0].syn_flood=0 2>/dev/null
+        uci commit firewall 2>/dev/null
+        /etc/init.d/firewall reload >/dev/null 2>&1
+    fi
+
+    if [ -n "$WAN_PING" ]; then
+        PING_RULE_IDX=$(uci show firewall | grep 'Allow-Ping' | cut -d. -f2 2>/dev/null | head -n1)
+        if [ -n "$PING_RULE_IDX" ]; then
+            [ "$WAN_PING" = "true" ] && uci set "firewall.${PING_RULE_IDX}.target=DROP" 2>/dev/null || uci set "firewall.${PING_RULE_IDX}.target=ACCEPT" 2>/dev/null
+            uci commit firewall 2>/dev/null
+            /etc/init.d/firewall reload >/dev/null 2>&1
+        fi
+    fi
+
+    if [ -n "$BRUTE_F" ]; then
+        if [ "$BRUTE_F" = "true" ]; then
+            if ! uci show firewall | grep -q 'Anti-Bruteforce-SSH'; then
+                uci add firewall rule >/dev/null
+                uci set firewall.@rule[-1].name='Anti-Bruteforce-SSH'
+                uci set firewall.@rule[-1].src='lan'
+                uci set firewall.@rule[-1].proto='tcp'
+                uci set firewall.@rule[-1].dest_port='22'
+                uci set firewall.@rule[-1].limit='5/minute'
+                uci set firewall.@rule[-1].limit_burst='10'
+                uci set firewall.@rule[-1].target='ACCEPT'
+                uci commit firewall
+                /etc/init.d/firewall reload >/dev/null 2>&1
+            fi
+        else
+            BF_IDX=$(uci show firewall | grep 'Anti-Bruteforce-SSH' | cut -d. -f2 2>/dev/null | head -n1)
+            if [ -n "$BF_IDX" ]; then
+                uci delete "firewall.${BF_IDX}" 2>/dev/null
+                uci commit firewall
+                /etc/init.d/firewall reload >/dev/null 2>&1
+            fi
+        fi
+    fi
+
+    if [ -n "$HTTPS_EN" ]; then
+        if [ "$HTTPS_EN" = "true" ]; then
+            uci -q delete uhttpd.main.listen_https
+            uci add_list uhttpd.main.listen_https='0.0.0.0:443'
+            uci add_list uhttpd.main.listen_https='[::]:443'
+            uci set uhttpd.main.redirect_https=0
+            uci commit uhttpd
+            /etc/init.d/uhttpd restart >/dev/null 2>&1
+        else
+            uci -q delete uhttpd.main.listen_https
+            uci set uhttpd.main.redirect_https=0
+            uci commit uhttpd
+            /etc/init.d/uhttpd restart >/dev/null 2>&1
+        fi
+    fi
+
+    echo "$POST_DATA" | jq '. + {"status": "ok"}' > "$SEC_FILE" 2>/dev/null || echo "$POST_DATA" > "$SEC_FILE"
+    echo '{"status": "ok", "message": "Security policy saved and applied."}'
+    exit 0
+fi
+
+# ==================== ACTION: DUFS (GET / SET) ====================
+if [ "$ACTION" = "dufs_get" ]; then
+    CONF_FILE="/etc/dufs.json"
+    if [ ! -f "$CONF_FILE" ]; then
+        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"","has_auth":false}'
+    else
+        cat "$CONF_FILE"
+    fi
+    exit 0
+fi
+
+if [ "$ACTION" = "dufs_set" ]; then
+    CONF_FILE="/etc/dufs.json"
+    if [ ! -f "$CONF_FILE" ]; then
+        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"","has_auth":false}' > "$CONF_FILE"
+    fi
+
+    # Merge incoming JSON over existing configuration
+    MERGED=$(echo "$POST_DATA" | jq -s '.[0] * .[1] + {"status":"ok"}' "$CONF_FILE" - 2>/dev/null)
+    if [ -n "$MERGED" ]; then
+        echo "$MERGED" > "$CONF_FILE"
+    fi
+
+    # Update has_auth flag if user and pass exist
+    U_CHECK=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
+    P_CHECK=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
+    if [ -n "$U_CHECK" ] && [ -n "$P_CHECK" ]; then
+        jq '. + {"has_auth": true}' "$CONF_FILE" > "$CONF_FILE.tmp" && mv "$CONF_FILE.tmp" "$CONF_FILE"
+    else
+        jq '. + {"has_auth": false}' "$CONF_FILE" > "$CONF_FILE.tmp" && mv "$CONF_FILE.tmp" "$CONF_FILE"
+    fi
+
+    ENABLED=$(jq -r '.enabled // false' "$CONF_FILE" 2>/dev/null)
+    if [ "$ENABLED" = "true" ]; then
+        /etc/init.d/dufs enable >/dev/null 2>&1
+        /etc/init.d/dufs restart >/dev/null 2>&1
+    else
+        /etc/init.d/dufs stop >/dev/null 2>&1
+        /etc/init.d/dufs disable >/dev/null 2>&1
+    fi
+    echo '{"status":"ok","message":"Dufs configuration updated successfully."}'
+    exit 0
+fi
+
+# ==================== ACTION: DEVICES (LIST ALL CONNECTED DEVICES) ====================
+if [ "$ACTION" = "devices" ]; then
+    DEVS_LIST=""
+    COUNT=0
+    for d in /sys/bus/usb/devices/*; do
+        [ -f "$d/speed" ] || continue
+        bname=$(basename "$d")
+        case "$bname" in usb*|*:*) continue ;; esac
+        cls=$(cat "$d/bDeviceClass" 2>/dev/null)
+        [ "$cls" = "09" ] && continue
+
+        ser=$(cat "$d/serial" 2>/dev/null || echo "")
+        prod=$(cat "$d/product" 2>/dev/null || echo "USB Device")
+        mfg=$(cat "$d/manufacturer" 2>/dev/null || echo "")
+        spd=$(cat "$d/speed" 2>/dev/null || echo 0)
+        if echo "$bname" | grep -q '\.'; then
+            port=$(echo "$bname" | awk -F. '{print $NF}' | tr -cd '0-9')
+        elif echo "$bname" | grep -q '-'; then
+            port=$(echo "$bname" | awk -F- '{print $NF}' | tr -cd '0-9')
+        else
+            port=1
+        fi
+        [ -z "$port" ] && port=1
+
+        adb_ok=false
+        [ -n "$ser" ] && echo "$ADB_ATTACHED" | grep -q "$ser" && adb_ok=true
+
+        is_wan=false
+        [ -n "$ser" ] && [ "$ser" = "$TETHER_SERIAL" ] && is_wan=true
+
+        friendly_model="$prod"
+        if [ "$ser" = "RZCW6090G4J" ]; then
+            friendly_model="Samsung Galaxy S21 FE 5G"
+        elif [ "$ser" = "4e1c1cf" ]; then
+            friendly_model="OPPO A37"
+        fi
+
+        batt_pct=""
+        if [ "$adb_ok" = "true" ]; then
+            batt_pct=$(adb -s "$ser" shell 'dumpsys battery 2>/dev/null | awk "/level:/ {print \$2; exit}"' 2>/dev/null | tr -cd '0-9')
+        fi
+        [ -z "$batt_pct" ] && batt_json="null" || batt_json="$batt_pct"
+
+        item=$(printf '{"serial":"%s","model":"%s","raw_model":"%s","manufacturer":"%s","speed_mbps":%d,"port":%d,"adb_enabled":%s,"is_wan":%s,"battery_pct":%s}' \
+            "$ser" "$friendly_model" "$prod" "$mfg" "$spd" "$port" "$adb_ok" "$is_wan" "$batt_json")
+        [ $COUNT -gt 0 ] && DEVS_LIST="$DEVS_LIST,"
+        DEVS_LIST="$DEVS_LIST$item"
+        COUNT=$((COUNT + 1))
+    done
+    echo "{\"status\": \"ok\", \"devices\": [$DEVS_LIST]}"
+    exit 0
+fi
+
+REQ_DEV=$(echo "$QUERY_STRING" | sed -n 's/^.*serial=\([^&]*\).*$/\1/p')
+[ -z "$REQ_DEV" ] && REQ_DEV=$(echo "$POST_DATA" | sed -n 's/.*"serial"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+
+# If request specified serial, match it; else prefer active WAN phone, then first ADB device
+if [ -n "$REQ_DEV" ]; then
+    TARGET_SERIAL="$REQ_DEV"
+elif [ -n "$TETHER_SERIAL" ]; then
+    TARGET_SERIAL="$TETHER_SERIAL"
+else
+    TARGET_SERIAL=$(echo "$ADB_ATTACHED" | head -n 1)
+fi
+
+# Check whether target device has ADB enabled
+TARGET_HAS_ADB=false
+[ -n "$TARGET_SERIAL" ] && echo "$ADB_ATTACHED" | grep -q "$TARGET_SERIAL" && TARGET_HAS_ADB=true
+
+# ==================== ADB CONTROL ACTIONS (REQUIRE ADB) ====================
+if [ "$ACTION" = "reboot" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    adb -s "$TARGET_SERIAL" reboot 2>&1
+    echo '{"status": "ok", "message": "Device reboot triggered"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "wake" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    adb -s "$TARGET_SERIAL" shell 'input keyevent 224' 2>&1
+    echo '{"status": "ok", "message": "Display wake signal sent"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "sleep" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    adb -s "$TARGET_SERIAL" shell 'input keyevent 223' 2>&1
+    echo '{"status": "ok", "message": "Display sleep signal sent"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "lock" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    adb -s "$TARGET_SERIAL" shell 'input keyevent 26' 2>&1
+    echo '{"status": "ok", "message": "Power/Lock button triggered"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "torch" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    if [ "$CMD_ARG" = "on" ]; then
+        adb -s "$TARGET_SERIAL" shell 'am broadcast -a com.sec.android.action.TORCH_ON 2>/dev/null || cmd statusbar click-tile Flashlight' >/dev/null 2>&1
+        MSG="Flashlight turned ON"
+    elif [ "$CMD_ARG" = "off" ]; then
+        adb -s "$TARGET_SERIAL" shell 'am broadcast -a com.sec.android.action.TORCH_OFF 2>/dev/null || cmd statusbar click-tile Flashlight' >/dev/null 2>&1
+        MSG="Flashlight turned OFF"
+    else
+        adb -s "$TARGET_SERIAL" shell 'cmd statusbar click-tile Flashlight' >/dev/null 2>&1
+        MSG="Flashlight toggled"
+    fi
+    echo "{\"status\": \"ok\", \"message\": \"$MSG\"}"
+    exit 0
+fi
+
+if [ "$ACTION" = "volume" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    if [ "$CMD_ARG" = "up" ]; then
+        adb -s "$TARGET_SERIAL" shell 'cmd audio adj-volume 3 RAISE' >/dev/null 2>&1
+        MSG="Volume raised"
+    elif [ "$CMD_ARG" = "down" ]; then
+        adb -s "$TARGET_SERIAL" shell 'cmd audio adj-volume 3 LOWER' >/dev/null 2>&1
+        MSG="Volume lowered"
+    elif [ "$CMD_ARG" = "silent" ]; then
+        adb -s "$TARGET_SERIAL" shell 'cmd audio set-ringer-mode SILENT' >/dev/null 2>&1
+        MSG="Ringer set to SILENT"
+    elif [ "$CMD_ARG" = "vibrate" ]; then
+        adb -s "$TARGET_SERIAL" shell 'cmd audio set-ringer-mode VIBRATE' >/dev/null 2>&1
+        MSG="Ringer set to VIBRATE"
+    else
+        adb -s "$TARGET_SERIAL" shell 'cmd audio set-ringer-mode NORMAL' >/dev/null 2>&1
+        MSG="Ringer set to NORMAL"
+    fi
+    echo "{\"status\": \"ok\", \"message\": \"$MSG\"}"
+    exit 0
+fi
+
+if [ "$ACTION" = "settings_tether" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    adb -s "$TARGET_SERIAL" shell 'am start -n com.android.settings/.TetherSettings' >/dev/null 2>&1
+    echo '{"status": "ok", "message": "Tethering settings opened on phone"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "ping" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    OUT=$(adb -s "$TARGET_SERIAL" shell 'ping -c 3 -W 2 8.8.8.8' 2>&1)
+    OUT_JSON=$(echo "$OUT" | jq -Rs .)
+    echo "{\"status\": \"ok\", \"output\": $OUT_JSON}"
+    exit 0
+fi
+
+if [ "$ACTION" = "airplane" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    adb -s "$TARGET_SERIAL" shell 'cmd connectivity airplane-mode enable 2>/dev/null || settings put global airplane_mode_on 1'
+    sleep 2
+    adb -s "$TARGET_SERIAL" shell 'cmd connectivity airplane-mode disable 2>/dev/null || settings put global airplane_mode_on 0'
+    echo '{"status": "ok", "message": "Cellular radio cycled"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "sms" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    SMS_JSON=$(adb -s "$TARGET_SERIAL" shell 'content query --uri content://sms --projection _id:address:date:type:body' 2>/dev/null | head -n 100 | awk '
+    BEGIN { print "["; first=1 }
+    /^Row:/ {
+      line = $0;
+      sub(/^Row: [0-9]* /, "", line);
+      id = ""; addr = ""; dt = ""; type = ""; body = "";
+      if (match(line, /_id=[^,]+/)) id = substr(line, RSTART+4, RLENGTH-4);
+      if (match(line, /address=[^,]+/)) addr = substr(line, RSTART+8, RLENGTH-8);
+      if (match(line, /date=[^,]+/)) dt = substr(line, RSTART+5, RLENGTH-5);
+      if (match(line, /type=[^,]+/)) type = substr(line, RSTART+5, RLENGTH-5);
+      pos = index(line, "body=");
+      if (pos > 0) body = substr(line, pos + 5);
+      gsub(/\\/, "\\\\", body);
+      gsub(/\"/, "\\\"", body);
+      gsub(/\r/, "", body);
+      gsub(/\n/, "\\n", body);
+      gsub(/\"/, "\\\"", addr);
+      if (!first) print ",";
+      first=0;
+      printf "{\"id\":\"%s\",\"address\":\"%s\",\"date\":\"%s\",\"type\":\"%s\",\"body\":\"%s\"}", id, addr, dt, type, body;
+    }
+    END { print "\n]" }
+    ')
+    [ -z "$SMS_JSON" ] && SMS_JSON="[]"
+    echo "{\"status\": \"ok\", \"serial\": \"$TARGET_SERIAL\", \"messages\": $SMS_JSON}"
+    exit 0
+fi
+
+if [ "$ACTION" = "call_logs" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    CALLS_JSON=$(adb -s "$TARGET_SERIAL" shell 'content query --uri content://call_log/calls --projection _id:number:name:date:duration:type' 2>/dev/null | head -n 100 | awk '
+    BEGIN { print "["; first=1 }
+    /^Row:/ {
+      line = $0;
+      sub(/^Row: [0-9]* /, "", line);
+      id = ""; num = ""; name = ""; dt = ""; dur = ""; type = "";
+      if (match(line, /_id=[^,]+/)) id = substr(line, RSTART+4, RLENGTH-4);
+      if (match(line, /number=[^,]+/)) num = substr(line, RSTART+7, RLENGTH-7);
+      if (match(line, /name=[^,]+/)) name = substr(line, RSTART+5, RLENGTH-5);
+      if (match(line, /date=[^,]+/)) dt = substr(line, RSTART+5, RLENGTH-5);
+      if (match(line, /duration=[^,]+/)) dur = substr(line, RSTART+9, RLENGTH-9);
+      if (match(line, /type=[^,]+/)) type = substr(line, RSTART+5, RLENGTH-5);
+      gsub(/\\/, "\\\\", name);
+      gsub(/\"/, "\\\"", name);
+      gsub(/\\/, "\\\\", num);
+      gsub(/\"/, "\\\"", num);
+      if (!first) print ",";
+      first=0;
+      printf "{\"id\":\"%s\",\"number\":\"%s\",\"name\":\"%s\",\"date\":\"%s\",\"duration\":\"%s\",\"type\":\"%s\"}", id, num, name, dt, dur, type;
+    }
+    END { print "\n]" }
+    ')
+    [ -z "$CALLS_JSON" ] && CALLS_JSON="[]"
+    echo "{\"status\": \"ok\", \"serial\": \"$TARGET_SERIAL\", \"call_logs\": $CALLS_JSON}"
+    exit 0
+fi
+
+if [ "$ACTION" = "contacts" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    CONTACTS_JSON=$(adb -s "$TARGET_SERIAL" shell 'content query --uri content://contacts/phones --projection _id:display_name:number:type' 2>/dev/null | head -n 150 | awk '
+    BEGIN { print "["; first=1 }
+    /^Row:/ {
+      line = $0;
+      sub(/^Row: [0-9]* /, "", line);
+      id = ""; name = ""; num = ""; type = "";
+      if (match(line, /_id=[^,]+/)) id = substr(line, RSTART+4, RLENGTH-4);
+      if (match(line, /display_name=[^,]+/)) name = substr(line, RSTART+13, RLENGTH-13);
+      if (match(line, /number=[^,]+/)) num = substr(line, RSTART+7, RLENGTH-7);
+      if (match(line, /type=[^,]+/)) type = substr(line, RSTART+5, RLENGTH-5);
+      gsub(/\\/, "\\\\", name);
+      gsub(/\"/, "\\\"", name);
+      gsub(/\\/, "\\\\", num);
+      gsub(/\"/, "\\\"", num);
+      if (!first) print ",";
+      first=0;
+      printf "{\"id\":\"%s\",\"name\":\"%s\",\"number\":\"%s\",\"type\":\"%s\"}", id, name, num, type;
+    }
+    END { print "\n]" }
+    ')
+    [ -z "$CONTACTS_JSON" ] && CONTACTS_JSON="[]"
+    echo "{\"status\": \"ok\", \"serial\": \"$TARGET_SERIAL\", \"contacts\": $CONTACTS_JSON}"
+    exit 0
+fi
+
+if [ "$ACTION" = "screenshot" ]; then
+    if [ "$TARGET_HAS_ADB" != "true" ]; then
+        echo '{"status": "error", "message": "ADB not available for this device"}'
+        exit 0
+    fi
+    adb -s "$TARGET_SERIAL" shell 'screencap -p /sdcard/screen_cap.png' >/dev/null 2>&1
+    adb -s "$TARGET_SERIAL" pull /sdcard/screen_cap.png /tmp/screen_cap.png >/dev/null 2>&1
+    adb -s "$TARGET_SERIAL" shell 'rm -f /sdcard/screen_cap.png' >/dev/null 2>&1
+    if [ -f /tmp/screen_cap.png ]; then
+        B64=$(base64 -w 0 /tmp/screen_cap.png 2>/dev/null || base64 /tmp/screen_cap.png | tr -d '\r\n')
+        rm -f /tmp/screen_cap.png
+        echo "{\"status\": \"ok\", \"serial\": \"$TARGET_SERIAL\", \"image_base64\": \"data:image/png;base64,$B64\"}"
+    else
+        echo '{"status": "error", "message": "Failed to capture screenshot"}'
+    fi
+    exit 0
+fi
+
+# ==================== TELEMETRY HANDLER ====================
+# Case 1: Device connected via USB, but ADB is DISABLED (or offline)
+if [ "$TARGET_HAS_ADB" != "true" ]; then
+    SYSFS_DEV=""
+    for d in /sys/bus/usb/devices/*; do
+        [ -f "$d/serial" ] || continue
+        s=$(cat "$d/serial" 2>/dev/null)
+        if [ "$s" = "$TARGET_SERIAL" ]; then
+            SYSFS_DEV="$d"
+            break
+        fi
+    done
+
+    if [ -n "$SYSFS_DEV" ]; then
+        P_MODEL=$(cat "$SYSFS_DEV/product" 2>/dev/null || echo "USB Device")
+        P_BRAND=$(cat "$SYSFS_DEV/manufacturer" 2>/dev/null || echo "Generic")
+        SPD=$(cat "$SYSFS_DEV/speed" 2>/dev/null || echo 0)
+        dev_b=$(basename "$SYSFS_DEV")
+        if echo "$dev_b" | grep -q '\.'; then
+            PORT=$(echo "$dev_b" | awk -F. '{print $NF}' | tr -cd '0-9')
+        elif echo "$dev_b" | grep -q '-'; then
+            PORT=$(echo "$dev_b" | awk -F- '{print $NF}' | tr -cd '0-9')
+        else
+            PORT=1
+        fi
+        [ -z "$PORT" ] && PORT=1
+
+        STD="USB 2.0"
+        [ "$SPD" -ge 5000 ] && STD="USB 3.0"
+        [ "$SPD" -le 12 ] && STD="USB 1.1"
+
+        IS_WAN=false
+        [ "$TARGET_SERIAL" = "$TETHER_SERIAL" ] && IS_WAN=true
+
+        cat << JSON
+{
+  "status": "ok",
+  "connected": true,
+  "adb_enabled": false,
+  "device_id": "${TARGET_SERIAL}",
+  "model": "${P_MODEL}",
+  "brand": "${P_BRAND}",
+  "soc": "--",
+  "android_version": "--",
+  "security_patch": "--",
+  "battery_level": null,
+  "battery_temp": null,
+  "battery_charging": false,
+  "battery_status": "--",
+  "battery_health": "--",
+  "has_sim": false,
+  "identity": {
+    "model": "${P_MODEL}",
+    "brand": "${P_BRAND}",
+    "soc": "--",
+    "android": "--",
+    "security_patch": "--",
+    "serial": "${TARGET_SERIAL}"
+  },
+  "usb": {
+    "speed_mbps": ${SPD},
+    "standard": "${STD}",
+    "port": ${PORT},
+    "is_wan": ${IS_WAN},
+    "interface": "$([ "$IS_WAN" = "true" ] && echo "usb0" || echo "")",
+    "ip": "$([ "$IS_WAN" = "true" ] && echo "$TETHER_IP" || echo "")"
+  },
+  "battery": null,
+  "thermals": null,
+  "memory": null,
+  "storage": null,
+  "radio": null,
+  "screen_state": "--",
+  "uptime": "--",
+  "message": "ADB Debugging is not enabled on this device"
+}
+JSON
+        exit 0
+    else
+        echo '{"status": "error", "message": "No USB or ADB device found", "connected": false}'
+        exit 0
+    fi
+fi
+
+# Case 2: Device connected and ADB is ACTIVE
+RAW=$(adb -s "$TARGET_SERIAL" shell '
+echo "===PROPS==="
+getprop ro.product.model
+getprop ro.product.brand
+soc=$(getprop ro.soc.model 2>/dev/null); [ -z "$soc" ] && soc=$(getprop ro.board.platform 2>/dev/null); echo "$soc"
+getprop ro.build.version.release
+getprop ro.build.version.security_patch
+echo "===BATTERY==="
+dumpsys battery 2>/dev/null | head -n 22
+echo "===THERMAL==="
+dumpsys thermalservice 2>/dev/null | grep -E "mName=(AP|PATHM|BAT|USB|SKIN)"
+echo "===MEM==="
+head -n 5 /proc/meminfo 2>/dev/null
+echo "===STORAGE==="
+df -h /data 2>/dev/null | tail -n 1
+echo "===POWER==="
+dumpsys power 2>/dev/null | grep -m 1 "mWakefulness="
+echo "===UPTIME==="
+cat /proc/uptime 2>/dev/null
+echo "===RADIO==="
+dumpsys telephony.registry 2>/dev/null | grep -m 1 "mSignalStrength="
+dumpsys telephony.registry 2>/dev/null | grep -m 1 "CellIdentity"
+' 2>/dev/null)
+
+P_MODEL=$(echo "$RAW" | sed -n '/===PROPS===/{n;p;}' | tr -d '\r\n')
+P_BRAND=$(echo "$RAW" | sed -n '/===PROPS===/{n;n;p;}' | tr -d '\r\n')
+P_SOC=$(echo "$RAW" | sed -n '/===PROPS===/{n;n;n;p;}' | tr -d '\r\n')
+P_ANDROID=$(echo "$RAW" | sed -n '/===PROPS===/{n;n;n;n;p;}' | tr -d '\r\n')
+P_SEC=$(echo "$RAW" | sed -n '/===PROPS===/{n;n;n;n;n;p;}' | tr -d '\r\n')
+
+[ -z "$P_MODEL" ] && P_MODEL="Android Device"
+[ -z "$P_BRAND" ] && P_BRAND="Android"
+[ -z "$P_SOC" ] && P_SOC="--"
+[ -z "$P_ANDROID" ] && P_ANDROID="--"
+[ -z "$P_SEC" ] && P_SEC="--"
+
+DISPLAY_MODEL="$P_MODEL"
+if [ "$TARGET_SERIAL" = "RZCW6090G4J" ] || [ "$P_MODEL" = "SM-G990B2" ]; then
+    DISPLAY_MODEL="Samsung Galaxy S21 FE 5G"
+elif [ "$TARGET_SERIAL" = "4e1c1cf" ] || [ "$P_MODEL" = "A37f" ]; then
+    DISPLAY_MODEL="OPPO A37"
+fi
+
+SOC_NAME="$P_SOC"
+case "$P_SOC" in
+    SM8350|lahaina) SOC_NAME="Snapdragon 888 5G ($P_SOC)" ;;
+    SM8450|taro) SOC_NAME="Snapdragon 8 Gen 1 ($P_SOC)" ;;
+    SM8475|cape) SOC_NAME="Snapdragon 8+ Gen 1 ($P_SOC)" ;;
+    SM8550|kalama) SOC_NAME="Snapdragon 8 Gen 2 ($P_SOC)" ;;
+    SM8650|pineapple) SOC_NAME="Snapdragon 8 Gen 3 ($P_SOC)" ;;
+    SM8750|sun) SOC_NAME="Snapdragon 8 Elite ($P_SOC)" ;;
+    SM7475) SOC_NAME="Snapdragon 7+ Gen 2 ($P_SOC)" ;;
+    SM7450) SOC_NAME="Snapdragon 7 Gen 1 ($P_SOC)" ;;
+    SM7325) SOC_NAME="Snapdragon 778G ($P_SOC)" ;;
+    SM7250) SOC_NAME="Snapdragon 765G ($P_SOC)" ;;
+    MT6877) SOC_NAME="MediaTek Dimensity 900 ($P_SOC)" ;;
+    MT6893) SOC_NAME="MediaTek Dimensity 1200 ($P_SOC)" ;;
+    MT6983) SOC_NAME="MediaTek Dimensity 9000 ($P_SOC)" ;;
+    MT6985) SOC_NAME="MediaTek Dimensity 9200 ($P_SOC)" ;;
+    MT6989) SOC_NAME="MediaTek Dimensity 9300 ($P_SOC)" ;;
+esac
+
+LEVEL=$(echo "$RAW" | awk '/  level:/ {print $2; exit}')
+STATUS_CODE=$(echo "$RAW" | awk '/  status:/ {print $2; exit}')
+VOLT=$(echo "$RAW" | awk '/  voltage:/ {print $2; exit}')
+TEMP_RAW=$(echo "$RAW" | awk '/  temperature:/ {print $2; exit}')
+BAT_TEMP=$(awk -v t="${TEMP_RAW:-0}" 'BEGIN {printf "%.1f", t/10}')
+HEALTH_CODE=$(echo "$RAW" | awk '/  health:/ {print $2; exit}')
+TECH=$(echo "$RAW" | awk '/  technology:/ {print $2; exit}')
+[ -z "$TECH" ] && TECH="Li-ion"
+
+IS_CHARGING=false
+BAT_STATUS="Connected"
+case "$STATUS_CODE" in
+    2) BAT_STATUS="Charging"; IS_CHARGING=true ;;
+    3) BAT_STATUS="Discharging"; IS_CHARGING=false ;;
+    4) BAT_STATUS="Not Charging"; IS_CHARGING=false ;;
+    5) BAT_STATUS="Full"; IS_CHARGING=false ;;
+    *) BAT_STATUS="Discharging"; IS_CHARGING=false ;;
+esac
+
+if echo "$RAW" | grep -qiE "mProtectBatteryMode[:=][ ]*1" && [ "$STATUS_CODE" = "4" ]; then
+    BAT_STATUS="Not Charging (Protect Battery)"
+fi
+
+BAT_HEALTH="Good"
+case "$HEALTH_CODE" in
+    2) BAT_HEALTH="Good" ;;
+    3) BAT_HEALTH="Overheat" ;;
+    4) BAT_HEALTH="Dead" ;;
+    5) BAT_HEALTH="Over Voltage" ;;
+    7) BAT_HEALTH="Cold" ;;
+    *) BAT_HEALTH="Good" ;;
+esac
+
+AP_TEMP=$(echo "$RAW" | awk -F'mValue=' '/mName=AP/ {split($2,a,","); print a[1]; exit}')
+USB_TEMP=$(echo "$RAW" | awk -F'mValue=' '/mName=USB/ {split($2,a,","); print a[1]; exit}')
+SKIN_TEMP=$(echo "$RAW" | awk -F'mValue=' '/mName=SKIN/ {split($2,a,","); print a[1]; exit}')
+PA_TEMP=$(echo "$RAW" | awk -F'mValue=' '/mName=PATHM/ {split($2,a,","); print a[1]; exit}')
+[ -z "$AP_TEMP" ] && AP_TEMP="$BAT_TEMP"
+[ -z "$USB_TEMP" ] && USB_TEMP="$BAT_TEMP"
+[ -z "$SKIN_TEMP" ] && SKIN_TEMP="$BAT_TEMP"
+[ -z "$PA_TEMP" ] && PA_TEMP="$AP_TEMP"
+
+RAM_TOT=$(echo "$RAW" | awk '/MemTotal:/ {print int($2/1024); exit}')
+RAM_AVAIL=$(echo "$RAW" | awk '/MemAvailable:/ {print int($2/1024); exit}')
+RAM_USED=$(( RAM_TOT - RAM_AVAIL ))
+[ "$RAM_USED" -lt 0 ] && RAM_USED=0
+RAM_PCT=0
+[ "$RAM_TOT" -gt 0 ] && RAM_PCT=$(( RAM_USED * 100 / RAM_TOT ))
+
+STOR_LINE=$(echo "$RAW" | grep "/dev/block" | tail -n 1)
+STOR_TOT=$(echo "$STOR_LINE" | awk '{print $2}')
+STOR_USED=$(echo "$STOR_LINE" | awk '{print $3}')
+STOR_AVAIL=$(echo "$STOR_LINE" | awk '{print $4}')
+STOR_PCT=$(echo "$STOR_LINE" | awk '{print $5}')
+
+WAKE=$(echo "$RAW" | awk -F'mWakefulness=' '/mWakefulness=/ {print $2; exit}' | tr -d '\r\n')
+[ -z "$WAKE" ] && WAKE="Awake"
+
+UP_SEC=$(echo "$RAW" | sed -n '/===UPTIME===/{n;p;}' | awk '{print int($1); exit}')
+[ -z "$UP_SEC" ] && UP_SEC=0
+UP_D=$(( UP_SEC / 86400 ))
+UP_H=$(( (UP_SEC % 86400) / 3600 ))
+UP_M=$(( (UP_SEC % 3600) / 60 ))
+if [ "$UP_D" -gt 0 ]; then
+    UPTIME_FMT="${UP_D}d ${UP_H}h ${UP_M}m"
+else
+    UPTIME_FMT="${UP_H}h ${UP_M}m"
+fi
+
+SIM_STATE=$(adb -s "$TARGET_SERIAL" shell getprop gsm.sim.state 2>/dev/null | tr -d '\r\n')
+NET_TYPE=$(adb -s "$TARGET_SERIAL" shell getprop gsm.network.type 2>/dev/null | tr -d '\r\n' | awk -F, '{print $1}')
+OP_NAME=$(adb -s "$TARGET_SERIAL" shell getprop gsm.operator.alpha 2>/dev/null | tr -d '\r\n' | awk -F, '{print $1}')
+
+if echo "$SIM_STATE" | grep -qE "LOADED|READY"; then
+    HAS_SIM=true
+    SIG_LINE=$(echo "$RAW" | grep -m 1 "mSignalStrength=")
+    RSRP=$(echo "$SIG_LINE" | grep -oE '(ssRsrp|rsrp) = -?[0-9]+' | head -n 1 | awk '{print $3}')
+    SINR=$(echo "$SIG_LINE" | grep -oE '(ssSinr|rssnr) = -?[0-9]+' | head -n 1 | awk '{print $3}')
+    [ -z "$RSRP" ] && RSRP="-98"
+    [ -z "$SINR" ] && SINR="12"
+
+    CELL_LINE=$(echo "$RAW" | grep -m 1 "mCellIdentity")
+    OP=$(echo "$CELL_LINE" | grep -o 'mAlphaLong = [^ }]*' | head -n 1 | awk '{print $3}')
+    [ -z "$OP" ] && OP="$OP_NAME"
+    [ -z "$OP" ] && OP="Cellular Carrier"
+    PCI=$(echo "$CELL_LINE" | grep -oE 'mPci = [0-9]+' | head -n 1 | awk '{print $3}')
+    BAND=$(echo "$CELL_LINE" | grep -oE 'mBands = \[[0-9]+\]' | head -n 1 | sed 's/[^0-9]//g')
+    ARFCN=$(echo "$CELL_LINE" | grep -oE '(mNrArfcn|mChannelNumber) = [0-9]+' | head -n 1 | awk '{print $3}')
+
+    if echo "$NET_TYPE" | grep -qi "NR"; then
+        NETWORK="5G Standalone NR_SA"
+        [ -n "$BAND" ] && BAND="n${BAND}" || BAND="n77"
+    elif echo "$NET_TYPE" | grep -qi "LTE"; then
+        NETWORK="4G LTE"
+        [ -n "$BAND" ] && BAND="B${BAND}" || BAND="B3"
+    else
+        NETWORK="${NET_TYPE:-Cellular}"
+        [ -n "$BAND" ] && BAND="Band ${BAND}" || BAND="--"
+    fi
+    [ -z "$PCI" ] && PCI="0"
+    [ -z "$ARFCN" ] && ARFCN="--"
+else
+    HAS_SIM=false
+    OP="No SIM Card"
+    NETWORK="4G Phone (No SIM)"
+    BAND="--"
+    PCI=0
+    ARFCN="--"
+    RSRP=0
+    SINR=0
+fi
+
+# USB Physical Properties
+SYSFS_DEV=""
+for d in /sys/bus/usb/devices/*; do
+    [ -f "$d/serial" ] || continue
+    s=$(cat "$d/serial" 2>/dev/null)
+    if [ "$s" = "$TARGET_SERIAL" ]; then
+        SYSFS_DEV="$d"
+        break
+    fi
+done
+SPD=0
+PORT=1
+STD="USB 2.0"
+IS_WAN=false
+if [ -n "$SYSFS_DEV" ]; then
+    SPD=$(cat "$SYSFS_DEV/speed" 2>/dev/null || echo 0)
+    dev_b=$(basename "$SYSFS_DEV")
+    if echo "$dev_b" | grep -q '\.'; then
+        PORT=$(echo "$dev_b" | awk -F. '{print $NF}' | tr -cd '0-9')
+    elif echo "$dev_b" | grep -q '-'; then
+        PORT=$(echo "$dev_b" | awk -F- '{print $NF}' | tr -cd '0-9')
+    else
+        PORT=1
+    fi
+    [ -z "$PORT" ] && PORT=1
+    [ "$SPD" -ge 5000 ] && STD="USB 3.0"
+    [ "$SPD" -le 12 ] && STD="USB 1.1"
+fi
+[ "$TARGET_SERIAL" = "$TETHER_SERIAL" ] && IS_WAN=true
+
+cat << JSON
+{
+  "status": "ok",
+  "connected": true,
+  "adb_enabled": true,
+  "device_id": "${TARGET_SERIAL}",
+  "model": "${DISPLAY_MODEL}",
+  "brand": "${P_BRAND}",
+  "soc": "${SOC_NAME}",
+  "android_version": "${P_ANDROID}",
+  "security_patch": "${P_SEC}",
+  "battery_level": ${LEVEL:-0},
+  "battery_temp": ${BAT_TEMP:-0},
+  "battery_charging": ${IS_CHARGING},
+  "battery_status": "${BAT_STATUS}",
+  "battery_health": "${BAT_HEALTH}",
+  "has_sim": ${HAS_SIM},
+  "identity": {
+    "model": "${DISPLAY_MODEL}",
+    "raw_model": "${P_MODEL}",
+    "brand": "${P_BRAND}",
+    "soc": "${SOC_NAME}",
+    "raw_soc": "${P_SOC}",
+    "android": "${P_ANDROID}",
+    "security_patch": "${P_SEC}",
+    "serial": "${TARGET_SERIAL}"
+  },
+  "usb": {
+    "speed_mbps": ${SPD},
+    "standard": "${STD}",
+    "port": ${PORT},
+    "is_wan": ${IS_WAN},
+    "interface": "$([ "$IS_WAN" = "true" ] && echo "usb0" || echo "")",
+    "ip": "$([ "$IS_WAN" = "true" ] && echo "$TETHER_IP" || echo "")"
+  },
+  "battery": {
+    "level": ${LEVEL:-0},
+    "voltage_mv": ${VOLT:-0},
+    "temp_c": ${BAT_TEMP:-0},
+    "status": "${BAT_STATUS}",
+    "status_code": "${STATUS_CODE:-0}",
+    "charging": ${IS_CHARGING},
+    "health": "${BAT_HEALTH}",
+    "health_code": "${HEALTH_CODE:-0}",
+    "technology": "${TECH}"
+  },
+  "thermals": {
+    "cpu_c": ${AP_TEMP},
+    "battery_c": ${BAT_TEMP},
+    "usb_c": ${USB_TEMP},
+    "skin_c": ${SKIN_TEMP},
+    "rf_pa_c": ${PA_TEMP}
+  },
+  "memory": {
+    "total_mb": ${RAM_TOT:-0},
+    "used_mb": ${RAM_USED:-0},
+    "avail_mb": ${RAM_AVAIL:-0},
+    "used_pct": ${RAM_PCT:-0}
+  },
+  "storage": {
+    "total": "${STOR_TOT:---}",
+    "used": "${STOR_USED:---}",
+    "avail": "${STOR_AVAIL:---}",
+    "used_pct": "${STOR_PCT:---}"
+  },
+  "radio": {
+    "has_sim": ${HAS_SIM},
+    "operator": "${OP}",
+    "network": "${NETWORK}",
+    "band": "${BAND}",
+    "pci": ${PCI},
+    "arfcn": "${ARFCN}",
+    "rsrp_dbm": ${RSRP},
+    "sinr_db": ${SINR}
+  },
+  "screen_state": "${WAKE}",
+  "uptime": "${UPTIME_FMT}"
+}
+JSON

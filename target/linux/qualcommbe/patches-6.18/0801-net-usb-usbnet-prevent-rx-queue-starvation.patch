@@ -1,0 +1,77 @@
+From: Max <max@maxnet.lan>
+Date: Wed, 4 Nov 2026 12:30:00 +0530
+Subject: [PATCH] net: usb: usbnet: prevent RX queue starvation and ring deadlock under high throughput
+
+During sustained multi-hundred Mbps / >45MB/s throughput across SuperSpeed USB 3.0,
+the default small rx_qlen (13 URBs) can be rapidly exhausted if transient bus errors
+occur. When all URBs are drained and dev->delay is pending, usbnet_bh() skips
+replenishment, permanently freezing the receive pipeline. Furthermore, if
+usb_clear_halt() fails, EVENT_RX_HALT remains set indefinitely.
+
+Fix this by:
+1. Increasing SuperSpeed rx_qlen to at least 32 URBs (~1MB depth) and tx_qlen to 64 URBs.
+2. In rx_alloc_submit(), refilling up to RX_QLEN immediately when dev->rxq.qlen == 0.
+3. In usbnet_bh(), bypassing the timer_pending throttle check when dev->rxq.qlen == 0 to prevent deadlock.
+4. Always clearing EVENT_RX_HALT and scheduling bh_work in deferred kevent so the link can recover.
+
+Signed-off-by: Max <max@maxnet.lan>
+---
+--- a/drivers/net/usb/usbnet.c
++++ b/drivers/net/usb/usbnet.c
+@@ -375,12 +375,11 @@
+ 	case USB_SPEED_SUPER:
+ 	case USB_SPEED_SUPER_PLUS:
+ 		/*
+-		 * Not take default 5ms qlen for super speed HC to
+-		 * save memory, and iperf tests show 2.5ms qlen can
+-		 * work well
++		 * SuperSpeed devices require deeper queue depth to prevent
++		 * RX ring starvation during sustained high throughput (>45MB/s).
+ 		 */
+-		dev->rx_qlen = 5 * MAX_QUEUE_MEMORY / dev->rx_urb_size;
+-		dev->tx_qlen = 5 * MAX_QUEUE_MEMORY / dev->hard_mtu;
++		dev->rx_qlen = max_t(int, 32, 10 * MAX_QUEUE_MEMORY / dev->rx_urb_size);
++		dev->tx_qlen = max_t(int, 64, 10 * MAX_QUEUE_MEMORY / dev->hard_mtu);
+ 		break;
+ 	default:
+ insanity:
+@@ -1207,11 +1206,10 @@
+ fail_halt:
+ 				netdev_err(dev->net, "can't clear rx halt, status %d\n",
+ 					   status);
+-		} else {
+-			clear_bit (EVENT_RX_HALT, &dev->flags);
+-			if (!usbnet_going_away(dev))
+-				queue_work(system_bh_wq, &dev->bh_work);
+ 		}
++		clear_bit (EVENT_RX_HALT, &dev->flags);
++		if (!usbnet_going_away(dev))
++			queue_work(system_bh_wq, &dev->bh_work);
+ 	}
+ 
+ 	/* work could resubmit itself forever if memory is tight */
+@@ -1530,11 +1528,12 @@
+ static int rx_alloc_submit(struct usbnet *dev, gfp_t flags)
+ {
+ 	struct urb	*urb;
+-	int		i;
++	int		i, max_fill;
+ 	int		ret = 0;
+ 
+-	/* don't refill the queue all at once */
+-	for (i = 0; i < 10 && dev->rxq.qlen < RX_QLEN(dev); i++) {
++	/* refill aggressively, especially when starved */
++	max_fill = (dev->rxq.qlen == 0) ? RX_QLEN(dev) : 16;
++	for (i = 0; i < max_fill && dev->rxq.qlen < RX_QLEN(dev); i++) {
+ 		urb = usb_alloc_urb(0, flags);
+ 		if (urb != NULL) {
+ 			ret = rx_submit(dev, urb, flags);
+@@ -1600,7 +1599,7 @@
+ 		   netif_device_present (dev->net) &&
+ 		   netif_carrier_ok(dev->net) &&
+ 		   !usbnet_going_away(dev) &&
+-		   !timer_pending(&dev->delay) &&
++		   (!timer_pending(&dev->delay) || dev->rxq.qlen == 0) &&
+ 		   !test_bit(EVENT_RX_PAUSED, &dev->flags) &&
+ 		   !test_bit(EVENT_RX_HALT, &dev->flags)) {
+ 		int	temp = dev->rxq.qlen;

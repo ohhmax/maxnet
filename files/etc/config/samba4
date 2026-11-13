@@ -1,0 +1,19 @@
+
+config samba
+	option workgroup 'WORKGROUP'
+	option charset 'UTF-8'
+	option description 'MAXNET High-Speed Storage'
+	option name 'USB-Storage'
+	option interface 'lan'
+	option disable_netbios '1'
+
+config sambashare 'pendrive'
+	option name 'Pendrive'
+	option path '/mnt/pendrive'
+	option read_only 'no'
+	option guest_ok 'no'
+	option users 'max'
+	option create_mask '0775'
+	option dir_mask '0775'
+	option force_root '1'
+

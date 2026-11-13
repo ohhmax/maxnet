@@ -1,0 +1,106 @@
+#!/bin/sh
+# MAXNET SSL & Automated ACME Certificate Controller
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo "Access-Control-Allow-Methods: GET, POST, OPTIONS"
+echo "Access-Control-Allow-Headers: Content-Type"
+echo ""
+
+# Handle preflight
+if [ "$REQUEST_METHOD" = "OPTIONS" ]; then
+    exit 0
+fi
+
+if [ "$REQUEST_METHOD" = "POST" ]; then
+    read -r POST_DATA
+    ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+
+    if [ "$ACTION" = "issue_duckdns" ]; then
+        SUBDOMAIN=$(echo "$POST_DATA" | jq -r '.subdomain // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9-')
+        TOKEN=$(echo "$POST_DATA" | jq -r '.token // empty' 2>/dev/null | tr -cd 'a-zA-Z0-9-')
+
+        if [ -z "$SUBDOMAIN" ] || [ -z "$TOKEN" ]; then
+            echo '{"status":"error","error":"Subdomain and DuckDNS Token are required."}'
+            exit 0
+        fi
+
+        FULL_DOMAIN="${SUBDOMAIN}.duckdns.org"
+
+        # Export DuckDNS token for acme.sh
+        export DuckDNS_Token="$TOKEN"
+
+        # Run acme.sh in background or synchronously
+        mkdir -p /etc/acme
+        LOG_FILE="/tmp/acme_issue.log"
+        echo "[$(date)] Starting ACME DNS-01 issuance for ${FULL_DOMAIN}..." > "$LOG_FILE"
+
+        /usr/bin/acme.sh --issue --dns dns_duckdns -d "$FULL_DOMAIN" --home /etc/acme >> "$LOG_FILE" 2>&1
+        ISSUE_STATUS=$?
+
+        if [ $ISSUE_STATUS -eq 0 ]; then
+            /usr/bin/acme.sh --install-cert -d "$FULL_DOMAIN" \
+                --key-file /etc/uhttpd.key \
+                --fullchain-file /etc/uhttpd.crt \
+                --home /etc/acme >> "$LOG_FILE" 2>&1
+
+            # Configure Split-Horizon DNS in dnsmasq so LAN resolves directly to 10.0.0.1
+            uci del_list dhcp.@dnsmasq[0].address="/${FULL_DOMAIN}/10.0.0.1" 2>/dev/null
+            uci del_list dhcp.@dnsmasq[0].rebind_domain="${FULL_DOMAIN}" 2>/dev/null
+            uci add_list dhcp.@dnsmasq[0].address="/${FULL_DOMAIN}/10.0.0.1"
+            uci add_list dhcp.@dnsmasq[0].rebind_domain="${FULL_DOMAIN}"
+            uci commit dhcp
+
+            # Add to /etc/hosts
+            sed -i "/${FULL_DOMAIN}/d" /etc/hosts 2>/dev/null
+            echo "10.0.0.1 ${FULL_DOMAIN}" >> /etc/hosts
+
+            # Save configuration record
+            echo "{\"provider\":\"duckdns\",\"domain\":\"${FULL_DOMAIN}\",\"subdomain\":\"${SUBDOMAIN}\",\"active\":true,\"updated\":$(date +%s)}" > /etc/ssl_custom_config.json
+
+            /etc/init.d/dnsmasq restart >/dev/null 2>&1
+            /etc/init.d/uhttpd restart >/dev/null 2>&1
+
+            echo "{\"status\":\"ok\",\"domain\":\"${FULL_DOMAIN}\",\"message\":\"Public Let's Encrypt certificate successfully issued and active!\"}"
+        else
+            ERR_SNIP=$(tail -n 10 "$LOG_FILE" | tr '\n' ' ' | sed 's/"/\\"/g')
+            echo "{\"status\":\"error\",\"error\":\"ACME verification failed. Details: ${ERR_SNIP}\"}"
+        fi
+        exit 0
+    fi
+fi
+
+# GET: Return certificate status information
+CERT_FILE="/etc/uhttpd.crt"
+if [ -f "$CERT_FILE" ]; then
+    # Parse cert with openssl or mbedtls
+    SUBJECT=$(openssl x509 -in "$CERT_FILE" -noout -subject 2>/dev/null | sed 's/subject=//')
+    ISSUER=$(openssl x509 -in "$CERT_FILE" -noout -issuer 2>/dev/null | sed 's/issuer=//')
+    DATES=$(openssl x509 -in "$CERT_FILE" -noout -dates 2>/dev/null)
+    SAN=$(openssl x509 -in "$CERT_FILE" -noout -text 2>/dev/null | grep -A 1 "Subject Alternative Name" | tail -n 1 | tr -d ' ')
+
+    EXPIRES=$(echo "$DATES" | grep "notAfter" | cut -d= -f2)
+    IS_LETS_ENCRYPT=false
+    case "$ISSUER" in
+        *Let\'s\ Encrypt*|*ISRG*) IS_LETS_ENCRYPT=true ;;
+    esac
+else
+    SUBJECT="Unknown"
+    ISSUER="Unknown"
+    EXPIRES="Unknown"
+    SAN=""
+    IS_LETS_ENCRYPT=false
+fi
+
+CUSTOM_CONF=$(cat /etc/ssl_custom_config.json 2>/dev/null || echo '{}')
+
+cat << EOF
+{
+  "status": "ok",
+  "subject": "${SUBJECT}",
+  "issuer": "${ISSUER}",
+  "expires": "${EXPIRES}",
+  "san": "${SAN}",
+  "is_lets_encrypt": ${IS_LETS_ENCRYPT},
+  "custom_config": ${CUSTOM_CONF}
+}
+EOF

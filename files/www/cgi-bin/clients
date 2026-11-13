@@ -1,0 +1,97 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+FILE="/etc/blocked_clients.json"
+[ -f "$FILE" ] || echo '[]' > "$FILE"
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | sed -n 's/.*"action"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+
+if [ "$ACTION" = "check" ]; then
+    CLIENT_IP="$REMOTE_ADDR"
+    IS_BLOCKED=0
+    if [ -n "$CLIENT_IP" ] && grep -q "\"$CLIENT_IP\"" "$FILE" 2>/dev/null; then
+        IS_BLOCKED=1
+    fi
+    echo "{\"ip\": \"$CLIENT_IP\", \"blocked\": $([ $IS_BLOCKED -eq 1 ] && echo true || echo false)}"
+    exit 0
+fi
+
+if [ "$ACTION" = "list" ]; then
+    cat "$FILE"
+    exit 0
+fi
+
+if [ "$ACTION" = "block" ]; then
+    IP=$(echo "$POST_DATA" | sed -n 's/.*"ip"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+    MAC=$(echo "$POST_DATA" | sed -n 's/.*"mac"[ ]*:[ ]*"\([^"]*\)".*/\1/p' | tr '[:upper:]' '[:lower:]')
+    NAME=$(echo "$POST_DATA" | sed -n 's/.*"name"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+    [ -z "$NAME" ] && NAME="Device"
+
+    if [ -z "$IP" ] && [ -z "$MAC" ]; then
+        echo '{"status": "error", "message": "IP or MAC required"}'
+        exit 0
+    fi
+
+    LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
+    [ -z "$LAN_IP" ] && LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}' | head -n 1)
+    ROUTER_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
+
+    if [ -n "$IP" ] && { [ "$IP" = "$LAN_IP" ] || [ "$IP" = "10.0.0.1" ] || [ "$IP" = "127.0.0.1" ]; }; then
+        echo '{"status": "error", "message": "Cannot block router gateway host IP"}'
+        exit 0
+    fi
+    if [ -n "$MAC" ] && [ -n "$ROUTER_MAC" ] && [ "$MAC" = "$ROUTER_MAC" ]; then
+        echo '{"status": "error", "message": "Cannot block router gateway host MAC"}'
+        exit 0
+    fi
+
+    [ -n "$MAC" ] && nft add element inet fw4 blocked_macs "{ $MAC }" 2>/dev/null
+    [ -n "$IP" ] && nft add element inet fw4 blocked_ips "{ $IP }" 2>/dev/null
+
+    TMP=$(mktemp)
+    echo "[" > "$TMP"
+    # Keep existing non-matching items
+    if [ -f "$FILE" ]; then
+        FILTER_CMD="cat $FILE"
+        [ -n "$MAC" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$MAC\""
+        [ -n "$IP" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$IP\""
+        eval "$FILTER_CMD" | grep '"ip"' | sed 's/,$//' | while read -r line; do
+            echo "  $line," >> "$TMP"
+        done
+    fi
+    NOW=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+    echo "  {\"ip\": \"$IP\", \"mac\": \"$MAC\", \"name\": \"$NAME\", \"time\": \"$NOW\"}" >> "$TMP"
+    echo "]" >> "$TMP"
+    mv "$TMP" "$FILE"
+
+    echo '{"status": "ok", "message": "Device blocked successfully"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "unblock" ]; then
+    IP=$(echo "$POST_DATA" | sed -n 's/.*"ip"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+    MAC=$(echo "$POST_DATA" | sed -n 's/.*"mac"[ ]*:[ ]*"\([^"]*\)".*/\1/p' | tr '[:upper:]' '[:lower:]')
+
+    [ -n "$MAC" ] && nft delete element inet fw4 blocked_macs "{ $MAC }" 2>/dev/null
+    [ -n "$IP" ] && nft delete element inet fw4 blocked_ips "{ $IP }" 2>/dev/null
+
+    TMP=$(mktemp)
+    echo "[" > "$TMP"
+    FILTER_CMD="cat $FILE"
+    [ -n "$MAC" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$MAC\""
+    [ -n "$IP" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$IP\""
+    eval "$FILTER_CMD" | grep '"ip"' | sed '$s/,$//' >> "$TMP"
+    echo "]" >> "$TMP"
+    mv "$TMP" "$FILE"
+
+    echo '{"status": "ok", "message": "Device unblocked"}'
+    exit 0
+fi
+
+echo '{"status": "error", "message": "Unknown action"}'

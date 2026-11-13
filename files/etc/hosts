@@ -1,0 +1,13 @@
+127.0.0.1 localhost
+::1     localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+10.0.0.1 Maxnet-Gateway.lan Maxnet-Gateway Maxnet-Gateway.local maxnet.lan smb.lan disk.lan
+10.0.0.2 maxnet-b.lan maxnet-b maxnet-b.local
+10.0.0.5 synology-nas.lan synology-nas.local synology-nas homedrive.local homedrive.lan homedrive
+10.0.0.110 poco-x6-5g.lan poco-x6-5g.local poco-x6-5g
+10.0.0.111 maxos.lan maxos.local maxos
+10.0.0.238 vivo-v2153.lan vivo-v2153.local vivo-v2153
+10.0.0.232 v2111.lan v2111.local v2111
+10.0.0.197 realme-6.lan realme-6.local realme-6
+

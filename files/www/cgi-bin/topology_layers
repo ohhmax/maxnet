@@ -1,0 +1,385 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo "Access-Control-Allow-Methods: GET, POST, OPTIONS"
+echo "Access-Control-Allow-Headers: Content-Type"
+echo ""
+
+CONF_FILE="/etc/topology_layers.json"
+
+# Default configuration if none exists
+init_default() {
+  cat << 'EOF'
+{
+  "status": "ok",
+  "version": 2,
+  "tree": {
+    "id": "root",
+    "type": "router",
+    "name": "MAXNET GATEWAY",
+    "ip": "10.0.0.1",
+    "mac": "2e:dd:4c:b2:8c:fa",
+    "uplinkPort": null,
+    "numPorts": 4,
+    "wan_mode": "standard",
+    "wan_speed": "1000",
+    "usb_config": {
+      "mode": "hub",
+      "num_ports": 4,
+      "speed_std": "usb3",
+      "ports": [
+        { "id": "usb-1", "label": "USB 1", "role": "phone", "name": "Samsung Galaxy S21 FE 5G", "speed": "usb3" },
+        { "id": "usb-2", "label": "USB 2", "role": "phone", "name": "Xiaomi POCO X6 5G", "speed": "usb2" },
+        { "id": "usb-3", "label": "USB 3", "role": "storage", "name": "NVMe SSD Storage", "speed": "usb3" },
+        { "id": "usb-4", "label": "USB 4", "role": "empty", "name": "", "speed": "usb3" }
+      ]
+    },
+    "ports": [
+      {
+        "id": "root-lan1",
+        "label": "LAN 1",
+        "role": "empty",
+        "child": null
+      },
+      {
+        "id": "root-lan2",
+        "label": "LAN 2",
+        "role": "device",
+        "child": {
+          "id": "dev-maxos",
+          "type": "device",
+          "name": "maxos [PC]",
+          "ip": "10.0.0.111",
+          "mac": "10:65:30:7a:9c:02",
+          "uplinkPort": "root-lan2"
+        }
+      },
+      {
+        "id": "root-lan3",
+        "label": "LAN 3",
+        "role": "node",
+        "child": {
+          "id": "node-maxnet-b",
+          "type": "ap",
+          "name": "maxnet-b",
+          "ip": "10.0.0.2",
+          "mac": "8c:a3:99:7b:81:2b",
+          "uplinkPort": "root-lan3",
+          "numPorts": 4,
+          "ports": [
+            {
+              "id": "maxnet-b-lan1",
+              "label": "LAN 1",
+              "role": "device",
+              "child": {
+                "id": "dev-synology",
+                "type": "device",
+                "name": "Synology NAS",
+                "ip": "10.0.0.5",
+                "mac": "00:11:32:92:02:1b",
+                "uplinkPort": "maxnet-b-lan1"
+              }
+            },
+            {
+              "id": "maxnet-b-lan2",
+              "label": "LAN 2",
+              "role": "empty",
+              "child": null
+            },
+            {
+              "id": "maxnet-b-lan3",
+              "label": "LAN 3",
+              "role": "empty",
+              "child": null
+            },
+            {
+              "id": "maxnet-b-lan4",
+              "label": "LAN 4",
+              "role": "empty",
+              "child": null
+            }
+          ],
+          "wireless_clients": [
+            {
+              "name": "POCO-X6-5G",
+              "ip": "10.0.0.110",
+              "mac": "16:cb:1a:6a:a2:81",
+              "band": "2.4G",
+              "linkSpeed": "72 Mbps"
+            },
+            {
+              "name": "Vivo V2153",
+              "ip": "10.0.0.238",
+              "mac": "f2:82:95:8f:db:29",
+              "band": "2.4G",
+              "linkSpeed": "72 Mbps"
+            },
+            {
+              "name": "V2111",
+              "ip": "10.0.0.232",
+              "mac": "ee:e5:0b:24:d5:eb",
+              "band": "2.4G",
+              "linkSpeed": "65 Mbps"
+            },
+            {
+              "name": "realme-6",
+              "ip": "10.0.0.197",
+              "mac": "46:df:eb:aa:43:32",
+              "band": "2.4G",
+              "linkSpeed": "65 Mbps"
+            }
+          ]
+        }
+      },
+      {
+        "id": "root-lan4",
+        "label": "LAN 4",
+        "role": "empty",
+        "child": null
+      }
+    ],
+    "wireless_clients": []
+  },
+  "ports": {
+    "lan1": {
+      "portIndex": 1,
+      "mode": "empty",
+      "device": null
+    },
+    "lan2": {
+      "portIndex": 2,
+      "mode": "direct",
+      "device": {
+        "ip": "10.0.0.111",
+        "mac": "10:65:30:7a:9c:02",
+        "name": "maxos [PC]"
+      }
+    },
+    "lan3": {
+      "portIndex": 3,
+      "mode": "layer2_ap",
+      "ap": {
+        "ip": "10.0.0.2",
+        "mac": "8c:a3:99:7b:81:2b",
+        "name": "maxnet-b",
+        "model": "Broadcom BCM4908 AP"
+      },
+      "layer3_devices": [
+        {
+          "ip": "10.0.0.110",
+          "mac": "16:cb:1a:6a:a2:81",
+          "name": "POCO-X6-5G",
+          "conn_type": "2.4GHz WiFi"
+        },
+        {
+          "ip": "10.0.0.238",
+          "mac": "f2:82:95:8f:db:29",
+          "name": "Vivo V2153",
+          "conn_type": "2.4GHz WiFi"
+        },
+        {
+          "ip": "10.0.0.232",
+          "mac": "ee:e5:0b:24:d5:eb",
+          "name": "V2111",
+          "conn_type": "2.4GHz WiFi"
+        },
+        {
+          "ip": "10.0.0.197",
+          "mac": "46:df:eb:aa:43:32",
+          "name": "realme-6",
+          "conn_type": "2.4GHz WiFi"
+        },
+        {
+          "ip": "10.0.0.5",
+          "mac": "00:11:32:92:02:1b",
+          "name": "Synology NAS",
+          "conn_type": "LAN Port"
+        }
+      ]
+    },
+    "lan4": {
+      "portIndex": 4,
+      "mode": "empty",
+      "device": null
+    }
+  }
+}
+EOF
+}
+
+if [ "$REQUEST_METHOD" = "POST" ]; then
+  POST_DATA=$(cat)
+  if [ -n "$POST_DATA" ]; then
+    echo "$POST_DATA" | jq . > "$CONF_FILE" 2>/dev/null
+    if [ $? -eq 0 ]; then
+      sync
+      echo '{"status":"ok","message":"Topology layer configuration saved successfully"}'
+      exit 0
+    fi
+  fi
+fi
+
+# Check query params for action=save, reset, or auto_scan
+QS="$QUERY_STRING"
+case "$QS" in
+  *action=reset*)
+    init_default > "$CONF_FILE"
+    sync
+    cat "$CONF_FILE"
+    exit 0
+    ;;
+  *action=auto_scan*|*action=auto*|*action=evidence_scan*)
+    if [ -x /usr/bin/topology_auto_detect.sh ]; then
+      AUTO_RES=$(/usr/bin/topology_auto_detect.sh 2>/dev/null)
+      if [ -n "$AUTO_RES" ] && echo "$AUTO_RES" | jq -e '.tree' >/dev/null 2>&1; then
+        echo "$AUTO_RES" > "$CONF_FILE"
+        sync
+        echo "$AUTO_RES"
+        exit 0
+      fi
+    fi
+    init_default > "$CONF_FILE"
+    sync
+    cat "$CONF_FILE"
+    exit 0
+    ;;
+  *action=auto_scan*|*action=auto*)
+    STATUS_JSON=$(QUERY_STRING="action=status" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
+    AUTO_TREE=$(echo "$STATUS_JSON" | jq '
+      def is_router(c):
+        (((c.vendor // "") | ascii_downcase) | (contains("asus") or contains("cisco") or contains("tp-link") or contains("netgear") or contains("openwrt"))) or
+        (((c.name // "") | ascii_downcase) | (contains("router") or contains("ap") or contains("gateway") or contains("maxnet")));
+
+      def is_nas(c):
+        (((c.vendor // "") | ascii_downcase) | (contains("synology") or contains("qnap"))) or
+        (((c.name // "") | ascii_downcase) | (contains("nas") or contains("synology") or contains("storage")));
+
+      .clients as $all
+      | ($all | map(select(.is_self != true))) as $clients
+      | ($clients | map(select(.port == "LAN 2" and .connected == true))) as $lan2_devs
+      | ($clients | map(select(.port == "LAN 3"))) as $lan3_devs
+      | ($lan3_devs | map(select(is_router(.))) | first) as $ap_node
+      | ($lan3_devs | map(select(is_nas(.))) | first) as $nas_dev
+      | ($lan3_devs | map(select(. != $ap_node and . != $nas_dev))) as $ap_wifi
+      | {
+          status: "ok",
+          version: 2,
+          tree: {
+            id: "root",
+            type: "router",
+            name: "MAXNET GATEWAY",
+            ip: (.network.lan_ip // "10.0.0.1"),
+            mac: (.network.lan_mac // "2e:dd:4c:b2:8c:fa"),
+            uplinkPort: null,
+            numPorts: 4,
+            wan_mode: "standard",
+            wan_speed: "1000",
+            usb_config: {
+              mode: "hub",
+              num_ports: 4,
+              speed_std: "usb3",
+              ports: [
+                { id: "usb-1", label: "USB 1", role: "phone", name: "Samsung Galaxy S21 FE 5G", speed: "usb3" },
+                { id: "usb-2", label: "USB 2", role: "phone", name: "Xiaomi POCO X6 5G", speed: "usb2" },
+                { id: "usb-3", label: "USB 3", role: "storage", name: "NVMe SSD Storage", speed: "usb3" },
+                { id: "usb-4", label: "USB 4", role: "empty", name: "", speed: "usb3" }
+              ]
+            },
+            ports: [
+              { id: "root-lan1", label: "LAN 1", role: "empty", child: null },
+              {
+                id: "root-lan2",
+                label: "LAN 2",
+                role: (if ($lan2_devs | length) > 0 then "device" else "empty" end),
+                child: (if ($lan2_devs | length) > 0 then {
+                  id: "dev-lan2",
+                  type: "device",
+                  name: $lan2_devs[0].name,
+                  ip: $lan2_devs[0].ip,
+                  mac: $lan2_devs[0].mac,
+                  status: (if $lan2_devs[0].connected then "online" else "offline" end),
+                  uplinkPort: "root-lan2"
+                } else null end)
+              },
+              {
+                id: "root-lan3",
+                label: "LAN 3",
+                role: (if $ap_node then "node" else (if ($lan3_devs | length) > 0 then "device" else "empty" end) end),
+                child: (if $ap_node then {
+                  id: "node-ap-lan3",
+                  type: "ap",
+                  name: $ap_node.name,
+                  ip: $ap_node.ip,
+                  mac: $ap_node.mac,
+                  status: (if $ap_node.connected then "online" else "offline" end),
+                  uplinkPort: "root-lan3",
+                  numPorts: 4,
+                  ports: [
+                    {
+                      id: "ap-lan1",
+                      label: "LAN 1",
+                      role: (if $nas_dev then "device" else "empty" end),
+                      child: (if $nas_dev then {
+                        id: "dev-nas",
+                        type: "device",
+                        name: $nas_dev.name,
+                        ip: $nas_dev.ip,
+                        mac: $nas_dev.mac,
+                        status: (if $nas_dev.connected then "online" else "offline" end),
+                        uplinkPort: "ap-lan1"
+                      } else null end)
+                    },
+                    { id: "ap-lan2", label: "LAN 2", role: "empty", child: null },
+                    { id: "ap-lan3", label: "LAN 3", role: "empty", child: null },
+                    { id: "ap-lan4", label: "LAN 4", role: "empty", child: null }
+                  ],
+                  wireless_clients: [
+                    $ap_wifi[] | {
+                      name: .name,
+                      ip: .ip,
+                      mac: .mac,
+                      status: (if .connected then "online" else "offline" end),
+                      band: "WiFi",
+                      linkSpeed: "72 Mbps"
+                    }
+                  ]
+                } else null end)
+              },
+              { id: "root-lan4", label: "LAN 4", role: "empty", child: null }
+            ],
+            wireless_clients: []
+          }
+        }
+    ' 2>/dev/null)
+    if [ -n "$AUTO_TREE" ] && echo "$AUTO_TREE" | jq -e '.tree' >/dev/null 2>&1; then
+      echo "$AUTO_TREE" > "$CONF_FILE"
+      sync
+      echo "$AUTO_TREE"
+      exit 0
+    fi
+    init_default > "$CONF_FILE"
+    sync
+    cat "$CONF_FILE"
+    exit 0
+    ;;
+  *action=save*)
+    DATA=$(echo "$QS" | sed -n 's/.*data=\([^&]*\).*/\1/p')
+    if [ -n "$DATA" ]; then
+      # url decode
+      DECODED=$(printf '%b' "${DATA//%/\\x}")
+      echo "$DECODED" | jq . > "$CONF_FILE" 2>/dev/null
+      if [ $? -eq 0 ]; then
+        sync
+        echo '{"status":"ok","message":"Topology layer configuration saved successfully"}'
+        exit 0
+      fi
+    fi
+    ;;
+esac
+
+if [ -f "$CONF_FILE" ] && [ -s "$CONF_FILE" ]; then
+  cat "$CONF_FILE"
+else
+  init_default | tee "$CONF_FILE"
+  sync
+fi

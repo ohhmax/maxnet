@@ -1,0 +1,495 @@
+#!/bin/sh
+# ==============================================================================
+# MAXNET OS CENTRALIZED WEBHOOK NOTIFICATION ENGINE
+# Engineered & Developed by Mahendra Mali - Max (c) 2026
+# Donation & Support via UPI: 9824584454@ybl
+# ==============================================================================
+
+CONF_FILE="/etc/maxnet_webhooks.json"
+NOTIF_FILE="/etc/maxnet_notifications.json"
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | sed -n 's/.*"action"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+[ -z "$ACTION" ] && ACTION="get"
+
+# Dynamic Gzip Compression Helper for Maximum Throughput & Zero CPU Waste
+send_json_str() {
+    if echo "$HTTP_ACCEPT_ENCODING" | grep -qi "gzip"; then
+        echo "Content-Type: application/json"
+        echo "Content-Encoding: gzip"
+        echo "Cache-Control: no-cache, no-store, must-revalidate"
+        echo "Access-Control-Allow-Origin: *"
+        echo ""
+        printf "%s\n" "$1" | gzip -c -1
+    else
+        echo "Content-Type: application/json"
+        echo "Cache-Control: no-cache, no-store, must-revalidate"
+        echo "Access-Control-Allow-Origin: *"
+        echo ""
+        printf "%s\n" "$1"
+    fi
+}
+
+send_json_file() {
+    if echo "$HTTP_ACCEPT_ENCODING" | grep -qi "gzip"; then
+        echo "Content-Type: application/json"
+        echo "Content-Encoding: gzip"
+        echo "Cache-Control: no-cache, no-store, must-revalidate"
+        echo "Access-Control-Allow-Origin: *"
+        echo ""
+        gzip -c -1 < "$1"
+    else
+        echo "Content-Type: application/json"
+        echo "Cache-Control: no-cache, no-store, must-revalidate"
+        echo "Access-Control-Allow-Origin: *"
+        echo ""
+        cat "$1"
+    fi
+}
+
+# High-Performance Lockscreen Notification Formatter
+# Format: Line 1 = <Emoji> <Category/Action>; Line 2 = <Concise Info>
+format_telegram_msg() {
+    _t="$1"
+    _m="$2"
+    _l="$3"
+    _e="$4"
+
+    # Strip any [MAXNET...] tags
+    _clean_t=$(echo "$_t" | sed -E 's/\[MAXNET[^]]*\][ :]?//g' | sed 's/^[ \t]*//')
+    _clean_m=$(echo "$_m" | sed -E 's/\[MAXNET[^]]*\][ :]?//g' | sed 's/^[ \t]*//')
+
+    _emoji="🔔"
+    _category="Notification"
+    _detail="$_clean_m"
+
+    case "$_e" in
+        usb_plugged)
+            if echo "$_t $_m" | grep -qiE "disconnect|unplug|removed"; then
+                _emoji="🔌"
+                _category="USB Disconnected"
+            else
+                _emoji="⚡"
+                _category="USB Connected"
+            fi
+            ;;
+        lan_plugged)
+            if echo "$_t $_m" | grep -qiE "disconnect|unplug|down"; then
+                _emoji="⚠️"
+                _category="LAN Disconnected"
+            else
+                _emoji="🔌"
+                _category="LAN Connected"
+            fi
+            ;;
+        custom_ip)
+            if echo "$_t $_m" | grep -qiE "offline|down|unreachable"; then
+                _emoji="🔴"
+                _category="Host Offline"
+            else
+                _emoji="🟢"
+                _category="Host Online"
+            fi
+            ;;
+        wan_disconnect)
+            if echo "$_t $_m" | grep -qiE "lost|offline|down|dropped"; then
+                _emoji="⚠️"
+                _category="Internet Lost"
+            else
+                _emoji="🌐"
+                _category="Internet Restored"
+            fi
+            ;;
+        router_login)
+            if echo "$_t $_m" | grep -qiE "fail|invalid|denied"; then
+                _emoji="⚠️"
+                _category="Failed Login"
+            else
+                _emoji="🔑"
+                _category="WebUI Login"
+            fi
+            ;;
+        security_alert)
+            _emoji="🛡️"
+            _category="Security Alert"
+            ;;
+        adult_content|parental_control)
+            _emoji="🛡️"
+            _category="Security Shield"
+            ;;
+        cpu_spike)
+            _emoji="🔥"
+            _category="CPU Spike"
+            ;;
+        power_event)
+            _emoji="⚡"
+            _category="Router Startup"
+            ;;
+        data_usage|data_quota)
+            _emoji="📊"
+            _category="Data Quota"
+            ;;
+        test_alert)
+            _emoji="✅"
+            _category="Telegram Connected"
+            ;;
+        *)
+            case "$_l" in
+                danger|crit*|fatal|error)
+                    _emoji="🚨"
+                    _category="System Alert"
+                    ;;
+                warn*)
+                    _emoji="⚠️"
+                    _category="System Warning"
+                    ;;
+                *)
+                    _emoji="ℹ️"
+                    _category="Notice"
+                    ;;
+            esac
+            ;;
+    esac
+
+    [ -z "$_detail" ] && _detail="$_clean_t"
+    _detail=$(echo "$_detail" | tr '\n' ' ' | sed -E 's/[ ]{2,}/ /g' | cut -c 1-120)
+
+    printf "%s %s\n%s" "$_emoji" "$_category" "$_detail"
+}
+
+init_config() {
+    if [ ! -f "$CONF_FILE" ]; then
+        cat << 'CFG' > "$CONF_FILE"
+{
+  "status": "ok",
+  "master_enabled": true,
+  "telegram": {
+    "enabled": false,
+    "bot_token": "",
+    "chat_id": ""
+  },
+  "discord": {
+    "enabled": false,
+    "webhook_url": ""
+  },
+  "ntfy": {
+    "enabled": false,
+    "topic_url": "https://ntfy.sh/maxnet-alerts"
+  },
+  "events": {
+    "cpu_spike": true,
+    "new_device": true,
+    "wan_disconnect": true,
+    "dhcp_error": true,
+    "system_update": true,
+    "security_alert": true,
+    "router_login": true,
+    "data_usage": true,
+    "lan_plugged": true,
+    "usb_plugged": true,
+    "power_event": true,
+    "custom_ip": true,
+    "adult_content": true,
+    "wifi_event": true
+  },
+  "custom_ip_target": "10.0.0.2",
+  "data_quota_mb": 1024
+}
+CFG
+    fi
+}
+
+init_notif() {
+    if [ ! -f "$NOTIF_FILE" ]; then
+        echo "[]" > "$NOTIF_FILE"
+    fi
+}
+
+# ==================== ACTION: GET ====================
+if [ "$ACTION" = "get" ]; then
+    init_config
+    MERGED=$(jq '.events += ({"router_login":true,"data_usage":true,"lan_plugged":true,"usb_plugged":true,"power_event":true,"custom_ip":true,"adult_content":true,"wifi_event":true} * (.events // {})) | .custom_ip_target = (.custom_ip_target // "10.0.0.2") | .data_quota_mb = (.data_quota_mb // 1024)' "$CONF_FILE" 2>/dev/null)
+    if [ -n "$MERGED" ]; then
+        send_json_str "$MERGED"
+    else
+        send_json_file "$CONF_FILE"
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: SET ====================
+if [ "$ACTION" = "set" ]; then
+    init_config
+    if [ -n "$POST_DATA" ]; then
+        if echo "$POST_DATA" | jq . >/dev/null 2>&1; then
+            echo "$POST_DATA" | jq . > "$CONF_FILE"
+            send_json_str '{"status":"ok","message":"Webhook configuration saved successfully."}'
+            exit 0
+        fi
+    fi
+    send_json_str '{"status":"error","message":"Invalid JSON payload."}'
+    exit 0
+fi
+
+# ==================== ACTION: TEST ====================
+if [ "$ACTION" = "test" ]; then
+    init_config
+    PROVIDER=$(echo "$QUERY_STRING" | sed -n 's/^.*provider=\([^&]*\).*$/\1/p')
+    [ -z "$PROVIDER" ] && PROVIDER=$(echo "$POST_DATA" | sed -n 's/.*"provider"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+
+    if [ "$PROVIDER" = "telegram" ]; then
+        TOKEN=$(echo "$POST_DATA" | jq -r '.token // empty' 2>/dev/null)
+        CHAT_ID=$(echo "$POST_DATA" | jq -r '.chat_id // empty' 2>/dev/null)
+        [ -z "$TOKEN" ] && TOKEN=$(jq -r '.telegram.bot_token // empty' "$CONF_FILE" 2>/dev/null)
+        [ -z "$CHAT_ID" ] && CHAT_ID=$(jq -r '.telegram.chat_id // empty' "$CONF_FILE" 2>/dev/null)
+
+        if [ -z "$TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            send_json_str '{"status":"error","message":"Telegram Bot Token and Chat ID are required."}'
+            exit 0
+        fi
+
+        MSG=$(printf "%s\n%s" "✅ Telegram Connected" "Test alert verified from router (10.0.0.1)")
+        RESP=$(curl -s -m 8 -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            -d "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MSG}" 2>&1)
+
+        if echo "$RESP" | grep -q '"ok":true'; then
+            send_json_str '{"status":"ok","message":"Telegram test alert delivered successfully!"}'
+        else
+            ERR=$(echo "$RESP" | jq -r '.description // "Failed to send message"' 2>/dev/null)
+            [ -z "$ERR" ] && ERR="$RESP"
+            send_json_str "{\"status\":\"error\",\"message\":\"Telegram error: $ERR\"}"
+        fi
+        exit 0
+    elif [ "$PROVIDER" = "discord" ]; then
+        URL=$(echo "$POST_DATA" | jq -r '.url // empty' 2>/dev/null)
+        [ -z "$URL" ] && URL=$(jq -r '.discord.webhook_url // empty' "$CONF_FILE" 2>/dev/null)
+
+        if [ -z "$URL" ]; then
+            send_json_str '{"status":"error","message":"Discord Webhook URL is required."}'
+            exit 0
+        fi
+
+        PAYLOAD='{"username":"MAXNET Gateway","avatar_url":"https://raw.githubusercontent.com/ohhmax/maxidu/main/files/www/favicon.ico","content":"**[MAXNET GATEWAY]** Discord webhook test notification verified successfully from router (10.0.0.1)!"}'
+        HTTP_CODE=$(curl -s -m 8 -o /tmp/discord_resp.txt -w "%{http_code}" -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$URL" 2>&1)
+
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+            send_json_str '{"status":"ok","message":"Discord test alert delivered successfully!"}'
+        else
+            RESP=$(cat /tmp/discord_resp.txt 2>/dev/null)
+            send_json_str "{\"status\":\"error\",\"message\":\"Discord error (HTTP $HTTP_CODE): $RESP\"}"
+        fi
+        rm -f /tmp/discord_resp.txt
+        exit 0
+    elif [ "$PROVIDER" = "ntfy" ]; then
+        TOPIC_URL=$(echo "$POST_DATA" | jq -r '.topic_url // empty' 2>/dev/null)
+        [ -z "$TOPIC_URL" ] && TOPIC_URL=$(jq -r '.ntfy.topic_url // empty' "$CONF_FILE" 2>/dev/null)
+
+        if [ -z "$TOPIC_URL" ]; then
+            send_json_str '{"status":"error","message":"ntfy Topic URL is required."}'
+            exit 0
+        fi
+
+        RESP=$(curl -s -m 8 -H "Title: MAXNET Gateway" -H "Tags: bell,rocket" -d "ntfy.sh push alert verified successfully from router (10.0.0.1)!" "$TOPIC_URL" 2>&1)
+        if echo "$RESP" | grep -q '"id":'; then
+            send_json_str '{"status":"ok","message":"ntfy.sh test alert published successfully!"}'
+        else
+            send_json_str "{\"status\":\"ok\",\"message\":\"ntfy test sent to $TOPIC_URL\"}"
+        fi
+        exit 0
+    fi
+
+    send_json_str '{"status":"error","message":"Unknown provider specified."}'
+    exit 0
+fi
+
+# ==================== ACTION: TEST_EVENT ====================
+if [ "$ACTION" = "test_event" ]; then
+    EV_TYPE=$(echo "$QUERY_STRING" | sed -n 's/^.*type=\([^&]*\).*$/\1/p')
+    [ -z "$EV_TYPE" ] && EV_TYPE=$(echo "$POST_DATA" | jq -r '.type // "system"' 2>/dev/null)
+    [ -z "$EV_TYPE" ] && EV_TYPE="system"
+
+    T_TITLE="System Alert"
+    T_MSG="MAXNET event test notification"
+    T_LEVEL="info"
+
+    case "$EV_TYPE" in
+        router_login)
+            T_TITLE="Router WebUI Login: root"
+            T_MSG="Administrator 'root' logged into MAXNET Gateway WebUI from IP 10.0.0.111."
+            T_LEVEL="info"
+            ;;
+        data_usage)
+            T_TITLE="Data Quota Alert: POCO-X6-5G"
+            T_MSG="Client POCO-X6-5G (10.0.0.114, MAC: d6:a7:58:73:5d:6b) consumed 1.42 GB, exceeding the 1024 MB quota threshold."
+            T_LEVEL="warning"
+            ;;
+        lan_plugged)
+            T_TITLE="Ethernet Cable Plugged: LAN 1"
+            T_MSG="Physical network link detected on port LAN 1 at 1000 Mbps Full Duplex."
+            T_LEVEL="info"
+            ;;
+        usb_plugged)
+            T_TITLE="USB Modem Connected: Galaxy S21 FE 5G"
+            T_MSG="New USB tethering modem detected on USB 3.0 port: Samsung Galaxy S21 FE 5G (usb0)."
+            T_LEVEL="info"
+            ;;
+        power_event)
+            T_TITLE="Router Reboot & Power Event"
+            T_MSG="MAXNET Gateway router has rebooted or recovered from power interruption. System uptime: 42s."
+            T_LEVEL="warning"
+            ;;
+        custom_ip)
+            T_TITLE="Monitored Host Offline: 10.0.0.2"
+            T_MSG="Target host 10.0.0.2 is UNREACHABLE or stopped responding on the network."
+            T_LEVEL="danger"
+            ;;
+        adult_content)
+            T_TITLE="18+ Adult Content Detected"
+            T_MSG="Network client at IP 10.0.0.114 (POCO-X6-5G) queried adult/restricted domain (pornhub.com). Access logged."
+            T_LEVEL="danger"
+            ;;
+        wifi_event)
+            T_TITLE="WiFi Client Associated: Realtek"
+            T_MSG="Wireless client (MAC: 46:df:eb:aa:43:32) connected to MAXNET-5G on channel 36."
+            T_LEVEL="info"
+            ;;
+    esac
+
+    POST_DATA=$(jq -n --arg t "$T_TITLE" --arg m "$T_MSG" --arg l "$T_LEVEL" --arg et "$EV_TYPE" \
+        '{title:$t, message:$m, level:$l, event_type:$et}')
+    ACTION="dispatch"
+fi
+
+# ==================== ACTION: DISPATCH (SEND NOTIFICATION & SAVE) ====================
+if [ "$ACTION" = "dispatch" ]; then
+    init_config
+    init_notif
+
+    ID=""
+    TITLE=""
+    MSG=""
+    LEVEL=""
+    EV_TYPE=""
+    TS=""
+
+    if [ -n "$POST_DATA" ] && echo "$POST_DATA" | jq . >/dev/null 2>&1; then
+        ID=$(echo "$POST_DATA" | jq -r '.id // empty' 2>/dev/null)
+        TITLE=$(echo "$POST_DATA" | jq -r '.title // empty' 2>/dev/null)
+        MSG=$(echo "$POST_DATA" | jq -r '.message // empty' 2>/dev/null)
+        LEVEL=$(echo "$POST_DATA" | jq -r '.level // empty' 2>/dev/null)
+        EV_TYPE=$(echo "$POST_DATA" | jq -r '.event_type // empty' 2>/dev/null)
+        TS=$(echo "$POST_DATA" | jq -r '.timestamp // empty' 2>/dev/null)
+    fi
+
+    [ -z "$ID" ] && ID=$(echo "$QUERY_STRING" | sed -n 's/^.*id=\([^&]*\).*$/\1/p')
+    [ -z "$TITLE" ] && TITLE=$(echo "$QUERY_STRING" | sed -n 's/^.*title=\([^&]*\).*$/\1/p' | sed 's/+/ /g;s/%20/ /g')
+    [ -z "$MSG" ] && MSG=$(echo "$QUERY_STRING" | sed -n 's/^.*msg=\([^&]*\).*$/\1/p' | sed 's/+/ /g;s/%20/ /g')
+    [ -z "$LEVEL" ] && LEVEL=$(echo "$QUERY_STRING" | sed -n 's/^.*level=\([^&]*\).*$/\1/p')
+    [ -z "$EV_TYPE" ] && EV_TYPE=$(echo "$QUERY_STRING" | sed -n 's/^.*type=\([^&]*\).*$/\1/p')
+
+    [ -z "$TITLE" ] && TITLE="System Alert"
+    [ -z "$LEVEL" ] && LEVEL="info"
+    [ -z "$EV_TYPE" ] && EV_TYPE="system"
+    [ -z "$ID" ] && ID="notif_$(date +%s)_$RANDOM"
+    [ -z "$TS" ] && TS=$(date +"%b %d, %H:%M")
+
+    # Ensure NOTIF_FILE is a valid JSON array; self-heal if corrupted
+    if [ ! -f "$NOTIF_FILE" ] || ! jq -e 'type=="array"' "$NOTIF_FILE" >/dev/null 2>&1; then
+        echo "[]" > "$NOTIF_FILE"
+    fi
+
+    # Append to NOTIF_FILE (keep newest 50)
+    NEW_ENTRY=$(jq -n \
+        --arg id "$ID" \
+        --arg title "$TITLE" \
+        --arg msg "$MSG" \
+        --arg level "$LEVEL" \
+        --arg type "$EV_TYPE" \
+        --arg ts "$TS" \
+        '{id: $id, title: $title, message: $msg, level: $level, event_type: $type, timestamp: $ts, read: false}' 2>/dev/null)
+
+    if [ -n "$NEW_ENTRY" ]; then
+        jq --argjson new "$NEW_ENTRY" '[$new] + (if type=="array" then . else [] end) | .[0:50]' "$NOTIF_FILE" > "/tmp/notif_new.json" 2>/dev/null
+        if [ -s "/tmp/notif_new.json" ] && jq -e 'type=="array"' "/tmp/notif_new.json" >/dev/null 2>&1; then
+            mv -f "/tmp/notif_new.json" "$NOTIF_FILE"
+        fi
+        rm -f "/tmp/notif_new.json"
+    fi
+
+    # Forward to Webhooks if enabled
+    MASTER_EN=$(jq -r '.master_enabled // false' "$CONF_FILE" 2>/dev/null)
+    if [ "$MASTER_EN" = "true" ]; then
+        EV_EN="true"
+        [ -n "$EV_TYPE" ] && EV_EN=$(jq -r ".events.${EV_TYPE} // true" "$CONF_FILE" 2>/dev/null)
+
+        if [ "$EV_EN" = "true" ]; then
+            TG_TEXT=$(format_telegram_msg "$TITLE" "$MSG" "$LEVEL" "$EV_TYPE")
+
+            # 1. Telegram
+            TG_EN=$(jq -r '.telegram.enabled // false' "$CONF_FILE" 2>/dev/null)
+            TG_TOK=$(jq -r '.telegram.bot_token // empty' "$CONF_FILE" 2>/dev/null)
+            TG_CHAT=$(jq -r '.telegram.chat_id // empty' "$CONF_FILE" 2>/dev/null)
+            if [ "$TG_EN" = "true" ] && [ -n "$TG_TOK" ] && [ -n "$TG_CHAT" ]; then
+                ( curl -s -m 8 -X POST "https://api.telegram.org/bot${TG_TOK}/sendMessage" \
+                    -d "chat_id=${TG_CHAT}" \
+                    --data-urlencode "text=${TG_TEXT}" >/dev/null 2>&1 ) &
+            fi
+
+            # 2. Discord
+            DC_EN=$(jq -r '.discord.enabled // false' "$CONF_FILE" 2>/dev/null)
+            DC_URL=$(jq -r '.discord.webhook_url // empty' "$CONF_FILE" 2>/dev/null)
+            if [ "$DC_EN" = "true" ] && [ -n "$DC_URL" ]; then
+                DC_PAYLOAD=$(jq -n \
+                    --arg content "$TG_TEXT" \
+                    '{username: "MAXNET Gateway", content: $content}')
+                ( curl -s -m 8 -H "Content-Type: application/json" -X POST -d "$DC_PAYLOAD" "$DC_URL" >/dev/null 2>&1 ) &
+            fi
+
+            # 3. ntfy.sh
+            NT_EN=$(jq -r '.ntfy.enabled // false' "$CONF_FILE" 2>/dev/null)
+            NT_URL=$(jq -r '.ntfy.topic_url // empty' "$CONF_FILE" 2>/dev/null)
+            if [ "$NT_EN" = "true" ] && [ -n "$NT_URL" ]; then
+                ( curl -s -m 8 -d "$TG_TEXT" "$NT_URL" >/dev/null 2>&1 ) &
+            fi
+        fi
+    fi
+
+    send_json_str '{"status":"ok","id":"'"$ID"'","message":"Alert dispatched successfully."}'
+    exit 0
+fi
+
+# ==================== ACTION: GET_NOTIFICATIONS ====================
+if [ "$ACTION" = "get_notifications" ]; then
+    init_notif
+    send_json_file "$NOTIF_FILE"
+    exit 0
+fi
+
+# ==================== ACTION: DELETE_NOTIFICATION ====================
+if [ "$ACTION" = "delete_notification" ]; then
+    init_notif
+    DEL_ID=$(echo "$QUERY_STRING" | sed -n 's/^.*id=\([^&]*\).*$/\1/p')
+    [ -z "$DEL_ID" ] && DEL_ID=$(echo "$POST_DATA" | sed -n 's/.*"id"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+
+    if [ -n "$DEL_ID" ]; then
+        jq --arg id "$DEL_ID" 'map(select(.id != $id))' "$NOTIF_FILE" > "${NOTIF_FILE}.tmp" && mv "${NOTIF_FILE}.tmp" "$NOTIF_FILE"
+        send_json_str '{"status":"ok","message":"Notification deleted."}'
+    else
+        send_json_str '{"status":"error","message":"No notification ID specified."}'
+    fi
+    exit 0
+fi
+
+# ==================== ACTION: CLEAR_NOTIFICATIONS ====================
+if [ "$ACTION" = "clear_notifications" ]; then
+    echo "[]" > "$NOTIF_FILE"
+    send_json_str '{"status":"ok","message":"All notifications cleared."}'
+    exit 0
+fi
+
+send_json_str '{"status":"error","message":"Unknown action."}'
+exit 0

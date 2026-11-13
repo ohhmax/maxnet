@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+
+START=98
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    [ -f /etc/traffic_stats.json ] && [ ! -f /tmp/traffic_stats.json ] && cp -f /etc/traffic_stats.json /tmp/traffic_stats.json
+    [ -f /etc/traffic_totals.tsv ] && [ ! -f /tmp/traffic_totals.tsv ] && cp -f /etc/traffic_totals.tsv /tmp/traffic_totals.tsv
+    procd_open_instance
+    procd_set_param command /bin/sh /usr/bin/trafficd.sh
+    procd_set_param respawn 3600 5 0
+    procd_close_instance
+}
+
+stop_service() {
+    [ -f /tmp/traffic_stats.json ] && cp -f /tmp/traffic_stats.json /etc/traffic_stats.json
+    [ -f /tmp/traffic_totals.tsv ] && cp -f /tmp/traffic_totals.tsv /etc/traffic_totals.tsv
+    sync
+    killall trafficd.sh 2>/dev/null
+}

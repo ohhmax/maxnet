@@ -1,0 +1,21 @@
+#!/bin/sh
+echo "Content-Type: application/gzip"
+echo "Content-Disposition: attachment; filename=\"maxnet-config-$(date +%Y%m%d-%H%M).tar.gz\""
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo ""
+
+ARCHIVE="/tmp/maxnet_config_backup.tar.gz"
+tar -czf "$ARCHIVE" \
+    /etc/config \
+    /etc/dropbear \
+    /etc/shadow \
+    /etc/passwd \
+    /etc/nftables.d \
+    /etc/sysctl.conf \
+    /etc/rc.local \
+    /etc/blocked_clients.json \
+    /etc/tailscale_prefs.json \
+    /etc/traffic_totals.tsv 2>/dev/null
+
+cat "$ARCHIVE"
+rm -f "$ARCHIVE"

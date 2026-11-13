@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+
+/dts-v1/;
+#include "mt7986a-jiorouter-common.dtsi"
+
+/ {
+	compatible = "jiorouter,ax6000-jidu6401", "jiorouter,ax6000-jidu6j01", "mediatek,mt7986a";
+	model = "JioRouter AX6000 JIDU6401";
+};
+
+&switch {
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			label = "wan";
+		};
+
+		port@1 {
+			reg = <1>;
+			label = "lan1";
+		};
+
+		port@2 {
+			reg = <2>;
+			label = "lan2";
+		};
+
+		port@3 {
+			reg = <3>;
+			label = "lan3";
+		};
+	};
+};

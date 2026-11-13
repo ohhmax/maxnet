@@ -1,0 +1,58 @@
+#!/bin/sh
+
+# Set system hostname and timezone
+uci set system.@system[0].hostname="Maxnet-USB"
+uci set system.@system[0].zonename="Asia/Kolkata"
+uci set system.@system[0].timezone="IST-5:30"
+uci commit system
+
+# Configure LAN IP to 10.0.0.1 and secondary alias 10.0.0.254
+uci set network.lan.ipaddr="10.0.0.1"
+uci add_list network.lan.ipaddr="10.0.0.254/24" 2>/dev/null || true
+uci commit network
+
+# Enable Dropbear SSH on all interfaces
+uci set dropbear.@dropbear[0].Interface=""
+uci commit dropbear
+
+# Add USB Tethering interface (wan_usb) for mobile internet
+if ! uci get network.wan_usb >/dev/null 2>&1; then
+	uci set network.wan_usb=interface
+	uci set network.wan_usb.proto="dhcp"
+	uci set network.wan_usb.device="usb0"
+	uci set network.wan_usb.mtu="1400"
+	uci commit network
+else
+	uci set network.wan_usb.mtu="1400"
+	uci commit network
+fi
+
+# Ensure wan_usb is part of the wan firewall zone
+if uci get firewall.@zone[1] >/dev/null 2>&1; then
+	uci add_list firewall.@zone[1].network="wan_usb" 2>/dev/null || true
+	uci commit firewall
+fi
+
+# Setup ADB wrapper if adb is installed as real binary
+if [ -f /usr/bin/adb ] && [ ! -f /usr/bin/adb.real ]; then
+	mv /usr/bin/adb /usr/bin/adb.real
+	cp /usr/bin/adb-wrapper /usr/bin/adb
+	chmod +x /usr/bin/adb
+fi
+
+# Enable USB Tethering Watchdog Service
+[ -x /etc/init.d/usb_tether_watchdog ] && /etc/init.d/usb_tether_watchdog enable && /etc/init.d/usb_tether_watchdog start
+
+# Enable LED Internet Lifecycle Monitor Service if present
+[ -x /etc/init.d/led_internet_monitor ] && /etc/init.d/led_internet_monitor enable && /etc/init.d/led_internet_monitor start
+
+# Enable uhttpd web monitor on port 80
+[ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd enable && /etc/init.d/uhttpd restart
+
+# Enable MAXNET Core Background Daemons & Services
+for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog phone_telemetry ttyd dufs; do
+	[ -x "/etc/init.d/$s" ] && /etc/init.d/"$s" enable 2>/dev/null && /etc/init.d/"$s" start 2>/dev/null || true
+done
+[ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 enable 2>/dev/null || true
+
+exit 0

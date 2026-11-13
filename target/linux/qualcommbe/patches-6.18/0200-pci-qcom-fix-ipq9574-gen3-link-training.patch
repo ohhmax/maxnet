@@ -1,0 +1,54 @@
+From: Max <max@maxnet.lan>
+Date: Mon, 2 Nov 2026 12:00:00 +0000
+Subject: [PATCH] PCI: qcom: fix IPQ9574 Gen3 link training for non-compliant endpoints
+
+The Qualcomm PCIe 2.9.0 architecture used on IPQ9574 (and IPQ8074) requires
+GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL and GEN3_RELATED_OFF_RXEQ_RGRDLESS_RXTS
+for endpoints such as QCN9074.
+
+In Linux 6.18, qcom_pcie_start_link unconditionally invokes
+qcom_pcie_common_set_equalization(), which modifies GEN3 equalization
+registers and explicitly clears GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL.
+This causes receiver detection to fail (LTSSM remains in DETECT_QUIET)
+and link training never completes.
+
+Skip equalization for ops_2_9_0 and do not clear GEN3_ZRXDC_NONCOMPL
+in qcom_pcie_common_set_equalization().
+
+Signed-off-by: Max <max@maxnet.lan>
+---
+ drivers/pci/controller/dwc/pcie-qcom-common.c | 1 -
+ drivers/pci/controller/dwc/pcie-qcom.c        | 5 ++++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+--- a/drivers/pci/controller/dwc/pcie-qcom-common.c
++++ b/drivers/pci/controller/dwc/pcie-qcom-common.c
+@@ -31,7 +31,6 @@ void qcom_pcie_common_set_equalization(s
+ 		}
+ 
+ 		reg = dw_pcie_readl_dbi(pci, GEN3_RELATED_OFF);
+-		reg &= ~GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL;
+ 		reg &= ~GEN3_RELATED_OFF_RATE_SHADOW_SEL_MASK;
+ 		reg |= FIELD_PREP(GEN3_RELATED_OFF_RATE_SHADOW_SEL_MASK,
+ 			  speed - PCIE_SPEED_8_0GT);
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -282,6 +282,8 @@ struct qcom_pcie {
+ 	bool use_pm_opp;
+ };
+ 
++static const struct qcom_pcie_ops ops_2_9_0;
++
+ #define to_qcom_pcie(x)		dev_get_drvdata((x)->dev)
+ 
+ static void qcom_perst_assert(struct qcom_pcie *pcie, bool assert)
+@@ -310,7 +312,8 @@ static int qcom_pcie_start_link(struct d
+ {
+ 	struct qcom_pcie *pcie = to_qcom_pcie(pci);
+ 
+-	qcom_pcie_common_set_equalization(pci);
++	if (pcie->cfg->ops != &ops_2_9_0)
++		qcom_pcie_common_set_equalization(pci);
+ 
+ 	if (pcie_link_speed[pci->max_link_speed] == PCIE_SPEED_16_0GT)
+ 		qcom_pcie_common_set_16gt_lane_margining(pci);

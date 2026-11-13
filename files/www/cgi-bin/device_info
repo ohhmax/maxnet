@@ -1,0 +1,177 @@
+#!/bin/sh
+printf "Content-Type: application/json\r\n\r\n"
+
+# 1. CPU & SoC
+MODEL=$(cat /tmp/sysinfo/model 2>/dev/null)
+[ -z "$MODEL" ] && MODEL=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0')
+[ -z "$MODEL" ] && MODEL="Jio AX6000 Qualcomm IPQ9574"
+
+CORES=$(grep -c "^processor" /proc/cpuinfo 2>/dev/null || echo 4)
+ARCH=$(uname -m 2>/dev/null || echo "aarch64")
+BOGOMIPS=$(grep -m1 "BogoMIPS" /proc/cpuinfo 2>/dev/null | awk '{print $3}')
+
+# Load average
+LOAD=$(cat /proc/loadavg 2>/dev/null)
+L1=$(echo "$LOAD" | awk '{print $1}')
+L5=$(echo "$LOAD" | awk '{print $2}')
+L15=$(echo "$LOAD" | awk '{print $3}')
+
+# CPU Usage from cached /proc/stat
+CPU_PCT=0
+CUR_STAT=$(grep "^cpu " /proc/stat)
+PREV_FILE="/tmp/.cpu_prev_stat"
+if [ -f "$PREV_FILE" ]; then
+    PREV_STAT=$(cat "$PREV_FILE")
+    U1=$(echo "$PREV_STAT" | awk '{print $2+$3+$4}')
+    T1=$(echo "$PREV_STAT" | awk '{print $2+$3+$4+$5+$6+$7+$8}')
+    U2=$(echo "$CUR_STAT" | awk '{print $2+$3+$4}')
+    T2=$(echo "$CUR_STAT" | awk '{print $2+$3+$4+$5+$6+$7+$8}')
+    DIFF_U=$((U2 - U1))
+    DIFF_T=$((T2 - T1))
+    if [ "$DIFF_T" -gt 0 ]; then
+        CPU_PCT=$((100 * DIFF_U / DIFF_T))
+        [ "$CPU_PCT" -gt 100 ] && CPU_PCT=100
+        [ "$CPU_PCT" -lt 0 ] && CPU_PCT=0
+    fi
+fi
+echo "$CUR_STAT" > "$PREV_FILE"
+if [ "$CPU_PCT" -eq 0 ]; then
+    CPU_PCT=$(awk -v l="$L1" -v c="$CORES" 'BEGIN {p=int((l/c)*100); if(p>100) p=100; if(p<1) p=1; print p}')
+fi
+
+# 2. RAM Memory
+MEM_TOTAL=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_FREE=$(awk '/MemFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_AVAIL=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_BUFFERS=$(awk '/Buffers/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_CACHED=$(awk '/^Cached/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+[ "$MEM_TOTAL" -gt 0 ] && MEM_PCT=$((100 * MEM_USED / MEM_TOTAL)) || MEM_PCT=0
+
+# 3. Thermals (all thermal zones)
+THERMAL_JSON="["
+FIRST_T=1
+for z in /sys/class/thermal/thermal_zone*; do
+    [ -d "$z" ] || continue
+    T_TYPE=$(cat "$z/type" 2>/dev/null || echo "zone")
+    T_RAW=$(cat "$z/temp" 2>/dev/null || echo 0)
+    T_C=$(awk "BEGIN {printf \"%.1f\", $T_RAW/1000}")
+    
+    case "$T_TYPE" in
+        *cpu0*) F_NAME="CPU Core 0" ;;
+        *cpu1*) F_NAME="CPU Core 1" ;;
+        *cpu2*) F_NAME="CPU Core 2" ;;
+        *cpu3*) F_NAME="CPU Core 3" ;;
+        *cpuss0*) F_NAME="CPU Subsystem 0" ;;
+        *cpuss1*) F_NAME="CPU Subsystem 1" ;;
+        *nss*) F_NAME="NSS Network Engine" ;;
+        *wcss*) F_NAME="Wi-Fi Radio PHY" ;;
+        *ubi*) F_NAME="Flash Storage UBI" ;;
+        *glue*) F_NAME="Board Chipset Glue" ;;
+        *) F_NAME="$T_TYPE" ;;
+    esac
+
+    [ $FIRST_T -eq 0 ] && THERMAL_JSON="${THERMAL_JSON},"
+    THERMAL_JSON="${THERMAL_JSON}{\"type\":\"${T_TYPE}\",\"name\":\"${F_NAME}\",\"temp_c\":${T_C}}"
+    FIRST_T=0
+done
+THERMAL_JSON="${THERMAL_JSON}]"
+
+# 4. Storage Partitions
+STORAGE_JSON="["
+FIRST_S=1
+df -h 2>/dev/null | awk 'NR>1 && ($6=="/" || $6=="/overlay" || $6=="/tmp" || $6=="/rom" || $6 ~ /^\/mnt/)' | while read -r fs size used avail pct mnt; do
+    [ $FIRST_S -eq 0 ] && printf ","
+    printf "{\"fs\":\"%s\",\"size\":\"%s\",\"used\":\"%s\",\"avail\":\"%s\",\"use_pct\":\"%s\",\"mount\":\"%s\"}" \
+        "$fs" "$size" "$used" "$avail" "$pct" "$mnt"
+    FIRST_S=0
+done > /tmp/.dev_info_df.tmp
+STORAGE_JSON="[$(cat /tmp/.dev_info_df.tmp)]"
+rm -f /tmp/.dev_info_df.tmp
+
+# 5. Network Interfaces & Physical Ports
+PORTS_JSON="["
+FIRST_P=1
+for iface in wan lan1 lan2 lan3 lan4 br-lan usb0; do
+    [ -d "/sys/class/net/$iface" ] || continue
+    CARRIER=$(cat "/sys/class/net/$iface/carrier" 2>/dev/null || echo 0)
+    SPEED_RAW=$(cat "/sys/class/net/$iface/speed" 2>/dev/null || echo "-1")
+    DUPLEX=$(cat "/sys/class/net/$iface/duplex" 2>/dev/null || echo "unknown")
+    MAC=$(cat "/sys/class/net/$iface/address" 2>/dev/null || echo "--")
+    RX_BYTES=$(cat "/sys/class/net/$iface/statistics/rx_bytes" 2>/dev/null || echo 0)
+    TX_BYTES=$(cat "/sys/class/net/$iface/statistics/tx_bytes" 2>/dev/null || echo 0)
+    RX_PKTS=$(cat "/sys/class/net/$iface/statistics/rx_packets" 2>/dev/null || echo 0)
+    TX_PKTS=$(cat "/sys/class/net/$iface/statistics/tx_packets" 2>/dev/null || echo 0)
+    
+    IP_ADDR=$(ip -4 addr show dev "$iface" 2>/dev/null | awk '/inet / {print $2}' | head -n1)
+
+    if [ "$CARRIER" = "1" ]; then
+        STATUS="UP"
+        [ "$SPEED_RAW" -gt 0 ] && SPEED="${SPEED_RAW} Mbps" || SPEED="Connected"
+    else
+        STATUS="DOWN"
+        SPEED="No Carrier"
+    fi
+
+    case "$iface" in
+        wan) LABEL="WAN Port (2.5G/1G)" ;;
+        lan1) LABEL="LAN Port 1" ;;
+        lan2) LABEL="LAN Port 2" ;;
+        lan3) LABEL="LAN Port 3" ;;
+        lan4) LABEL="LAN Port 4" ;;
+        br-lan) LABEL="LAN Bridge (br-lan)" ;;
+        usb0) LABEL="USB 3.0 WAN Modem" ;;
+        *) LABEL="$iface" ;;
+    esac
+
+    [ $FIRST_P -eq 0 ] && PORTS_JSON="${PORTS_JSON},"
+    PORTS_JSON="${PORTS_JSON}{\"iface\":\"${iface}\",\"label\":\"${LABEL}\",\"status\":\"${STATUS}\",\"speed\":\"${SPEED}\",\"duplex\":\"${DUPLEX}\",\"mac\":\"${MAC}\",\"ip\":\"${IP_ADDR}\",\"rx_bytes\":${RX_BYTES},\"tx_bytes\":${TX_BYTES},\"rx_packets\":${RX_PKTS},\"tx_packets\":${TX_PKTS}}"
+    FIRST_P=0
+done
+PORTS_JSON="${PORTS_JSON}]"
+
+# 6. System Uptime & Kernel
+UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+UP_D=$((UPTIME_SEC / 86400))
+UP_H=$(((UPTIME_SEC % 86400) / 3600))
+UP_M=$(((UPTIME_SEC % 3600) / 60))
+UPTIME_STR="${UP_D}d ${UP_H}h ${UP_M}m"
+KERNEL=$(uname -s -r -v 2>/dev/null || echo "Linux 6.18")
+LOCAL_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null)
+HOSTNAME=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "Maxnet-Gateway")
+
+cat << JSON_END
+{
+  "status": "ok",
+  "system": {
+    "hostname": "${HOSTNAME}",
+    "model": "${MODEL}",
+    "kernel": "${KERNEL}",
+    "uptime_seconds": ${UPTIME_SEC},
+    "uptime_str": "${UPTIME_STR}",
+    "local_time": "${LOCAL_TIME}"
+  },
+  "cpu": {
+    "model": "Qualcomm IPQ9574 (4x ARM Cortex-A73)",
+    "architecture": "${ARCH}",
+    "cores": ${CORES},
+    "bogomips": "${BOGOMIPS}",
+    "usage_pct": ${CPU_PCT},
+    "load_1m": "${L1}",
+    "load_5m": "${L5}",
+    "load_15m": "${L15}"
+  },
+  "memory": {
+    "total_mb": ${MEM_TOTAL},
+    "used_mb": ${MEM_USED},
+    "free_mb": ${MEM_FREE},
+    "avail_mb": ${MEM_AVAIL},
+    "buffers_mb": ${MEM_BUFFERS},
+    "cached_mb": ${MEM_CACHED},
+    "used_pct": ${MEM_PCT}
+  },
+  "thermals": ${THERMAL_JSON},
+  "storage": ${STORAGE_JSON},
+  "ports": ${PORTS_JSON}
+}
+JSON_END

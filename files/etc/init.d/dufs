@@ -1,0 +1,50 @@
+#!/bin/sh /etc/rc.common
+START=95
+STOP=10
+USE_PROCD=1
+
+CONF_FILE="/etc/dufs.json"
+
+start_service() {
+    ENABLED=false
+    if [ -f "$CONF_FILE" ]; then
+        ENABLED=$(jq -r '.enabled // false' "$CONF_FILE" 2>/dev/null)
+    fi
+
+    [ "$ENABLED" != "true" ] && return 0
+
+    PORT=5000
+    PATH_DIR="/mnt/storage"
+    FLAGS="-A --enable-cors"
+    AUTH=""
+
+    PORT=$(jq -r '.port // 5000' "$CONF_FILE" 2>/dev/null)
+    PATH_DIR=$(jq -r '.path // "/mnt/storage"' "$CONF_FILE" 2>/dev/null)
+    ALLOW_UPLOAD=$(jq -r '.allow_upload // true' "$CONF_FILE" 2>/dev/null)
+    ALLOW_DELETE=$(jq -r '.allow_delete // true' "$CONF_FILE" 2>/dev/null)
+    USER=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
+    PASS=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
+
+    if [ "$ALLOW_UPLOAD" = "true" ] && [ "$ALLOW_DELETE" = "true" ]; then
+        FLAGS="-A --enable-cors"
+    elif [ "$ALLOW_UPLOAD" = "true" ]; then
+        FLAGS="--enable-cors --allow-upload --allow-search --allow-archive"
+    else
+        FLAGS="--enable-cors --allow-search --allow-archive"
+    fi
+
+    if [ -n "$USER" ] && [ -n "$PASS" ]; then
+        AUTH="-a $USER:$PASS@/:rw"
+    fi
+
+    ASSETS_FLAG=""
+    [ -d "/www/dufs-assets" ] && ASSETS_FLAG="--assets /www/dufs-assets"
+
+    mkdir -p "$PATH_DIR"
+    procd_open_instance
+    procd_set_param command /usr/bin/dufs "$PATH_DIR" -p "$PORT" $FLAGS $AUTH $ASSETS_FLAG
+    procd_set_param respawn 3600 5 0
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}

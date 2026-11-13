@@ -1,0 +1,81 @@
+{
+  "status": "ok",
+  "ports": {
+    "lan1": {
+      "portIndex": 1,
+      "mode": "empty",
+      "device": null
+    },
+    "lan2": {
+      "portIndex": 2,
+      "mode": "direct",
+      "device": {
+        "name": "maxos",
+        "ip": "10.0.0.111",
+        "mac": "10:65:30:7a:9c:02"
+      }
+    },
+    "lan3": {
+      "portIndex": 3,
+      "mode": "layer2_ap",
+      "ap": {
+        "name": "maxnet-b",
+        "ip": "10.0.0.2",
+        "mac": "8c:a3:99:7b:81:2b",
+        "model": "Broadcom BCM4908 AP"
+      },
+      "layer3_devices": [
+        {
+          "name": "POCO-X6-5G",
+          "ip": "10.0.0.110",
+          "mac": "16:cb:1a:6a:a2:81",
+          "conn_type": "2.4GHz WiFi",
+          "is_router": false,
+          "tier": 3,
+          "devices": []
+        },
+        {
+          "name": "Vivo V2153",
+          "ip": "10.0.0.238",
+          "mac": "f2:82:95:8f:db:29",
+          "conn_type": "2.4GHz WiFi",
+          "is_router": false,
+          "tier": 3,
+          "devices": []
+        },
+        {
+          "name": "V2111",
+          "ip": "10.0.0.232",
+          "mac": "ee:e5:0b:24:d5:eb",
+          "conn_type": "2.4GHz WiFi",
+          "is_router": false,
+          "tier": 3,
+          "devices": []
+        },
+        {
+          "name": "realme-6",
+          "ip": "10.0.0.197",
+          "mac": "46:df:eb:aa:43:32",
+          "conn_type": "2.4GHz WiFi",
+          "is_router": false,
+          "tier": 3,
+          "devices": []
+        },
+        {
+          "name": "Synology NAS",
+          "ip": "10.0.0.5",
+          "mac": "00:11:32:92:02:1b",
+          "conn_type": "LAN Port",
+          "is_router": false,
+          "tier": 3,
+          "devices": []
+        }
+      ]
+    },
+    "lan4": {
+      "portIndex": 4,
+      "mode": "empty",
+      "device": null
+    }
+  }
+}
