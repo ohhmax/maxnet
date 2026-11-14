@@ -59,15 +59,27 @@ fi
 
 # Merge Physical RAM + ZRAM Swap for Complete System Memory Pool
 MEM_PHYS_TOTAL=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_FREE=$(awk '/MemFree/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_BUFFERS=$(awk '/Buffers/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_CACHED=$(awk '/^Cached/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_PHYS_AVAIL=$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+
 SWAP_TOTAL=$(awk '/SwapTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 SWAP_FREE=$(awk '/SwapFree/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 
+MEM_PHYS_USED=$((MEM_PHYS_TOTAL - MEM_FREE - MEM_BUFFERS - MEM_CACHED))
+[ "$MEM_PHYS_USED" -lt 0 ] && MEM_PHYS_USED=0
+SWAP_USED=$((SWAP_TOTAL - SWAP_FREE))
+
 MEM_TOTAL=$((MEM_PHYS_TOTAL + SWAP_TOTAL))
 MEM_AVAIL=$((MEM_PHYS_AVAIL + SWAP_FREE))
-MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+MEM_USED=$((MEM_PHYS_USED + SWAP_USED))
+
 MEM_PCT=0
 [ "$MEM_TOTAL" -gt 0 ] && MEM_PCT=$(awk -v u="$MEM_USED" -v t="$MEM_TOTAL" 'BEGIN {printf "%.1f", (u*100)/t}')
+
+MEM_PHYS_PCT=0
+[ "$MEM_PHYS_TOTAL" -gt 0 ] && MEM_PHYS_PCT=$(awk -v u="$MEM_PHYS_USED" -v t="$MEM_PHYS_TOTAL" 'BEGIN {printf "%.1f", (u*100)/t}')
 
 # Single-pass average of all thermal zones across the board
 R_TEMP_C=$(awk '{sum+=($1/1000); cnt++} END {if (cnt>0) printf "%.1f", sum/cnt; else print "38.9"}' /sys/class/thermal/thermal_zone*/temp 2>/dev/null)
@@ -629,11 +641,13 @@ cat << JSON
       "used_pct": ${MEM_PCT:-0},
       "phys_total_mb": $((MEM_PHYS_TOTAL / 1024)),
       "phys_avail_mb": $((MEM_PHYS_AVAIL / 1024)),
-      "phys_used_mb": $(((MEM_PHYS_TOTAL - MEM_PHYS_AVAIL) / 1024)),
-      "phys_used_pct": $(awk -v u="$((MEM_PHYS_TOTAL - MEM_PHYS_AVAIL))" -v t="$MEM_PHYS_TOTAL" 'BEGIN {if(t>0) printf "%.1f", (u*100)/t; else print 0}'),
+      "phys_free_mb": $((MEM_FREE / 1024)),
+      "phys_cached_mb": $(((MEM_BUFFERS + MEM_CACHED) / 1024)),
+      "phys_used_mb": $((MEM_PHYS_USED / 1024)),
+      "phys_used_pct": ${MEM_PHYS_PCT:-0},
       "zram_total_mb": $((SWAP_TOTAL / 1024)),
-      "zram_used_mb": $(((SWAP_TOTAL - SWAP_FREE) / 1024)),
-      "zram_used_pct": $(awk -v u="$((SWAP_TOTAL - SWAP_FREE))" -v t="$SWAP_TOTAL" 'BEGIN {if(t>0) printf "%.1f", (u*100)/t; else print 0}')
+      "zram_used_mb": $((SWAP_USED / 1024)),
+      "zram_used_pct": $(awk -v u="$SWAP_USED" -v t="$SWAP_TOTAL" 'BEGIN {if(t>0) printf "%.1f", (u*100)/t; else print 0}')
     },
     "storage": {
       "total_mb": ${OVERLAY_TOTAL:-0},

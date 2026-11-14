@@ -4440,10 +4440,15 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       if (!window._topoTree) {
         const currentLanIp = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_ip) || '10.0.0.1';
-        const currentMac = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_mac) || '2e:dd:4c:b2:8c:fa';
+        const currentMac = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_mac) || '52:5a:4e:e9:61:a0';
         window._topoTree = normalizeTopologyTree(window._topologyLayers, currentLanIp, currentMac);
       }
       const tree = window._topoTree;
+
+      // Dynamically sync real live clients to automated topology tree
+      if (window._lastDataCache && typeof syncRealClientsToTopology === 'function') {
+        syncRealClientsToTopology(tree, window._lastDataCache);
+      }
 
       // Compute Tree Subtree Bounds (Phase 1)
       computeLayeredSubtreeBounds(tree, screenW);
@@ -6566,11 +6571,11 @@ function drawStorageIconSmall(x, y, color, parent) {
 
     function createDefaultTopologyTree(lanIp, routerMac) {
       const ip = lanIp || '10.0.0.1';
-      const mac = routerMac || '2e:dd:4c:b2:8c:fa';
+      const mac = routerMac || '52:5a:4e:e9:61:a0';
       return {
         id: 'root',
         type: 'router',
-        name: 'MAXNET GATEWAY',
+        name: 'MAXNET',
         ip: ip,
         mac: mac,
         uplinkPort: null,
@@ -6582,69 +6587,127 @@ function drawStorageIconSmall(x, y, color, parent) {
           num_ports: 4,
           speed_std: 'usb3',
           ports: [
-            { id: 'usb-1', label: 'USB 1', role: 'phone', name: 'Samsung Galaxy S21 FE 5G', speed: 'usb3' },
-            { id: 'usb-2', label: 'USB 2', role: 'phone', name: 'Xiaomi POCO X6 5G', speed: 'usb2' },
-            { id: 'usb-3', label: 'USB 3', role: 'storage', name: 'NVMe SSD Storage', speed: 'usb3' },
+            { id: 'usb-1', label: 'USB 1', role: 'empty', name: '', speed: 'usb3' },
+            { id: 'usb-2', label: 'USB 2', role: 'empty', name: '', speed: 'usb3' },
+            { id: 'usb-3', label: 'USB 3', role: 'empty', name: '', speed: 'usb3' },
             { id: 'usb-4', label: 'USB 4', role: 'empty', name: '', speed: 'usb3' }
           ]
         },
         ports: [
           { id: 'root-lan1', label: 'LAN 1', role: 'empty', child: null },
-          {
-            id: 'root-lan2',
-            label: 'LAN 2',
-            role: 'device',
-            child: {
-              id: 'dev-maxos',
-              type: 'device',
-              name: 'maxos',
-              ip: '10.0.0.111',
-              mac: '10:65:30:7a:9c:02',
-              uplinkPort: 'root-lan2'
-            }
-          },
-          {
-            id: 'root-lan3',
-            label: 'LAN 3',
-            role: 'node',
-            child: {
-              id: 'node-maxnet-b',
-              type: 'ap',
-              name: 'maxnet-b',
-              ip: '10.0.0.2',
-              mac: '8c:a3:99:7b:81:2b',
-              uplinkPort: 'root-lan3',
-              numPorts: 4,
-              ports: [
-                {
-                  id: 'maxnet-b-lan1',
-                  label: 'LAN 1',
-                  role: 'device',
-                  child: {
-                    id: 'dev-synology',
-                    type: 'device',
-                    name: 'Synology NAS',
-                    ip: '10.0.0.5',
-                    mac: '00:11:32:92:02:1b',
-                    uplinkPort: 'maxnet-b-lan1'
-                  }
-                },
-                { id: 'maxnet-b-lan2', label: 'LAN 2', role: 'empty', child: null },
-                { id: 'maxnet-b-lan3', label: 'LAN 3', role: 'empty', child: null },
-                { id: 'maxnet-b-lan4', label: 'LAN 4', role: 'empty', child: null }
-              ],
-              wireless_clients: [
-                { name: 'POCO-X6-5G', ip: '10.0.0.110', mac: '16:cb:1a:6a:a2:81', band: 'WiFi', linkSpeed: '72 Mbps' },
-                { name: 'Vivo V2153', ip: '10.0.0.238', mac: 'f2:82:95:8f:db:29', band: 'WiFi', linkSpeed: '72 Mbps' },
-                { name: 'V2111', ip: '10.0.0.232', mac: 'ee:e5:0b:24:d5:eb', band: 'WiFi', linkSpeed: '65 Mbps' },
-                { name: 'realme-6', ip: '10.0.0.197', mac: '46:df:eb:aa:43:32', band: 'WiFi', linkSpeed: '65 Mbps' }
-              ]
-            }
-          },
+          { id: 'root-lan2', label: 'LAN 2', role: 'empty', child: null },
+          { id: 'root-lan3', label: 'LAN 3', role: 'empty', child: null },
           { id: 'root-lan4', label: 'LAN 4', role: 'empty', child: null }
         ],
         wireless_clients: []
       };
+    }
+
+    function syncRealClientsToTopology(tree, d) {
+      if (!tree || !d) return;
+
+      const clients = Array.isArray(d.clients) ? d.clients.filter(c => !c.is_self) : [];
+      const wifiClients = Array.isArray(d.wifi_clients) ? d.wifi_clients : [];
+      const usbDevices = Array.isArray(d.usb_devices) ? d.usb_devices : [];
+
+      // 1. Sync Physical LAN Ports (LAN 1 to LAN 4)
+      if (Array.isArray(tree.ports)) {
+        tree.ports.forEach((port, pIdx) => {
+          // If port was manually configured as an AP / Switch or explicitly locked, leave it alone
+          if (port.locked || port.role === 'node' || (port.child && port.child.isCustom)) return;
+
+          const portNum = pIdx + 1;
+          const portTag = `LAN ${portNum}`;
+
+          // Find active connected client on this specific physical LAN port
+          const matchedClient = clients.find(c => c.connected && (c.port === portTag || c.port === `lan${portNum}`));
+
+          if (matchedClient) {
+            port.role = 'device';
+            if (!port.child || port.child.mac !== matchedClient.mac) {
+              port.child = {
+                id: `dev-lan${portNum}-${(matchedClient.mac || '').replace(/[:]/g, '')}`,
+                type: 'device',
+                name: matchedClient.name || matchedClient.dns_name || 'Device',
+                ip: matchedClient.ip || '',
+                mac: matchedClient.mac || '',
+                status: 'online',
+                uplinkPort: port.id
+              };
+            } else {
+              port.child.name = matchedClient.name || matchedClient.dns_name || port.child.name;
+              port.child.ip = matchedClient.ip || port.child.ip;
+              port.child.status = 'online';
+            }
+          } else if (port.role === 'device' && (!port.child || !port.child.isCustom)) {
+            // No client on this port anymore, reset to empty
+            port.role = 'empty';
+            port.child = null;
+          }
+        });
+      }
+
+      // 2. Sync Direct Wireless Clients on Host Gateway
+      if (!Array.isArray(tree.wireless_clients)) tree.wireless_clients = [];
+
+      // Gather all active Wi-Fi clients
+      const activeWifi = [];
+      clients.forEach(c => {
+        if (c.connected && (c.port === 'WiFi' || (c.conn_type && c.conn_type.includes('WiFi')))) {
+          activeWifi.push(c);
+        }
+      });
+      wifiClients.forEach(wc => {
+        if (!activeWifi.some(c => c.mac && c.mac.toLowerCase() === (wc.mac || '').toLowerCase())) {
+          activeWifi.push(wc);
+        }
+      });
+
+      // Update or add active wireless clients
+      activeWifi.forEach(wc => {
+        const existing = tree.wireless_clients.find(item => item.mac && item.mac.toLowerCase() === (wc.mac || '').toLowerCase());
+        if (existing) {
+          existing.name = wc.name || existing.name || 'Wi-Fi Device';
+          existing.ip = wc.ip || existing.ip;
+          existing.status = 'online';
+          existing.band = wc.band || existing.band || '2.4G';
+          existing.linkSpeed = wc.link_speed || existing.linkSpeed || '144 Mbps';
+        } else {
+          tree.wireless_clients.push({
+            id: `wdev-${(wc.mac || '').replace(/[:]/g, '')}`,
+            name: wc.name || 'Wi-Fi Device',
+            ip: wc.ip || '',
+            mac: wc.mac || '',
+            status: 'online',
+            band: wc.band || '2.4G',
+            linkSpeed: wc.link_speed || '144 Mbps'
+          });
+        }
+      });
+
+      // Remove auto-discovered clients that disconnected (preserve any manual ones)
+      tree.wireless_clients = tree.wireless_clients.filter(item => {
+        if (item.manual) return true;
+        return activeWifi.some(wc => wc.mac && wc.mac.toLowerCase() === (item.mac || '').toLowerCase());
+      });
+
+      // 3. Sync USB Ports
+      if (tree.usb_config && Array.isArray(tree.usb_config.ports)) {
+        if (usbDevices.length > 0 && usbDevices[0].status === 'online') {
+          const u = usbDevices[0];
+          const isStorage = (u.device_type === 'storage' || u.device_type === 'ssd' || u.device_type === 'pendrive' || u.has_storage);
+          tree.usb_config.ports[0].role = isStorage ? 'storage' : 'phone';
+          tree.usb_config.ports[0].name = u.product || (isStorage ? 'NVMe SSD Storage' : 'USB 3.0 Mobile Modem');
+          tree.usb_config.ports[0].speed = (u.speed_mbps && u.speed_mbps < 1000) ? 'usb2' : 'usb3';
+        } else if (!tree.usb_config.locked) {
+          tree.usb_config.ports.forEach(p => {
+            if (!p.isCustom) {
+              p.role = 'empty';
+              p.name = '';
+            }
+          });
+        }
+      }
     }
 
     function normalizeTopologyTree(rawData, defaultLanIp, defaultMac) {
@@ -8076,103 +8139,13 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         console.warn('Backend auto_scan request failed, using client heuristic auto-map:', e);
       }
 
-      // Enhanced heuristic fallback
-      const avail = getAvailableNetworkClients();
-      if (!avail || avail.length === 0) {
-        alert('No active clients discovered to auto-map.');
-        return;
-      }
+      // Heuristic fallback: clean tree + dynamic live sync
       const tree = createDefaultTopologyTree();
-      const usedIps = new Set();
-      usedIps.add(tree.ip);
-
-      // 1. Identify primary APs or routers by vendor OUI or name or port LAN 3
-      const apClient = avail.find(c => {
-        const nm = (c.name || '').toLowerCase();
-        const vd = (c.vendor || '').toLowerCase();
-        return vd.includes('cisco') || vd.includes('tp-link') || vd.includes('netgear') || vd.includes('openwrt') ||
-               nm.includes('router') || nm.includes('ap') || nm.includes('maxnet') || nm.includes('openwrt') || c.ip === '10.0.0.2';
-      });
-
-      if (apClient) {
-        const apPort = tree.ports[2]; // LAN 3
-        apPort.role = 'node';
-        apPort.child = {
-          id: 'node-' + (apClient.name ? apClient.name.replace(/\s+/g, '-').toLowerCase() : 'maxnet-b'),
-          type: 'ap',
-          name: apClient.name || 'maxnet-b',
-          ip: apClient.ip || '10.0.0.2',
-          mac: apClient.mac || '8c:a3:99:7b:81:2b',
-          status: (apClient.connected !== false && apClient.status !== 'offline') ? 'online' : 'offline',
-          uplinkPort: apPort.id,
-          numPorts: 4,
-          ports: [
-            { id: 'ap-lan1', label: 'LAN 1', role: 'empty', child: null },
-            { id: 'ap-lan2', label: 'LAN 2', role: 'empty', child: null },
-            { id: 'ap-lan3', label: 'LAN 3', role: 'empty', child: null },
-            { id: 'ap-lan4', label: 'LAN 4', role: 'empty', child: null }
-          ],
-          wireless_clients: []
-        };
-        usedIps.add(apClient.ip);
-
-        // Map NAS or wired under AP LAN 1
-        const nasClient = avail.find(c => !usedIps.has(c.ip) && (((c.vendor || '').toLowerCase().includes('synology') || (c.name && (c.name.toLowerCase().includes('synology') || c.name.toLowerCase().includes('nas')))) || c.ip === '10.0.0.5'));
-        if (nasClient) {
-          apPort.child.ports[0].role = 'device';
-          apPort.child.ports[0].child = {
-            id: 'dev-synology',
-            type: 'device',
-            name: nasClient.name || 'Synology NAS',
-            ip: nasClient.ip,
-            mac: nasClient.mac || '00:11:32:92:02:1b',
-            status: (nasClient.connected !== false && nasClient.status !== 'offline') ? 'online' : 'offline',
-            uplinkPort: apPort.child.ports[0].id
-          };
-          usedIps.add(nasClient.ip);
-        }
-
-        // Map WiFi clients to AP (preserving online/offline status)
-        avail.forEach(c => {
-          if (!usedIps.has(c.ip) && c.ip !== '10.0.0.111' && c.ip !== '10.0.0.1') {
-            const isPhoneOrWifi = (c.port && c.port.includes('LAN 3')) ||
-                                  (c.conn_type && c.conn_type.includes('WiFi')) ||
-                                  (c.name && (c.name.toLowerCase().includes('poco') || c.name.toLowerCase().includes('vivo') || c.name.toLowerCase().includes('phone') || c.name.toLowerCase().includes('realme') || c.name.toLowerCase().includes('motorola')));
-            if (isPhoneOrWifi && apPort.child.wireless_clients.length < 12) {
-              apPort.child.wireless_clients.push({
-                name: c.name || 'WiFi Device',
-                ip: c.ip,
-                mac: c.mac || '',
-                status: (c.connected !== false && c.status !== 'offline') ? 'online' : 'offline',
-                band: 'WiFi',
-                linkSpeed: '72 Mbps'
-              });
-              usedIps.add(c.ip);
-            }
-          }
-        });
-      }
-
-      // Map Workstation / PC to Root LAN 2
-      const pcClient = avail.find(c => !usedIps.has(c.ip) && ((c.port && c.port.includes('LAN 2')) || (c.name && (c.name.toLowerCase().includes('maxos') || c.name.toLowerCase().includes('pc') || c.name.toLowerCase().includes('desktop'))) || c.ip === '10.0.0.111'));
-      if (pcClient) {
-        tree.ports[1].role = 'device';
-        tree.ports[1].child = {
-          id: 'dev-maxos',
-          type: 'device',
-          name: pcClient.name || 'maxos',
-          ip: pcClient.ip,
-          mac: pcClient.mac || '',
-          status: (pcClient.connected !== false && pcClient.status !== 'offline') ? 'online' : 'offline',
-          uplinkPort: tree.ports[1].id
-        };
-        usedIps.add(pcClient.ip);
-      }
-
+      syncRealClientsToTopology(tree, window._lastDataCache);
       window._topoTree = tree;
       renderTopologyLayersUI(tree);
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
-      showSaveSuccessNotification('Topology auto-mapped from active scan!');
+      showSaveSuccessNotification('Topology auto-mapped from real active clients!');
     }
 
     // Modal Export / Import handlers
@@ -16009,24 +15982,25 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         // Physical RAM, ZRAM, and Memory Pool
         const ramSubEl = document.getElementById('sysRamSub');
         const pTot = mem.phys_total_mb || (mem.total_mb > 500 ? 432 : mem.total_mb);
-        const pAvail = mem.phys_avail_mb || mem.avail_mb || 0;
-        const pUsed = mem.phys_used_mb || Math.max(0, pTot - pAvail);
         const pFree = mem.phys_free_mb || mem.free_mb || 0;
+        const pCache = mem.phys_cached_mb || mem.cached_mb || 0;
+        const pAvail = mem.phys_avail_mb || mem.avail_mb || 0;
+        const pUsed = mem.phys_used_mb || Math.max(0, pTot - pFree - pCache);
         const pPct = mem.phys_used_pct !== undefined ? mem.phys_used_pct : (pTot > 0 ? Math.round((pUsed * 100) / pTot) : 0);
         if (ramSubEl) {
-          ramSubEl.textContent = `Used: ${pUsed} MB / ${pTot} MB (${pPct}%) • Free: ${pFree} MB • Avail: ${pAvail} MB`;
+          ramSubEl.textContent = `Physical DDR4: ${pUsed} MB used (${pPct}%) • Free: ${pFree} MB • Cache: ${pCache} MB • Available: ${pAvail} MB`;
         }
 
         const zram = data.zram || {};
         const zramSubEl = document.getElementById('sysZramSub');
-        const zTot = zram.total_mb || mem.zram_total_mb || 215;
+        const zTot = zram.total_mb || mem.zram_total_mb || 384;
         const zUsed = zram.used_mb !== undefined ? zram.used_mb : (mem.zram_used_mb || 0);
         const zFree = zram.free_mb !== undefined ? zram.free_mb : (zTot - zUsed);
         const zPct = zram.used_pct !== undefined ? zram.used_pct : (zTot > 0 ? Math.round((zUsed * 100) / zTot) : 0);
-        const zAlgo = (zram.algorithm || 'lzo-rle').toUpperCase();
-        const zRatio = zram.ratio || '1.00x';
+        const zAlgo = (zram.algorithm || 'lzo').toUpperCase();
+        const zRatio = zram.ratio || '4.54x';
         if (zramSubEl) {
-          zramSubEl.textContent = `Engine: ${zAlgo} • Pool: ${zTot} MB • Used: ${zUsed} MB (${zPct}%) • Free: ${zFree} MB • Ratio: ${zRatio}`;
+          zramSubEl.textContent = `Engine: ${zAlgo} • Pool: ${zTot} MB • Compressed: ${zUsed} MB (${zPct}%) • Available: ${zFree} MB • Ratio: ${zRatio}`;
         }
 
         const poolSubEl = document.getElementById('sysMemPoolSub');
@@ -16035,7 +16009,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const poolUsed = mem.used_mb || (poolTot - poolAvail);
         const poolPct = mem.used_pct !== undefined ? mem.used_pct : (poolTot > 0 ? Math.round((poolUsed * 100) / poolTot) : 0);
         if (poolSubEl) {
-          poolSubEl.textContent = `Total Pool: ${poolTot} MB • Used: ${poolUsed} MB (${poolPct}%) • Available: ${poolAvail} MB Free`;
+          poolSubEl.textContent = `Combined Memory: ${poolTot} MB • Active: ${poolUsed} MB (${poolPct}%) • Available Headroom: ${poolAvail} MB`;
         }
 
         // Thermals & Device Health Status Gauge
@@ -16380,6 +16354,7 @@ if (typeof window !== 'undefined') {
     reserveClientStaticLease,
     getAvailableNetworkClients,
     createDefaultTopologyTree,
+    syncRealClientsToTopology,
     normalizeTopologyTree,
     validateAndFixNodeTree,
     collectUsedIps,
@@ -16811,6 +16786,7 @@ export {
   reserveClientStaticLease,
   getAvailableNetworkClients,
   createDefaultTopologyTree,
+  syncRealClientsToTopology,
   normalizeTopologyTree,
   validateAndFixNodeTree,
   collectUsedIps,

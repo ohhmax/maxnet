@@ -42,21 +42,24 @@ fi
 # 2. RAM Memory & ZRAM
 MEM_PHYS_TOTAL=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_FREE=$(awk '/MemFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
-MEM_PHYS_AVAIL=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
-MEM_PHYS_USED=$((MEM_PHYS_TOTAL - MEM_PHYS_AVAIL))
-[ "$MEM_PHYS_TOTAL" -gt 0 ] && MEM_PHYS_PCT=$((100 * MEM_PHYS_USED / MEM_PHYS_TOTAL)) || MEM_PHYS_PCT=0
-
 MEM_BUFFERS=$(awk '/Buffers/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_CACHED=$(awk '/^Cached/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_PHYS_AVAIL=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+
+# True Linux active physical RAM used = Total - Free - Buffers - Cached
+MEM_PHYS_USED=$((MEM_PHYS_TOTAL - MEM_FREE - MEM_BUFFERS - MEM_CACHED))
+[ "$MEM_PHYS_USED" -lt 0 ] && MEM_PHYS_USED=0
+[ "$MEM_PHYS_TOTAL" -gt 0 ] && MEM_PHYS_PCT=$((100 * MEM_PHYS_USED / MEM_PHYS_TOTAL)) || MEM_PHYS_PCT=0
 
 SWAP_TOTAL=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 SWAP_FREE=$(awk '/SwapFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 SWAP_USED=$((SWAP_TOTAL - SWAP_FREE))
 [ "$SWAP_TOTAL" -gt 0 ] && SWAP_PCT=$((100 * SWAP_USED / SWAP_TOTAL)) || SWAP_PCT=0
 
+# Total combined memory pool (Physical + ZRAM)
 MEM_TOTAL=$((MEM_PHYS_TOTAL + SWAP_TOTAL))
 MEM_AVAIL=$((MEM_PHYS_AVAIL + SWAP_FREE))
-MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+MEM_USED=$((MEM_PHYS_USED + SWAP_USED))
 [ "$MEM_TOTAL" -gt 0 ] && MEM_PCT=$((100 * MEM_USED / MEM_TOTAL)) || MEM_PCT=0
 
 # ZRAM Detailed Metrics
@@ -202,6 +205,8 @@ cat << JSON_END
     "used_pct": ${MEM_PCT},
     "phys_total_mb": ${MEM_PHYS_TOTAL},
     "phys_used_mb": ${MEM_PHYS_USED},
+    "phys_free_mb": ${MEM_FREE},
+    "phys_cached_mb": $((MEM_BUFFERS + MEM_CACHED)),
     "phys_avail_mb": ${MEM_PHYS_AVAIL},
     "phys_used_pct": ${MEM_PHYS_PCT},
     "zram_total_mb": ${SWAP_TOTAL},

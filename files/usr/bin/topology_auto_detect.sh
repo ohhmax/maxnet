@@ -7,12 +7,12 @@ HIST_FILE="/tmp/topology_evidence_history.json"
 [ -f "$HIST_FILE" ] || echo '{"nodes":{}}' > "$HIST_FILE"
 
 # 1. Gateway local info
-LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
+LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null | awk '{print $1}' | cut -d/ -f1)
 [ -z "$LAN_IP" ] && LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
 [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
 LAN_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
-[ -z "$LAN_MAC" ] && LAN_MAC="ce:b2:bb:ae:4d:16"
-HOST_NAME=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET GATEWAY")
+[ -z "$LAN_MAC" ] && LAN_MAC="52:5a:4e:e9:61:a0"
+HOST_NAME="MAXNET"
 
 TMP_DIR="/tmp/topo_scan_$$"
 mkdir -p "$TMP_DIR"
@@ -57,10 +57,6 @@ awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {print $1, $2}' /etc/hosts 2>/dev/null | 
   fi
 done
 
-# Ensure 10.0.0.2 maxnet-b is explicitly named if detected
-if grep -q "10.0.0.2" "$CAND_FILE" 2>/dev/null; then
-  sed -i 's/10.0.0.2 Device/10.0.0.2 maxnet-b/g' "$CAND_FILE" 2>/dev/null
-fi
 
 # 5. Parallel Ping sampling (5 samples per IP)
 UNIQUE_IPS=$(awk '{print $2}' "$CAND_FILE" | grep -E '^10\.0\.0\.' | sort -u)
@@ -85,7 +81,6 @@ for ip in $UNIQUE_IPS; do
   name=$(awk -v ip="$ip" '$2==ip {print $3; exit}' "$CAND_FILE")
   [ -z "$name" ] && name=$(awk -v ip="$ip" '$1==ip {print $2; exit}' /etc/hosts 2>/dev/null)
   [ -z "$name" ] && name="Device"
-  [ "$ip" = "10.0.0.2" ] && name="maxnet-b"
 
   # Physical port & port MAC count
   port_num=$(awk -v mac="$mac" '$2==mac {print $1; exit}' "$PORT_MACS_FILE")
@@ -294,17 +289,12 @@ FINAL_JSON=$(jq -n \
   def get_locked_port(p_id):
     ($locked_ports | map(select(.id == p_id and (.is_locked == true or .child.is_locked == true))) | first);
 
-  # Identify LAN 2 devices (direct single-MAC)
+  # Identify real devices per LAN port
+  ($all_devs | map(select(.port == "LAN 1")) | first) as $lan1_node |
   ($all_devs | map(select(.port == "LAN 2")) | first) as $lan2_node |
-
-  # Identify LAN 3 infrastructure node (role == "ap" with >= 2 signals)
-  ($all_devs | map(select(.port == "LAN 3" and .role == "ap")) | first) as $lan3_ap |
-
-  # Identify LAN 3 wired children (e.g. NAS or low wired ping device under AP)
-  ($all_devs | map(select(.port == "LAN 3" and .device_type == "nas"))) as $lan3_wired_children |
-
-  # Identify LAN 3 wireless children (high ping, phones, laptops, Asus 166)
-  ($all_devs | map(select(.port == "LAN 3" and .mac != ($lan3_ap.mac // "") and .device_type != "nas"))) as $lan3_wifi_children |
+  ($all_devs | map(select(.port == "LAN 3")) | first) as $lan3_node |
+  ($all_devs | map(select(.port == "LAN 4")) | first) as $lan4_node |
+  ($all_devs | map(select(.port == "WiFi" or .is_direct_wifi == true))) as $wifi_nodes |
 
   # Helper to generate concrete evidence list
   def make_evidence(d; is_root):
@@ -322,21 +312,11 @@ FINAL_JSON=$(jq -n \
         ("Hostname signature: " + d.name + " (matches AP/gateway infrastructure convention)"),
         ("Infrastructure rule: " + (d.sig_count|tostring) + " independent signals confirmed (multi-MAC trunk + low latency)")
       ]
-    elif d.port == "LAN 2" then
-      [
-        ("Physical bridge FDB: exactly 1 MAC learned on " + d.port + " (isolated direct end-device)"),
-        ("ICMP ping: avg " + (d.ping_avg_ms|tostring) + " ms, 0% loss (high-speed wired Ethernet)"),
-        ("OUI vendor: " + d.vendor + " (workstation/PC interface)"),
-        "No downstream bridge traffic or sub-interfaces detected",
-        "Direct device rule: single MAC on dedicated physical switch port"
-      ]
     else
       [
-        ("Physical bridge FDB: learned on port " + d.port + (if $lan3_ap then " behind AP " + $lan3_ap.name else "" end)),
-        ("ICMP ping: avg " + (d.ping_avg_ms|tostring) + " ms (wireless latency signature profile)"),
-        "No secondary MACs or downstream bridge entries detected",
-        "Single signal (hostname/vendor) alone does NOT satisfy router criteria (requires >=2 signals)",
-        ("Classified as Wireless Client" + (if $lan3_ap then " of " + $lan3_ap.name else "" end))
+        ("Physical bridge FDB: port " + d.port),
+        ("ICMP ping: avg " + (d.ping_avg_ms|tostring) + " ms"),
+        ("OUI vendor: " + d.vendor)
       ]
     end;
 
@@ -361,103 +341,88 @@ FINAL_JSON=$(jq -n \
         num_ports: 4,
         speed_std: "usb3",
         ports: [
-          { id: "usb-1", label: "USB 1", role: "phone", name: "Samsung Galaxy S21 FE 5G", speed: "usb3" },
-          { id: "usb-2", label: "USB 2", role: "phone", name: "Xiaomi POCO X6 5G", speed: "usb2" },
-          { id: "usb-3", label: "USB 3", role: "storage", name: "NVMe SSD Storage", speed: "usb3" },
+          { id: "usb-1", label: "USB 1", role: "empty", name: "", speed: "usb3" },
+          { id: "usb-2", label: "USB 2", role: "empty", name: "", speed: "usb3" },
+          { id: "usb-3", label: "USB 3", role: "empty", name: "", speed: "usb3" },
           { id: "usb-4", label: "USB 4", role: "empty", name: "", speed: "usb3" }
         ]
       },
       ports: [
-        (if get_locked_port("root-lan1") != null then get_locked_port("root-lan1") else { id: "root-lan1", label: "LAN 1", role: "empty", child: null } end),
+        (if get_locked_port("root-lan1") != null then get_locked_port("root-lan1") else {
+          id: "root-lan1",
+          label: "LAN 1",
+          role: (if $lan1_node then "device" else "empty" end),
+          child: (if $lan1_node then {
+            id: ("dev-" + ($lan1_node.mac | split(":") | join(""))),
+            type: "device",
+            name: $lan1_node.name,
+            ip: $lan1_node.ip,
+            mac: $lan1_node.mac,
+            status: (if $lan1_node.is_online then "online" else "offline" end),
+            confidence: $lan1_node.confidence,
+            uplinkPort: "root-lan1"
+          } else null end)
+        } end),
         (if get_locked_port("root-lan2") != null then get_locked_port("root-lan2") else {
           id: "root-lan2",
           label: "LAN 2",
           role: (if $lan2_node then "device" else "empty" end),
           child: (if $lan2_node then {
-            id: ("dev-" + ($lan2_node.ip | split(".") | join("-"))),
+            id: ("dev-" + ($lan2_node.mac | split(":") | join(""))),
             type: "device",
             name: $lan2_node.name,
             ip: $lan2_node.ip,
             mac: $lan2_node.mac,
             status: (if $lan2_node.is_online then "online" else "offline" end),
             confidence: $lan2_node.confidence,
-            evidence: (make_evidence($lan2_node; false)),
-            metrics: {
-              ping_avg_ms: $lan2_node.ping_avg_ms,
-              loss_pct: $lan2_node.loss_pct,
-              vendor: $lan2_node.vendor,
-              port_mac_count: $lan2_node.port_mac_count
-            },
             uplinkPort: "root-lan2"
           } else null end)
         } end),
         (if get_locked_port("root-lan3") != null then get_locked_port("root-lan3") else {
           id: "root-lan3",
           label: "LAN 3",
-          role: (if $lan3_ap then "node" else (if ($lan3_wired_children|length) > 0 or ($lan3_wifi_children|length) > 0 then "device" else "empty" end) end),
-          child: (if $lan3_ap then {
-            id: "node-ap-lan3",
-            type: "ap",
-            name: $lan3_ap.name,
-            ip: $lan3_ap.ip,
-            mac: $lan3_ap.mac,
-            status: (if $lan3_ap.is_online then "online" else "offline" end),
-            confidence: $lan3_ap.confidence,
-            evidence: (make_evidence($lan3_ap; false)),
-            metrics: {
-              ping_avg_ms: $lan3_ap.ping_avg_ms,
-              loss_pct: $lan3_ap.loss_pct,
-              vendor: $lan3_ap.vendor,
-              port_mac_count: $lan3_ap.port_mac_count
-            },
-            uplinkPort: "root-lan3",
-            numPorts: 4,
-            ports: [
-              {
-                id: "ap-lan1",
-                label: "LAN 1",
-                role: (if ($lan3_wired_children | length) > 0 then "device" else "empty" end),
-                child: (if ($lan3_wired_children | length) > 0 then {
-                  id: ("dev-" + ($lan3_wired_children[0].ip | split(".") | join("-"))),
-                  type: "device",
-                  name: $lan3_wired_children[0].name,
-                  ip: $lan3_wired_children[0].ip,
-                  mac: $lan3_wired_children[0].mac,
-                  status: (if $lan3_wired_children[0].is_online then "online" else "offline" end),
-                  confidence: $lan3_wired_children[0].confidence,
-                  evidence: (make_evidence($lan3_wired_children[0]; false)),
-                  uplinkPort: "ap-lan1"
-                } else null end)
-              },
-              { id: "ap-lan2", label: "LAN 2", role: "empty", child: null },
-              { id: "ap-lan3", label: "LAN 3", role: "empty", child: null },
-              { id: "ap-lan4", label: "LAN 4", role: "empty", child: null }
-            ],
-            wireless_clients: [
-              $lan3_wifi_children[] | {
-                name: .name,
-                ip: .ip,
-                mac: .mac,
-                status: (if .is_online then "online" else "offline" end),
-                confidence: .confidence,
-                evidence: (make_evidence(.; false)),
-                metrics: {
-                  ping_avg_ms: .ping_avg_ms,
-                  loss_pct: .loss_pct,
-                  vendor: .vendor
-                },
-                band: "WiFi",
-                linkSpeed: (if .ping_avg_ms < 50 then "144 Mbps" else "72 Mbps" end)
-              }
-            ]
+          role: (if $lan3_node then "device" else "empty" end),
+          child: (if $lan3_node then {
+            id: ("dev-" + ($lan3_node.mac | split(":") | join(""))),
+            type: "device",
+            name: $lan3_node.name,
+            ip: $lan3_node.ip,
+            mac: $lan3_node.mac,
+            status: (if $lan3_node.is_online then "online" else "offline" end),
+            confidence: $lan3_node.confidence,
+            uplinkPort: "root-lan3"
           } else null end)
         } end),
-        (if get_locked_port("root-lan4") != null then get_locked_port("root-lan4") else { id: "root-lan4", label: "LAN 4", role: "empty", child: null } end)
+        (if get_locked_port("root-lan4") != null then get_locked_port("root-lan4") else {
+          id: "root-lan4",
+          label: "LAN 4",
+          role: (if $lan4_node then "device" else "empty" end),
+          child: (if $lan4_node then {
+            id: ("dev-" + ($lan4_node.mac | split(":") | join(""))),
+            type: "device",
+            name: $lan4_node.name,
+            ip: $lan4_node.ip,
+            mac: $lan4_node.mac,
+            status: (if $lan4_node.is_online then "online" else "offline" end),
+            confidence: $lan4_node.confidence,
+            uplinkPort: "root-lan4"
+          } else null end)
+        } end)
       ],
-      wireless_clients: []
+      wireless_clients: [
+        $wifi_nodes[] | {
+          name: .name,
+          ip: .ip,
+          mac: .mac,
+          status: (if .is_online then "online" else "offline" end),
+          confidence: .confidence,
+          band: "WiFi",
+          linkSpeed: "144 Mbps"
+        }
+      ]
     }
   }
-' 2>/dev/null)
+')
 
 rm -rf "$TMP_DIR"
 
