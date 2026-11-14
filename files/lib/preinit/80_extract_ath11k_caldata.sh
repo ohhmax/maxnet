@@ -58,6 +58,8 @@ do_extract_ath11k_caldata() {
 		for f in /lib/firmware/IPQ9574/*; do
 			[ -f "$f" ] && ln -sf "$f" "/lib/firmware/ath11k/IPQ9574/hw1.0/$(basename "$f")" 2>/dev/null || true
 		done
+		ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0 /lib/firmware/IPQ9574/hw1.0 2>/dev/null || true
+		ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin /lib/firmware/IPQ9574/board.bin 2>/dev/null || true
 	fi
 }
 
