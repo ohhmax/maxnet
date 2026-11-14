@@ -1,0 +1,14 @@
+#!/bin/sh /etc/rc.common
+# MAXNET ath11k 2.4 GHz Remoteproc Rebind Helper
+START=22
+
+boot() {
+    # If c000000.wifi failed initial early-boot probe, rebind once rootfs firmware is loaded
+    if ! iw dev 2>/dev/null | grep -q "phy0"; then
+        echo "c000000.wifi" > /sys/bus/platform/drivers/ath11k/unbind 2>/dev/null || true
+        sleep 1
+        echo "c000000.wifi" > /sys/bus/platform/drivers/ath11k/bind 2>/dev/null || true
+        sleep 2
+        wifi reload 2>/dev/null || true
+    fi
+}
