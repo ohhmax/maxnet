@@ -15425,7 +15425,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const r2gHid = document.getElementById('wifi2gHidden');
 
         if (r2gEn && data.radio_2g) r2gEn.checked = data.radio_2g.enabled === 1;
-        if (r2gSsid && data.radio_2g) r2gSsid.value = data.radio_2g.ssid || 'MaxNet-2.4G';
+        if (r2gSsid && data.radio_2g) r2gSsid.value = data.radio_2g.ssid || 'Maxnet_2.4Ghz';
         if (r2gEnc && data.radio_2g) r2gEnc.value = data.radio_2g.encryption || 'psk2';
         if (r2gKey && data.radio_2g) r2gKey.value = data.radio_2g.key || '';
         if (r2gCh && data.radio_2g) r2gCh.value = data.radio_2g.channel || '1';
@@ -15442,7 +15442,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const r5gHid = document.getElementById('wifi5gHidden');
 
         if (r5gEn && data.radio_5g) r5gEn.checked = data.radio_5g.enabled === 1;
-        if (r5gSsid && data.radio_5g) r5gSsid.value = data.radio_5g.ssid || 'MaxNet-5G';
+        if (r5gSsid && data.radio_5g) r5gSsid.value = data.radio_5g.ssid || 'Maxnet_5Ghz';
         if (r5gEnc && data.radio_5g) r5gEnc.value = data.radio_5g.encryption || 'psk2';
         if (r5gKey && data.radio_5g) r5gKey.value = data.radio_5g.key || '';
         if (r5gCh && data.radio_5g) r5gCh.value = data.radio_5g.channel || '36';
@@ -15492,7 +15492,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const payload = {
           master_enabled: document.getElementById('wifiMasterToggle')?.checked ? 1 : 0,
           enable_2g: document.getElementById('wifi2gEnable')?.checked ? 1 : 0,
-          ssid_2g: document.getElementById('wifi2gSsid')?.value || 'MaxNet-2.4G',
+          ssid_2g: document.getElementById('wifi2gSsid')?.value || 'Maxnet_2.4Ghz',
           enc_2g: document.getElementById('wifi2gEnc')?.value || 'psk2',
           key_2g: document.getElementById('wifi2gKey')?.value || '',
           channel_2g: document.getElementById('wifi2gChannel')?.value || '1',
@@ -15500,7 +15500,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           hidden_2g: document.getElementById('wifi2gHidden')?.checked ? 1 : 0,
 
           enable_5g: document.getElementById('wifi5gEnable')?.checked ? 1 : 0,
-          ssid_5g: document.getElementById('wifi5gSsid')?.value || 'MaxNet-5G',
+          ssid_5g: document.getElementById('wifi5gSsid')?.value || 'Maxnet_5Ghz',
           enc_5g: document.getElementById('wifi5gEnc')?.value || 'psk2',
           key_5g: document.getElementById('wifi5gKey')?.value || '',
           channel_5g: document.getElementById('wifi5gChannel')?.value || '36',

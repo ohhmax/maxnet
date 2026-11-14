@@ -1,0 +1,23 @@
+# 5Gbps Multi-Core RPS & High-Performance Network Tuning
+sysctl -w net.core.rps_sock_flow_entries=4096
+sysctl -w net.core.netdev_max_backlog=16384
+sysctl -w net.core.rmem_max=16777216
+sysctl -w net.core.wmem_max=16777216
+sysctl -w net.ipv4.tcp_rmem="4096 1048576 16777216"
+sysctl -w net.ipv4.tcp_wmem="4096 1048576 16777216"
+
+# Apply LAN reliability & L4 multipath routing
+sysctl -p /etc/sysctl.d/99-lan-reliability.conf 2>/dev/null || true
+[ -d /sys/class/net/br-lan/bridge ] && echo 0 > /sys/class/net/br-lan/bridge/multicast_snooping 2>/dev/null || true
+
+# Multi-Core RPS Steering across all 4 A73 cores (Mask 0xF = 1111b)
+for q in /sys/class/net/*/queues/rx-*; do
+    [ -f "$q/rps_cpus" ] && echo f > "$q/rps_cpus" 2>/dev/null
+    [ -f "$q/rps_flow_cnt" ] && echo 4096 > "$q/rps_flow_cnt" 2>/dev/null
+done
+
+# Storage drivers and pendrive auto-mount
+insmod /lib/modules/6.18.60/usb-storage.ko 2>/dev/null
+insmod /lib/modules/6.18.60/fuse.ko 2>/dev/null
+
+exit 0

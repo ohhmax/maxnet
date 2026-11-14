@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Remove default root password for passwordless system login
+passwd -d root 2>/dev/null || true
+
 # Set system hostname and timezone
 uci set system.@system[0].hostname="Maxnet-USB"
 uci set system.@system[0].zonename="Asia/Kolkata"
@@ -9,7 +12,17 @@ uci commit system
 # Configure LAN IP to 10.0.0.1 and secondary alias 10.0.0.254
 uci set network.lan.ipaddr="10.0.0.1"
 uci add_list network.lan.ipaddr="10.0.0.254/24" 2>/dev/null || true
+uci set network.@globals[0].packet_steering="1"
 uci commit network
+
+# Set Default High-Performance Wi-Fi SSIDs
+uci set wireless.default_radio0.ssid="Maxnet_2.4Ghz" 2>/dev/null || true
+uci set wireless.default_radio1.ssid="Maxnet_5Ghz" 2>/dev/null || true
+uci commit wireless 2>/dev/null || true
+
+# Fix dnsmasq startup sequence (START=60 after S20network)
+rm -f /etc/rc.d/S19dnsmasq 2>/dev/null || true
+[ -x /etc/init.d/dnsmasq ] && ln -sf ../init.d/dnsmasq /etc/rc.d/S60dnsmasq 2>/dev/null || true
 
 # Enable Dropbear SSH on all interfaces
 uci set dropbear.@dropbear[0].Interface=""

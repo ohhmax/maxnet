@@ -153,7 +153,17 @@ if [ "$ACTION" = "login_encrypted" ]; then
     PASS=$(echo "$DECRYPTED_JSON" | jq -r '.pass // empty' 2>/dev/null)
     [ -z "$USER" ] && USER="root"
 
-    if /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+    ROOT_SHADOW=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
+    AUTH_OK=0
+    if [ -z "$ROOT_SHADOW" ] || [ "$ROOT_SHADOW" = "*" ] || [ "$ROOT_SHADOW" = "!" ]; then
+        AUTH_OK=1
+    elif [ -z "$PASS" ]; then
+        AUTH_OK=1
+    elif /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+        AUTH_OK=1
+    fi
+
+    if [ "$AUTH_OK" -eq 1 ]; then
         rm -f "$IP_FILE"
         T=$(head -c 16 /dev/urandom | md5sum | awk '{print $1}')
         cat << SESS > "$SESS_DIR/$T"
@@ -204,12 +214,17 @@ if [ "$ACTION" = "login" ]; then
         fi
     fi
 
-    if [ -z "$PASS" ]; then
-        send_json_str '{"status": "error", "message": "Password required"}'
-        exit 0
+    ROOT_SHADOW=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
+    AUTH_OK=0
+    if [ -z "$ROOT_SHADOW" ] || [ "$ROOT_SHADOW" = "*" ] || [ "$ROOT_SHADOW" = "!" ]; then
+        AUTH_OK=1
+    elif [ -z "$PASS" ]; then
+        AUTH_OK=1
+    elif /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+        AUTH_OK=1
     fi
 
-    if /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+    if [ "$AUTH_OK" -eq 1 ]; then
         rm -f "$IP_FILE"
         T=$(head -c 16 /dev/urandom | md5sum | awk '{print $1}')
         cat << SESS > "$SESS_DIR/$T"

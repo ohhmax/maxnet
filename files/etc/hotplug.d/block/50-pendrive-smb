@@ -6,9 +6,10 @@ case "$ACTION" in
         DEVPATH="/dev/$DEVNAME"
         [ -b "$DEVPATH" ] || exit 0
         
-        # Avoid mounting internal flash partitions or loop devices
+        # Only mount USB storage drives or external block devices (sd*, nvme*)
         case "$DEVNAME" in
-            mtd*|ubi*|mmcblk*|loop*) exit 0 ;;
+            sd[a-z]*|nvme[0-9]*) ;;
+            *) exit 0 ;;
         esac
 
         # Ensure kernel modules are loaded
@@ -58,7 +59,8 @@ case "$ACTION" in
         ;;
     remove)
         case "$DEVNAME" in
-            mtd*|ubi*|mmcblk*|loop*) exit 0 ;;
+            sd[a-z]*|nvme[0-9]*) ;;
+            *) exit 0 ;;
         esac
         if ! [ -b "/dev/$DEVNAME" ]; then
             umount -l /mnt/pendrive 2>/dev/null
