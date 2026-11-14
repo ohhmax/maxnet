@@ -109,9 +109,9 @@ IF0_DIS=$(uci get wireless.default_radio0.disabled 2>/dev/null || echo "$R0_DIS"
 EN_2G=1
 [ "$R0_DIS" = "1" ] || [ "$IF0_DIS" = "1" ] && EN_2G=0
 
-SSID_2G=$(uci get wireless.default_radio0.ssid 2>/dev/null || echo "Maxnet_2.4Ghz")
+SSID_2G=$(uci get wireless.default_radio0.ssid 2>/dev/null || echo "MAXNET")
 KEY_2G=$(uci get wireless.default_radio0.key 2>/dev/null || echo "")
-ENC_2G=$(uci get wireless.default_radio0.encryption 2>/dev/null || echo "psk2")
+ENC_2G=$(uci get wireless.default_radio0.encryption 2>/dev/null || echo "none")
 CH_2G=$(uci get wireless.radio0.channel 2>/dev/null || echo "1")
 HT_2G=$(uci get wireless.radio0.htmode 2>/dev/null || echo "HE20")
 HIDDEN_2G=$(uci get wireless.default_radio0.hidden 2>/dev/null || echo "0")
@@ -121,9 +121,9 @@ IF1_DIS=$(uci get wireless.default_radio1.disabled 2>/dev/null || echo "$R1_DIS"
 EN_5G=1
 [ "$R1_DIS" = "1" ] || [ "$IF1_DIS" = "1" ] && EN_5G=0
 
-SSID_5G=$(uci get wireless.default_radio1.ssid 2>/dev/null || echo "Maxnet_5Ghz")
+SSID_5G=$(uci get wireless.default_radio1.ssid 2>/dev/null || echo "MAXNET-5G")
 KEY_5G=$(uci get wireless.default_radio1.key 2>/dev/null || echo "")
-ENC_5G=$(uci get wireless.default_radio1.encryption 2>/dev/null || echo "psk2")
+ENC_5G=$(uci get wireless.default_radio1.encryption 2>/dev/null || echo "none")
 CH_5G=$(uci get wireless.radio1.channel 2>/dev/null || echo "36")
 HT_5G=$(uci get wireless.radio1.htmode 2>/dev/null || echo "HE80")
 HIDDEN_5G=$(uci get wireless.default_radio1.hidden 2>/dev/null || echo "0")

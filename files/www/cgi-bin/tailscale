@@ -17,7 +17,7 @@ if [ "$ACTION" = "set_prefs" ] || [ "$ACTION" = "apply" ]; then
     ACCEPT_ROUTES=$(echo "$POST_DATA" | jq -r '.accept_routes // empty' 2>/dev/null)
     SSH_MODE=$(echo "$POST_DATA" | jq -r '.ssh // empty' 2>/dev/null)
     HOSTNAME=$(echo "$POST_DATA" | jq -r '.hostname // empty' 2>/dev/null)
-    [ -z "$HOSTNAME" ] && HOSTNAME="Maxnet-USB"
+    [ -z "$HOSTNAME" ] && HOSTNAME="MAXNET"
 
     ROUTES=""
     [ "$SHARE_LAN" = "true" ] && ROUTES="10.0.0.0/24"
@@ -50,7 +50,7 @@ if [ "$ACTION" = "up" ]; then
     EXIT_NODE=$(echo "$POST_DATA" | jq -r '.exit_node // empty' 2>/dev/null)
     ACCEPT_ROUTES=$(echo "$POST_DATA" | jq -r '.accept_routes // empty' 2>/dev/null)
     HOSTNAME=$(echo "$POST_DATA" | jq -r '.hostname // empty' 2>/dev/null)
-    [ -z "$HOSTNAME" ] && HOSTNAME="Maxnet-USB"
+    [ -z "$HOSTNAME" ] && HOSTNAME="MAXNET"
 
     ROUTES=""
     [ "$SHARE_LAN" = "true" ] && ROUTES="--advertise-routes=10.0.0.0/24 --snat-subnet-routes=true"
@@ -110,7 +110,7 @@ if [ -n "$TS_STATUS" ]; then
     backend_state: (.BackendState // "Stopped"),
     online: (if .BackendState == "Running" then (.Self.Online // false) else false end),
     tailscale_ip: (if .BackendState == "Running" then (.Self.TailscaleIPs[0] // "") else "" end),
-    hostname: (.Self.HostName // "Maxnet-USB"),
+    hostname: (.Self.HostName // "MAXNET"),
     auth_url: (if .AuthURL and .AuthURL != "" then .AuthURL else $file_auth end),
     share_lan: ($has_lan == "true"),
     exit_node: ($has_exit == "true"),
@@ -134,7 +134,7 @@ else
   "backend_state": "Stopped",
   "online": false,
   "tailscale_ip": "",
-  "hostname": "Maxnet-USB",
+  "hostname": "MAXNET",
   "share_lan": false,
   "exit_node": false,
   "accept_routes": true,

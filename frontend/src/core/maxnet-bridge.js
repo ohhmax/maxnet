@@ -120,6 +120,9 @@ import {
   fetchWifiConfig,
   renderWifiClients,
   saveWifiSettings,
+  scanNearbyWifi,
+  connectToWifiNetwork,
+  disconnectWifiWan,
   toggleWifiMasterPower,
   togglePasswordVisibility
 } from './maxnet-engine.js';
@@ -275,6 +278,9 @@ if (typeof window !== 'undefined') {
   window.fetchWifiConfig = fetchWifiConfig;
   window.renderWifiClients = renderWifiClients;
   window.saveWifiSettings = saveWifiSettings;
+  window.scanNearbyWifi = scanNearbyWifi;
+  window.connectToWifiNetwork = connectToWifiNetwork;
+  window.disconnectWifiWan = disconnectWifiWan;
   window.toggleWifiMasterPower = toggleWifiMasterPower;
   window.togglePasswordVisibility = togglePasswordVisibility;
 
@@ -283,6 +289,9 @@ if (typeof window !== 'undefined') {
     fetchWifiConfig,
     renderWifiClients,
     saveWifiSettings,
+    scanNearbyWifi,
+    connectToWifiNetwork,
+    disconnectWifiWan,
     toggleWifiMasterPower,
     togglePasswordVisibility,
     submitLogin,
@@ -524,6 +533,9 @@ export {
   fetchWifiConfig,
   renderWifiClients,
   saveWifiSettings,
+  scanNearbyWifi,
+  connectToWifiNetwork,
+  disconnectWifiWan,
   toggleWifiMasterPower,
   togglePasswordVisibility
 };

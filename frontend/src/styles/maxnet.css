@@ -6262,13 +6262,38 @@ body[data-theme="dark"] {
     }
     @media (max-width: 600px) {
       .topo-telemetry-dock {
-        gap: 8px;
-        padding: 5px 12px;
-        bottom: max(10px, env(safe-area-inset-bottom, 10px)) !important;
+        gap: 6px !important;
+        padding: 4px 10px !important;
+        max-width: calc(100vw - 20px) !important;
+        bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
       }
       .topo-tele-item {
-        font-size: 10px;
-        gap: 3.5px;
+        font-size: 9.5px !important;
+        gap: 2.5px !important;
+      }
+      .topo-tele-item svg {
+        width: 11px !important;
+        height: 11px !important;
+      }
+      .topo-tele-val {
+        font-size: 9.5px !important;
+      }
+      .topo-tele-sep {
+        width: 2px !important;
+        height: 2px !important;
+      }
+    }
+    @media (max-width: 380px) {
+      .topo-telemetry-dock {
+        gap: 4px !important;
+        padding: 3px 8px !important;
+      }
+      .topo-tele-item {
+        font-size: 9px !important;
+        gap: 2px !important;
+      }
+      .topo-tele-item svg {
+        display: none !important;
       }
     }
     /* TOPOLOGY CANVAS BRAND META */

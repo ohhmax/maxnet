@@ -1,0 +1,62 @@
+#!/bin/sh
+printf "Content-Type: application/json\r\n\r\n"
+
+# Scan nearby Wi-Fi APs using iwinfo
+SCAN_JSON=$(iwinfo phy0-ap0 scan 2>/dev/null | awk -v band="2.4GHz" '
+BEGIN { printf "["; first=1; }
+/Cell / {
+    bssid=""; ssid=""; chan=""; sig=""; enc="Open";
+    for (i=1; i<=NF; i++) if ($i == "Address:") bssid=$(i+1);
+}
+/ESSID:/ {
+    match($0, /"[^"]*"/);
+    if (RSTART > 0) ssid = substr($0, RSTART+1, RLENGTH-2);
+}
+/Channel:/ {
+    for (i=1; i<=NF; i++) if ($i == "Channel:") chan=$(i+1);
+}
+/Signal:/ {
+    for (i=1; i<=NF; i++) if ($i == "Signal:") sig=$(i+1);
+}
+/Encryption:/ {
+    sub(/.*Encryption: */, "");
+    enc = $0;
+}
+/Secondary Channel Offset:/ || /^[[:space:]]*$/ {
+    if (bssid != "" && ssid != "") {
+        if (!first) printf ",";
+        printf "{\"bssid\":\"%s\",\"ssid\":\"%s\",\"channel\":\"%s\",\"signal_dbm\":\"%s\",\"encryption\":\"%s\",\"band\":\"%s\"}", bssid, ssid, chan, sig, enc, band;
+        first=0;
+        bssid=""; ssid="";
+    }
+}
+END {
+    if (bssid != "" && ssid != "") {
+        if (!first) printf ",";
+        printf "{\"bssid\":\"%s\",\"ssid\":\"%s\",\"channel\":\"%s\",\"signal_dbm\":\"%s\",\"encryption\":\"%s\",\"band\":\"%s\"}", bssid, ssid, chan, sig, enc, band;
+    }
+    printf "]";
+}')
+
+# Check active WWAN client status
+WWAN_SSID=$(uci -q get wireless.wwan.ssid)
+WWAN_STATUS="disconnected"
+WWAN_IP=""
+
+if [ -n "$WWAN_SSID" ]; then
+    WWAN_IP=$(ip -4 a show dev wwan 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+    [ -z "$WWAN_IP" ] && WWAN_IP=$(ip -4 a show dev wlan0-1 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+    [ -n "$WWAN_IP" ] && WWAN_STATUS="connected" || WWAN_STATUS="connecting"
+fi
+
+cat << JSON_END
+{
+  "status": "ok",
+  "client_wan": {
+    "status": "${WWAN_STATUS}",
+    "ssid": "${WWAN_SSID}",
+    "ip": "${WWAN_IP}"
+  },
+  "networks": ${SCAN_JSON:-[]}
+}
+JSON_END

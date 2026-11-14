@@ -4,9 +4,10 @@
 passwd -d root 2>/dev/null || true
 
 # Set system hostname and timezone
-uci set system.@system[0].hostname="Maxnet-USB"
+uci set system.@system[0].hostname="MAXNET"
 uci set system.@system[0].zonename="Asia/Kolkata"
 uci set system.@system[0].timezone="IST-5:30"
+uci set system.@system[0].zram_size_mb="384"
 uci commit system
 
 # Configure LAN IP to 10.0.0.1 and secondary alias 10.0.0.254
@@ -16,8 +17,12 @@ uci set network.@globals[0].packet_steering="1"
 uci commit network
 
 # Set Default High-Performance Wi-Fi SSIDs
-uci set wireless.default_radio0.ssid="Maxnet_2.4Ghz" 2>/dev/null || true
-uci set wireless.default_radio1.ssid="Maxnet_5Ghz" 2>/dev/null || true
+uci set wireless.default_radio0.ssid="MAXNET" 2>/dev/null || true
+uci set wireless.default_radio0.encryption="none" 2>/dev/null || true
+uci delete wireless.default_radio0.key 2>/dev/null || true
+uci set wireless.default_radio1.ssid="MAXNET-5G" 2>/dev/null || true
+uci set wireless.default_radio1.encryption="none" 2>/dev/null || true
+uci delete wireless.default_radio1.key 2>/dev/null || true
 uci commit wireless 2>/dev/null || true
 
 # Fix dnsmasq startup sequence (START=60 after S20network)
@@ -62,10 +67,14 @@ fi
 # Enable uhttpd web monitor on port 80
 [ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd enable && /etc/init.d/uhttpd restart
 
-# Enable MAXNET Core Background Daemons & Services
-for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog phone_telemetry ttyd dufs; do
+# Enable MAXNET Core Background Daemons & Services (On-demand SMB/Storage, Zero Idle Bloat)
+for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog phone_telemetry ttyd; do
 	[ -x "/etc/init.d/$s" ] && /etc/init.d/"$s" enable 2>/dev/null && /etc/init.d/"$s" start 2>/dev/null || true
 done
-[ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 enable 2>/dev/null || true
+# Ensure Samba, Tailscale, Avahi, DBus are disabled at boot to conserve DDR4 RAM
+[ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 disable 2>/dev/null || true
+[ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale disable 2>/dev/null || true
+[ -x /etc/init.d/dbus ] && /etc/init.d/dbus disable 2>/dev/null || true
+[ -x /etc/init.d/avahi-daemon ] && /etc/init.d/avahi-daemon disable 2>/dev/null || true
 
 exit 0

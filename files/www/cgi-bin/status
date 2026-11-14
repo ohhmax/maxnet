@@ -79,18 +79,24 @@ OVERLAY_FREE=$(df -m /overlay 2>/dev/null | tail -n 1 | awk '{print $4}')
 OVERLAY_PCT=$(df -m /overlay 2>/dev/null | tail -n 1 | awk '{print $5}' | tr -d '%')
 
 LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}' | head -n 1)
-[ -z "$LAN_IP" ] && LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null || echo "10.0.0.1")
+[ -z "$LAN_IP" ] && LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null | awk '{print $1}' | sed 's/\/.*//' || echo "10.0.0.1")
+LAN_IP=$(echo "$LAN_IP" | awk '{print $1}' | sed 's/\/.*//')
 ROUTER_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
 [ -z "$ROUTER_MAC" ] && ROUTER_MAC="d2:61:fb:c9:5e:c5"
 
-WAN_IP=$(ip -4 a show dev usb0 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
-[ -z "$WAN_IP" ] && WAN_IP="10.146.46.254"
+DEFAULT_WAN_DEV=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n 1)
+[ -z "$DEFAULT_WAN_DEV" ] && DEFAULT_WAN_DEV="usb0"
 
-GW_IP=$(ip route show default dev usb0 2>/dev/null | awk '{print $3}' | head -n 1)
-[ -z "$GW_IP" ] && GW_IP="10.146.46.110"
+WAN_IP=$(ip -4 a show dev "$DEFAULT_WAN_DEV" 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+[ -z "$WAN_IP" ] && WAN_IP=$(ip -4 a show dev usb0 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+[ -z "$WAN_IP" ] && WAN_IP=$(ip -4 a show dev wan 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+[ -z "$WAN_IP" ] && WAN_IP=""
+
+GW_IP=$(ip route show default 2>/dev/null | awk '{print $3}' | head -n 1)
+[ -z "$GW_IP" ] && GW_IP=""
 
 DNS_IP=$(awk '/nameserver/ {print $2}' /tmp/resolv.conf.auto 2>/dev/null | head -n 1)
-[ -z "$DNS_IP" ] && DNS_IP="$GW_IP"
+[ -z "$DNS_IP" ] && DNS_IP=""
 
 # Port Link Speeds
 PORTS=""
@@ -493,7 +499,7 @@ TS_RAW=$(tailscale status --json 2>/dev/null)
 TS_STATE=$(echo "$TS_RAW" | jq -r '.BackendState // "Stopped"' 2>/dev/null)
 TS_ONLINE=$(echo "$TS_RAW" | jq -r '.Self.Online // false' 2>/dev/null)
 TS_IP=$(echo "$TS_RAW" | jq -r '.Self.TailscaleIPs[0] // ""' 2>/dev/null)
-TS_HOST=$(echo "$TS_RAW" | jq -r '.Self.HostName // "Maxnet-USB"' 2>/dev/null)
+TS_HOST=$(echo "$TS_RAW" | jq -r '.Self.HostName // "MAXNET"' 2>/dev/null)
 if [ "$P_CONN" = "true" ] && [ -n "$P_PCI" ] && [ "$P_PCI" != "0" ]; then
     TOWERS_JSON=$(jq -n \
       --argjson serv "{\"pci\": ${P_PCI:-0}, \"band\": \"n${P_BAND}\", \"freq\": \"${P_FREQ}\", \"arfcn\": \"${P_ARFCN}\", \"rsrp_dbm\": ${P_RSRP:-0}, \"sinr_db\": ${P_SINR:-0}, \"carrier\": \"${P_OP}\", \"is_serving\": true, \"status\": \"Connected\"}" \
@@ -608,9 +614,9 @@ cat << JSON
   "adb_devices": ${ADB_DEVS},
   "tailscale": {"backend_state": "${TS_STATE}", "online": ${TS_ONLINE:-false}, "ip": "${TS_IP}", "hostname": "${TS_HOST}"},
   "router": {
-    "hostname": "$(uci get system.@system[0].hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo "Maxnet-Gateway")",
+    "hostname": "$(uci get system.@system[0].hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")",
     "model": "Jio AX6000 Qualcomm IPQ9574",
-    "kernel": "Linux 6.18.60 Maxnet-USB",
+    "kernel": "Linux 6.18.60 MAXNET",
     "uptime": "${UPTIME_FMT}",
     "uptime_seconds": ${UPTIME_SEC:-0},
     "load_avg": ["${LOAD_1}", "${LOAD_5}", "${LOAD_15}"],

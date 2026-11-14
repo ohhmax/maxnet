@@ -1,0 +1,81 @@
+#!/bin/sh
+printf "Content-Type: application/json\r\n\r\n"
+
+# Read POST payload
+read -r POST_DATA
+
+ACTION=$(echo "$POST_DATA" | jq -r '.action // "connect"' 2>/dev/null)
+SSID=$(echo "$POST_DATA" | jq -r '.ssid // ""' 2>/dev/null)
+KEY=$(echo "$POST_DATA" | jq -r '.key // ""' 2>/dev/null)
+ENC=$(echo "$POST_DATA" | jq -r '.encryption // "psk2"' 2>/dev/null)
+DEVICE=$(echo "$POST_DATA" | jq -r '.device // "radio0"' 2>/dev/null)
+
+if [ "$ACTION" = "disconnect" ]; then
+    uci delete wireless.wwan 2>/dev/null
+    uci delete network.wwan 2>/dev/null
+    uci commit wireless
+    uci commit network
+    /sbin/wifi reload >/dev/null 2>&1 &
+    cat << JSON_END
+{
+  "status": "ok",
+  "message": "Disconnected Wi-Fi WAN"
+}
+JSON_END
+    exit 0
+fi
+
+if [ -z "$SSID" ]; then
+    cat << JSON_END
+{
+  "status": "error",
+  "message": "SSID cannot be empty"
+}
+JSON_END
+    exit 0
+fi
+
+# Configure network interface
+uci set network.wwan=interface
+uci set network.wwan.proto="dhcp"
+uci commit network
+
+# Ensure wwan is part of wan firewall zone
+if uci get firewall.@zone[1] >/dev/null 2>&1; then
+    uci add_list firewall.@zone[1].network="wwan" 2>/dev/null || true
+    uci commit firewall
+fi
+
+# Configure wireless sta
+uci set wireless.wwan=wifi-iface
+uci set wireless.wwan.device="$DEVICE"
+uci set wireless.wwan.network="wwan"
+uci set wireless.wwan.mode="sta"
+uci set wireless.wwan.ssid="$SSID"
+
+if [ -n "$KEY" ]; then
+    case "$ENC" in
+        *sae*|*wpa3*)
+            uci set wireless.wwan.encryption="sae"
+            ;;
+        *mixed*)
+            uci set wireless.wwan.encryption="psk-mixed"
+            ;;
+        *)
+            uci set wireless.wwan.encryption="psk2"
+            ;;
+    esac
+    uci set wireless.wwan.key="$KEY"
+else
+    uci set wireless.wwan.encryption="none"
+fi
+
+uci commit wireless
+/sbin/wifi reload >/dev/null 2>&1 &
+
+cat << JSON_END
+{
+  "status": "ok",
+  "message": "Connecting to ${SSID} as Wi-Fi WAN Uplink"
+}
+JSON_END

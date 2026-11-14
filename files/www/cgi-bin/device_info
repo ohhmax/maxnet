@@ -169,7 +169,7 @@ UP_M=$(((UPTIME_SEC % 3600) / 60))
 UPTIME_STR="${UP_D}d ${UP_H}h ${UP_M}m"
 KERNEL=$(uname -s -r -v 2>/dev/null || echo "Linux 6.18")
 LOCAL_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null)
-HOSTNAME=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "Maxnet-Gateway")
+HOSTNAME=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")
 
 cat << JSON_END
 {

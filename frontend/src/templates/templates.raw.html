@@ -1716,21 +1716,21 @@
                 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
                   <div>
                     <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Network Name (SSID)</label>
-                    <input type="text" class="mh-input" id="wifi2gSsid" value="Maxnet_2.4Ghz" placeholder="e.g. Maxnet_2.4Ghz" style="width:100%; font-size:12px;">
+                    <input type="text" class="mh-input" id="wifi2gSsid" value="MAXNET" placeholder="e.g. MAXNET" style="width:100%; font-size:12px;">
                   </div>
                   <div>
                     <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Security Mode</label>
                     <select class="mh-input" id="wifi2gEnc" style="width:100%; font-size:12px;">
+                      <option value="none">Open (No Security)</option>
                       <option value="psk2">WPA2-PSK (AES) - High Compatibility</option>
                       <option value="sae">WPA3-SAE - Maximum Security</option>
                       <option value="sae-mixed">WPA2/WPA3 Mixed</option>
-                      <option value="none">Open (No Security)</option>
                     </select>
                   </div>
                   <div>
                     <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Wi-Fi Password</label>
                     <div style="position:relative; display:flex; align-items:center;">
-                      <input type="password" class="mh-input" id="wifi2gKey" value="" placeholder="Min 8 characters" style="width:100%; font-size:12px; padding-right:32px;">
+                      <input type="password" class="mh-input" id="wifi2gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="width:100%; font-size:12px; padding-right:32px;">
                       <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi2gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
                         <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
@@ -1782,21 +1782,21 @@
                 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
                   <div>
                     <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Network Name (SSID)</label>
-                    <input type="text" class="mh-input" id="wifi5gSsid" value="Maxnet_5Ghz" placeholder="e.g. Maxnet_5Ghz" style="width:100%; font-size:12px;">
+                    <input type="text" class="mh-input" id="wifi5gSsid" value="MAXNET-5G" placeholder="e.g. MAXNET-5G" style="width:100%; font-size:12px;">
                   </div>
                   <div>
                     <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Security Mode</label>
                     <select class="mh-input" id="wifi5gEnc" style="width:100%; font-size:12px;">
+                      <option value="none">Open (No Security)</option>
                       <option value="psk2">WPA2-PSK (AES) - High Compatibility</option>
                       <option value="sae">WPA3-SAE - Maximum Security</option>
                       <option value="sae-mixed">WPA2/WPA3 Mixed</option>
-                      <option value="none">Open (No Security)</option>
                     </select>
                   </div>
                   <div>
                     <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Wi-Fi Password</label>
                     <div style="position:relative; display:flex; align-items:center;">
-                      <input type="password" class="mh-input" id="wifi5gKey" value="" placeholder="Min 8 characters" style="width:100%; font-size:12px; padding-right:32px;">
+                      <input type="password" class="mh-input" id="wifi5gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="width:100%; font-size:12px; padding-right:32px;">
                       <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi5gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
                         <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
@@ -1835,6 +1835,33 @@
                       <span class="slider"></span>
                     </label>
                   </div>
+                </div>
+              </div>
+
+              <!-- SECTION: WI-FI WAN / WIRELESS REPEATER UPLINK -->
+              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:12px; padding:16px; margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:13px; font-weight:800; color:var(--text-main);">Wi-Fi WAN Uplink (Client / Repeater)</span>
+                    <span class="setting-pill pill-cyan" id="wifiWanStatusBadge">OFFLINE</span>
+                  </div>
+                  <button type="button" class="mh-btn btn-sm btn-outline" id="btnScanWifi" onclick="scanNearbyWifi()" style="font-size:11px; padding:5px 12px; border-radius:8px;">
+                    <svg viewBox="0 0 24 24" style="width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2; margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    Scan Wi-Fi
+                  </button>
+                </div>
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Search for nearby wireless networks and connect to use them as an uplink internet source (Wireless WAN).</div>
+                
+                <div id="wifiActiveWanInfo" style="display:none; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:8px; padding:10px 12px; margin-bottom:12px; align-items:center; justify-content:space-between;">
+                  <div style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main);">
+                    Connected: <strong id="wifiActiveWanSsid" style="color:#10b981;">--</strong> &bull; IP: <span id="wifiActiveWanIp">--</span>
+                  </div>
+                  <button type="button" class="mh-btn btn-sm btn-ghost" onclick="disconnectWifiWan()" style="color:#ef4444; font-size:10.5px; padding:3px 8px;">Disconnect</button>
+                </div>
+
+                <!-- SCAN RESULTS CONTAINER -->
+                <div id="wifiScanResults" style="display:none; flex-direction:column; gap:6px; max-height:240px; overflow-y:auto; padding-right:4px;">
+                  <div style="padding:10px; text-align:center; color:var(--text-dim); font-size:11px;">Scanning frequencies...</div>
                 </div>
               </div>
 

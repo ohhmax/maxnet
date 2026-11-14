@@ -4491,7 +4491,10 @@ function drawStorageIconSmall(x, y, color, parent) {
       const usbStyle = getUsbThemeStyle(isUsb3 ? "usb3" : "usb2", isLight);
 
       // 1. WAN UPLINK CHIP ON TOP OF GATEWAY (Curve UI matching cards, Hotspot tethering + ADB icons, USB standard wire speed)
-      const hasAnyWan = isWanUp || isUsbWanConn;
+      // Only display WAN uplink card if USB is actively connected or physical Ethernet WAN is plugged in with carrier/IP
+      const isUsbActiveWan = isUsbWanConn && !!(d.router?.usb?.connected || (Array.isArray(d.usb_devices) && d.usb_devices.length > 0 && d.usb_devices[0].status === "online") || (d.mobile?.connected));
+      const isEthActiveWan = isWanUp && !!(d.network && d.network.wan_ip && d.network.wan_ip !== "--" && d.network.wan_ip !== "");
+      const hasAnyWan = isUsbActiveWan || isEthActiveWan;
       if (prefs.showWan && hasAnyWan) {
 
         const wanW = isPhone ? 210 : (isTablet ? 230 : 250);
@@ -4539,7 +4542,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           try { mp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", "#" + wanFlowId); } catch (e) {}
         }
 
-        // WAN Wire Speed Pill on wire midpoint (5Gbps or 480Mbps)
+        // WAN Wire Speed Pill on wire midpoint (5Gbps or 480Mbps for USB, or Ethernet link speed)
         const wireMidY = (wanY + wanH + rootY) / 2;
         const wirePillW = 46;
         const wirePillH = 15;
@@ -4562,27 +4565,29 @@ function drawStorageIconSmall(x, y, color, parent) {
           "text-anchor": "middle",
           style: `font-size:7.5px; font-weight:800; font-family:var(--font-mono); fill:${usbStyle.lineStroke || "#0284c7"};`
         }, wirePillG);
-        tWireSpd.textContent = usbWireSpeed;
+        tWireSpd.textContent = isUsbActiveWan ? usbWireSpeed : (wanPort && wanPort.speed ? `${wanPort.speed}M` : "1Gbps");
 
         // WAN Chip Card in NODES LAYER - curve UI matching other cards (rx: 8, ry: 8)
         const wanG = mk("g", {
           class: "topo-wan-chip",
           "data-node-id": "wan-uplink",
           role: "treeitem",
-          "aria-label": "WAN Uplink USB0",
+          "aria-label": isUsbActiveWan ? "WAN Uplink USB0" : "WAN Uplink Ethernet",
           tabindex: "0",
           style: "cursor:pointer; animation: topoNodeSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;"
         }, nodesLayer);
 
-        const liveWanIpStr = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.wan_ip) ||
+        const liveWanIpStr = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.wan_ip && window._lastDataCache.network.wan_ip !== "--") ||
           (window._lastDataCache && window._lastDataCache.multilink && window._lastDataCache.multilink.links && window._lastDataCache.multilink.links[0] && window._lastDataCache.multilink.links[0].ip) ||
-          "10.228.157.161";
+          "";
+
+        const wanTitleStr = isUsbActiveWan ? "WAN USB" : "WAN ETHERNET";
 
         wanG.onclick = (e) => {
           showTopoNodeDetail({
-            name: "WAN USB",
+            name: wanTitleStr,
             type: "wan",
-            ip: liveWanIpStr,
+            ip: liveWanIpStr || "Online",
             speed: `${liveWanTotalSpeed.toFixed(3)} Mbps`,
             status: "online"
           }, false, e);
@@ -4621,10 +4626,14 @@ function drawStorageIconSmall(x, y, color, parent) {
           fill: isLight ? "rgba(0,0,0,0.025)" : "rgba(255,255,255,0.025)"
         }, wanG);
 
-        if (isStorageDev) {
-          drawPendriveIcon(wanIconBoxX + wanIconBoxW / 2, wanIconBoxY + wanIconBoxH / 2, "#c084fc", wanG);
+        if (isUsbActiveWan) {
+          if (isStorageDev) {
+            drawPendriveIcon(wanIconBoxX + wanIconBoxW / 2, wanIconBoxY + wanIconBoxH / 2, "#c084fc", wanG);
+          } else {
+            drawMobilePhoneIcon(wanIconBoxX + wanIconBoxW / 2, wanIconBoxY + wanIconBoxH / 2, "#38bdf8", wanG);
+          }
         } else {
-          drawMobilePhoneIcon(wanIconBoxX + wanIconBoxW / 2, wanIconBoxY + wanIconBoxH / 2, "#38bdf8", wanG);
+          drawSwitchIcon(wanIconBoxX + wanIconBoxW / 2, wanIconBoxY + wanIconBoxH / 2, "#0284c7", wanG);
         }
 
         const textStartX = wanX + 36;
@@ -4635,7 +4644,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           y: wanY + 14.5,
           style: `font-size:8.5px; font-weight:800; font-family:var(--font-mono); fill:${topoTheme.textMain};`
         }, wanG);
-        tWanTitle.textContent = "WAN USB";
+        tWanTitle.textContent = wanTitleStr;
 
         // WAN IP directly below label
         const tWanIp = mk("text", {
@@ -4643,10 +4652,10 @@ function drawStorageIconSmall(x, y, color, parent) {
           y: wanY + 25.5,
           style: `font-size:7.5px; font-weight:600; font-family:var(--font-mono); fill:${topoTheme.textMuted};`
         }, wanG);
-        tWanIp.textContent = liveWanIpStr;
+        tWanIp.textContent = liveWanIpStr || "DHCP Online";
 
-        // Draw Hotspot Tethering Icon & Android ADB Icon in WAN card if mobile (compact, right next to "WAN USB" label)
-        if (!isStorageDev) {
+        // Draw Hotspot Tethering Icon & Android ADB Icon in WAN card if mobile (compact, right next to WAN label)
+        if (isUsbActiveWan && !isStorageDev) {
           const iconTetherX = textStartX + 46;
           const iconAdbX = textStartX + 57;
           const iconCenterY = wanY + 11.5;
@@ -4852,7 +4861,8 @@ function drawStorageIconSmall(x, y, color, parent) {
           y: l.y + 28.5,
           style: `font-size:8px; font-weight:600; font-family:var(--font-mono); fill:${topoTheme.textMuted};`
         }, chassisG);
-        const rtrIp = node.ip || (isRoot ? ((window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_ip) || "10.0.0.1") : "10.0.0.2");
+        const rtrRawIp = (isRoot ? ((window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_ip) || node.ip || "10.0.0.1") : (node.ip || "10.0.0.2"));
+        const rtrIp = String(rtrRawIp).split(/[\s,]+/)[0].replace(/\/\d+$/, '');
         tIp.textContent = rtrIp;
 
         // Combined Live Speed in Router Header - Soft Dark font color, 0.000 Mbps format, no background box
@@ -5659,12 +5669,12 @@ function drawStorageIconSmall(x, y, color, parent) {
         if (hTitle) hTitle.innerText = d.router.hostname.toUpperCase();
       }
 
-      // Update bottom telemetry dock (0 CPU load, smooth real-time view)
+      // Update bottom telemetry dock (compact integer values to prevent mobile overlap)
       if (d.router) {
         const dCpu = document.getElementById('topoDockCpu');
         if (dCpu) {
           const rawCpu = (d.router.cpu_pct !== undefined) ? d.router.cpu_pct : 0;
-          dCpu.textContent = (typeof rawCpu === 'number' ? rawCpu.toFixed(1) : rawCpu) + '%';
+          dCpu.textContent = Math.round(Number(rawCpu) || 0) + '%';
         }
         const mem = d.router.memory || {};
         const dRam = document.getElementById('topoDockRam');
@@ -5674,21 +5684,21 @@ function drawStorageIconSmall(x, y, color, parent) {
           const pAvail = Number(mem.phys_avail_mb) || 0;
           const pUsed = Math.max(0, pTot - pAvail);
           const pPct = mem.phys_used_pct !== undefined ? Number(mem.phys_used_pct) : (pTot > 0 ? ((pUsed * 100) / pTot) : ((mem.used_pct !== undefined) ? Number(mem.used_pct) : 0));
-          dRam.textContent = (typeof pPct === 'number' ? pPct.toFixed(1) : pPct) + '%';
-          dRam.title = `Physical RAM: ${pUsed} MB / ${pTot} MB (${(typeof pPct === 'number' ? pPct.toFixed(1) : pPct)}%)`;
+          dRam.textContent = Math.round(pPct) + '%';
+          dRam.title = `Physical RAM: ${pUsed} MB / ${pTot} MB (${Math.round(pPct)}%)`;
         }
         const dZram = document.getElementById('topoDockZram');
         if (dZram) {
-          const zTot = Number(mem.zram_total_mb) || 215;
+          const zTot = Number(mem.zram_total_mb) || 384;
           const zUsed = Number(mem.zram_used_mb) || 0;
           const zPct = mem.zram_used_pct !== undefined ? Number(mem.zram_used_pct) : (zTot > 0 ? ((zUsed * 100) / zTot) : 0);
-          dZram.textContent = `${zUsed} MB (${(typeof zPct === 'number' ? zPct.toFixed(1) : zPct)}%)`;
-          dZram.title = `ZRAM Compressed Pool: ${zUsed} MB / ${zTot} MB (${(typeof zPct === 'number' ? zPct.toFixed(1) : zPct)}%)`;
+          dZram.textContent = `${zUsed}M`;
+          dZram.title = `ZRAM Pool: ${zUsed} MB / ${zTot} MB (${Math.round(zPct)}%)`;
         }
         const dTemp = document.getElementById('topoDockTemp');
         if (dTemp) {
           const rawTemp = (d.router.temp_c !== undefined) ? d.router.temp_c : 38.9;
-          dTemp.textContent = (typeof rawTemp === 'number' ? rawTemp.toFixed(1) : rawTemp) + '°C';
+          dTemp.textContent = Math.round(Number(rawTemp) || 39) + '°C';
         }
       }
 
@@ -6642,12 +6652,14 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       if (rawData.tree && rawData.tree.id === 'root') {
         const tree = JSON.parse(JSON.stringify(rawData.tree));
+        if (tree.ip) tree.ip = String(tree.ip).split(/[\s,]+/)[0].replace(/\/\d+$/, '');
         validateAndFixNodeTree(tree);
         return tree;
       }
 
       if (rawData.id === 'root' && Array.isArray(rawData.ports)) {
         const tree = JSON.parse(JSON.stringify(rawData));
+        if (tree.ip) tree.ip = String(tree.ip).split(/[\s,]+/)[0].replace(/\/\d+$/, '');
         validateAndFixNodeTree(tree);
         return tree;
       }
@@ -15459,8 +15471,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const r2gHid = document.getElementById('wifi2gHidden');
 
         if (r2gEn && data.radio_2g) r2gEn.checked = data.radio_2g.enabled === 1;
-        if (r2gSsid && data.radio_2g) r2gSsid.value = data.radio_2g.ssid || 'Maxnet_2.4Ghz';
-        if (r2gEnc && data.radio_2g) r2gEnc.value = data.radio_2g.encryption || 'psk2';
+        if (r2gSsid && data.radio_2g) r2gSsid.value = data.radio_2g.ssid || 'MAXNET';
+        if (r2gEnc && data.radio_2g) r2gEnc.value = data.radio_2g.encryption || 'none';
         if (r2gKey && data.radio_2g) r2gKey.value = data.radio_2g.key || '';
         if (r2gCh && data.radio_2g) r2gCh.value = data.radio_2g.channel || '1';
         if (r2gHt && data.radio_2g) r2gHt.value = data.radio_2g.htmode || 'HE20';
@@ -15476,8 +15488,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const r5gHid = document.getElementById('wifi5gHidden');
 
         if (r5gEn && data.radio_5g) r5gEn.checked = data.radio_5g.enabled === 1;
-        if (r5gSsid && data.radio_5g) r5gSsid.value = data.radio_5g.ssid || 'Maxnet_5Ghz';
-        if (r5gEnc && data.radio_5g) r5gEnc.value = data.radio_5g.encryption || 'psk2';
+        if (r5gSsid && data.radio_5g) r5gSsid.value = data.radio_5g.ssid || 'MAXNET-5G';
+        if (r5gEnc && data.radio_5g) r5gEnc.value = data.radio_5g.encryption || 'none';
         if (r5gKey && data.radio_5g) r5gKey.value = data.radio_5g.key || '';
         if (r5gCh && data.radio_5g) r5gCh.value = data.radio_5g.channel || '36';
         if (r5gHt && data.radio_5g) r5gHt.value = data.radio_5g.htmode || 'HE80';
@@ -15485,8 +15497,197 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
         // Render connected clients
         renderWifiClients(data.clients || []);
+
+        // Also check Wi-Fi WAN state
+        checkWifiWanStatus();
       } catch (err) {
         console.warn('fetchWifiConfig error:', err);
+      }
+    }
+
+    async function checkWifiWanStatus() {
+      try {
+        const res = await apiFetch('/cgi-bin/wifi_scan');
+        const data = await res.json();
+        if (data && data.client_wan) {
+          const isConn = data.client_wan.status === 'connected';
+          const badge = document.getElementById('wifiWanStatusBadge');
+          const activeInfo = document.getElementById('wifiActiveWanInfo');
+          if (badge) {
+            badge.textContent = isConn ? 'CONNECTED' : 'OFFLINE';
+            badge.className = isConn ? 'setting-pill pill-green' : 'setting-pill pill-cyan';
+          }
+          if (activeInfo) {
+            if (isConn) {
+              activeInfo.style.display = 'flex';
+              const sElem = document.getElementById('wifiActiveWanSsid');
+              const iElem = document.getElementById('wifiActiveWanIp');
+              if (sElem) sElem.textContent = data.client_wan.ssid || '--';
+              if (iElem) iElem.textContent = data.client_wan.ip || '--';
+            } else {
+              activeInfo.style.display = 'none';
+            }
+          }
+        }
+      } catch (e) {
+        // quiet fallback
+      }
+    }
+
+    // Live Wi-Fi Airwaves Scanner & Uplink Connector
+    let isScanningWifi = false;
+    async function scanNearbyWifi() {
+      if (isScanningWifi) return;
+      isScanningWifi = true;
+      const btn = document.getElementById('btnScanWifi');
+      const resultsContainer = document.getElementById('wifiScanResults');
+      const badge = document.getElementById('wifiWanStatusBadge');
+      const activeInfo = document.getElementById('wifiActiveWanInfo');
+
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="m-spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></span> Scanning...`;
+      }
+      if (resultsContainer) {
+        resultsContainer.style.display = 'flex';
+        resultsContainer.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-dim); font-size:11px;">Scanning 2.4 GHz &amp; 5 GHz airwaves for nearby Wi-Fi networks...</div>';
+      }
+
+      try {
+        const res = await apiFetch('/cgi-bin/wifi_scan');
+        const data = await res.json();
+
+        if (data.client_wan) {
+          const isConn = data.client_wan.status === 'connected';
+          if (badge) {
+            badge.textContent = isConn ? 'CONNECTED' : 'OFFLINE';
+            badge.className = isConn ? 'setting-pill pill-green' : 'setting-pill pill-cyan';
+          }
+          if (activeInfo) {
+            if (isConn) {
+              activeInfo.style.display = 'flex';
+              const sElem = document.getElementById('wifiActiveWanSsid');
+              const iElem = document.getElementById('wifiActiveWanIp');
+              if (sElem) sElem.textContent = data.client_wan.ssid || '--';
+              if (iElem) iElem.textContent = data.client_wan.ip || '--';
+            } else {
+              activeInfo.style.display = 'none';
+            }
+          }
+        }
+
+        const nets = data.networks || [];
+        if (!resultsContainer) return;
+
+        if (nets.length === 0) {
+          resultsContainer.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11.5px;">No wireless networks detected nearby. Try clicking Scan again.</div>';
+          return;
+        }
+
+        resultsContainer.innerHTML = nets.map(n => {
+          const sig = parseInt(n.signal_dbm) || -80;
+          let sigColor = '#10b981';
+          let sigQuality = 'Strong';
+          if (sig < -75) { sigColor = '#ef4444'; sigQuality = 'Weak'; }
+          else if (sig < -65) { sigColor = '#f59e0b'; sigQuality = 'Fair'; }
+
+          const isEnc = n.encryption && !n.encryption.toLowerCase().includes('none') && !n.encryption.toLowerCase().includes('open');
+          const encBadge = isEnc ? (n.encryption.includes('WPA3') ? 'WPA3' : 'WPA2') : 'OPEN';
+          const encBadgeCol = isEnc ? '#38bdf8' : '#10b981';
+          const safeSsid = escapeHtml(n.ssid || 'Hidden Network');
+          const safeRawSsid = (n.ssid || '').replace(/'/g, "\\'");
+
+          return `
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.025); border:1px solid var(--border-sub, rgba(255,255,255,0.07)); border-radius:8px; padding:10px 14px; gap:10px;">
+              <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                <div style="color:${sigColor}; display:flex; align-items:center;">
+                  <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                </div>
+                <div style="min-width:0;">
+                  <div style="font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    ${safeSsid}
+                  </div>
+                  <div style="font-size:10px; color:var(--text-dim); display:flex; gap:8px; align-items:center;">
+                    <span>Ch ${n.channel || '1'} (${n.band || '2.4GHz'})</span>
+                    <span style="color:${sigColor};">${sig} dBm (${sigQuality})</span>
+                    <span style="font-size:9px; padding:1px 4px; border-radius:3px; background:rgba(255,255,255,0.05); color:${encBadgeCol}; border:1px solid rgba(255,255,255,0.08);">${encBadge}</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <button type="button" class="mh-btn btn-sm btn-outline" onclick="connectToWifiNetwork('${safeRawSsid}', '${isEnc ? 'psk2' : 'none'}')" style="font-size:11px; padding:4px 10px; border-radius:6px;">Connect</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+      } catch (err) {
+        if (resultsContainer) {
+          resultsContainer.innerHTML = `<div style="padding:14px; text-align:center; color:#ef4444; font-size:11px;">Wi-Fi Scan failed: ${escapeHtml(err.message)}</div>`;
+        }
+      } finally {
+        isScanningWifi = false;
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2; margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Scan Wi-Fi`;
+        }
+      }
+    }
+
+    async function connectToWifiNetwork(ssid, enc) {
+      if (!ssid) return;
+      let key = "";
+      if (enc !== 'none') {
+        key = window.prompt(`Enter password for Wi-Fi network "${ssid}":`);
+        if (key === null) return;
+        if (key.length < 8) {
+          showToast('Wi-Fi password must be at least 8 characters', 'error');
+          return;
+        }
+      }
+
+      showToast(`Connecting to ${ssid} as Wi-Fi WAN uplink...`, 'info');
+      try {
+        const res = await apiFetch('/cgi-bin/wifi_connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'connect',
+            ssid: ssid,
+            key: key,
+            encryption: enc
+          })
+        });
+        const data = await res.json();
+        if (data && data.status === 'ok') {
+          showToast(`Connecting to ${ssid}... Network interface initializing.`, 'success');
+          setTimeout(scanNearbyWifi, 3500);
+        } else {
+          showToast(data?.message || 'Failed to connect to Wi-Fi network', 'error');
+        }
+      } catch (err) {
+        showToast('Connection request error: ' + err.message, 'error');
+      }
+    }
+
+    async function disconnectWifiWan() {
+      if (!confirm('Disconnect from current Wi-Fi WAN uplink?')) return;
+      showToast('Disconnecting Wi-Fi WAN...', 'info');
+      try {
+        const res = await apiFetch('/cgi-bin/wifi_connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'disconnect' })
+        });
+        const data = await res.json();
+        if (data && data.status === 'ok') {
+          showToast('Wi-Fi WAN disconnected', 'success');
+          setTimeout(scanNearbyWifi, 1500);
+        } else {
+          showToast(data?.message || 'Disconnect failed', 'error');
+        }
+      } catch (err) {
+        showToast('Disconnect error: ' + err.message, 'error');
       }
     }
 
@@ -15526,16 +15727,16 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const payload = {
           master_enabled: document.getElementById('wifiMasterToggle')?.checked ? 1 : 0,
           enable_2g: document.getElementById('wifi2gEnable')?.checked ? 1 : 0,
-          ssid_2g: document.getElementById('wifi2gSsid')?.value || 'Maxnet_2.4Ghz',
-          enc_2g: document.getElementById('wifi2gEnc')?.value || 'psk2',
+          ssid_2g: document.getElementById('wifi2gSsid')?.value || 'MAXNET',
+          enc_2g: document.getElementById('wifi2gEnc')?.value || 'none',
           key_2g: document.getElementById('wifi2gKey')?.value || '',
           channel_2g: document.getElementById('wifi2gChannel')?.value || '1',
           htmode_2g: document.getElementById('wifi2gHtmode')?.value || 'HE20',
           hidden_2g: document.getElementById('wifi2gHidden')?.checked ? 1 : 0,
 
           enable_5g: document.getElementById('wifi5gEnable')?.checked ? 1 : 0,
-          ssid_5g: document.getElementById('wifi5gSsid')?.value || 'Maxnet_5Ghz',
-          enc_5g: document.getElementById('wifi5gEnc')?.value || 'psk2',
+          ssid_5g: document.getElementById('wifi5gSsid')?.value || 'MAXNET-5G',
+          enc_5g: document.getElementById('wifi5gEnc')?.value || 'none',
           key_5g: document.getElementById('wifi5gKey')?.value || '',
           channel_5g: document.getElementById('wifi5gChannel')?.value || '36',
           htmode_5g: document.getElementById('wifi5gHtmode')?.value || 'HE80',
@@ -16873,6 +17074,9 @@ export {
   fetchWifiConfig,
   renderWifiClients,
   saveWifiSettings,
+  scanNearbyWifi,
+  connectToWifiNetwork,
+  disconnectWifiWan,
   toggleWifiMasterPower,
   togglePasswordVisibility,
   toggleRamBootDetailsInModal,
