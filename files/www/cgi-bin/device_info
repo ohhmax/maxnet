@@ -39,12 +39,17 @@ if [ "$CPU_PCT" -eq 0 ]; then
     CPU_PCT=$(awk -v l="$L1" -v c="$CORES" 'BEGIN {p=int((l/c)*100); if(p>100) p=100; if(p<1) p=1; print p}')
 fi
 
-# 2. RAM Memory
-MEM_TOTAL=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+# 2. RAM Memory (Physical + ZRAM Combined Working Pool)
+MEM_PHYS_TOTAL=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_FREE=$(awk '/MemFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
-MEM_AVAIL=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_PHYS_AVAIL=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_BUFFERS=$(awk '/Buffers/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_CACHED=$(awk '/^Cached/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+SWAP_TOTAL=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+SWAP_FREE=$(awk '/SwapFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+
+MEM_TOTAL=$((MEM_PHYS_TOTAL + SWAP_TOTAL))
+MEM_AVAIL=$((MEM_PHYS_AVAIL + SWAP_FREE))
 MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
 [ "$MEM_TOTAL" -gt 0 ] && MEM_PCT=$((100 * MEM_USED / MEM_TOTAL)) || MEM_PCT=0
 

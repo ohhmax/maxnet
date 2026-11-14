@@ -8,9 +8,14 @@ echo ""
 R_TEMP_RAW=$(cat /sys/class/thermal/thermal_zone7/temp 2>/dev/null || cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
 R_TEMP_C=$(awk -v t="${R_TEMP_RAW:-45000}" 'BEGIN {printf "%.1f", t/1000}')
 
-# Router RAM
-MEM_TOTAL=$(awk '/MemTotal:/ {print $2}' /proc/meminfo)
-MEM_AVAIL=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
+# Router RAM (Physical + ZRAM Combined Pool)
+MEM_PHYS_TOTAL=$(awk '/MemTotal:/ {print $2}' /proc/meminfo)
+MEM_PHYS_AVAIL=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
+SWAP_TOTAL=$(awk '/SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+SWAP_FREE=$(awk '/SwapFree:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+
+MEM_TOTAL=$(( MEM_PHYS_TOTAL + SWAP_TOTAL ))
+MEM_AVAIL=$(( MEM_PHYS_AVAIL + SWAP_FREE ))
 MEM_USED=$(( MEM_TOTAL - MEM_AVAIL ))
 MEM_PCT=0
 [ "$MEM_TOTAL" -gt 0 ] && MEM_PCT=$(( MEM_USED * 100 / MEM_TOTAL ))

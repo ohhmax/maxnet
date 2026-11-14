@@ -57,8 +57,14 @@ if [ -n "$WORK" ] && [ -n "$IDLE" ]; then
     echo "$WORK $IDLE" > "$PREV_STAT"
 fi
 
-MEM_TOTAL=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
-MEM_AVAIL=$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+# Merge Physical RAM + ZRAM Swap for Complete System Memory Pool
+MEM_PHYS_TOTAL=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_PHYS_AVAIL=$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+SWAP_TOTAL=$(awk '/SwapTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+SWAP_FREE=$(awk '/SwapFree/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+
+MEM_TOTAL=$((MEM_PHYS_TOTAL + SWAP_TOTAL))
+MEM_AVAIL=$((MEM_PHYS_AVAIL + SWAP_FREE))
 MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
 MEM_PCT=0
 [ "$MEM_TOTAL" -gt 0 ] && MEM_PCT=$(awk -v u="$MEM_USED" -v t="$MEM_TOTAL" 'BEGIN {printf "%.1f", (u*100)/t}')
@@ -567,7 +573,11 @@ cat << JSON
       "total_mb": $((MEM_TOTAL / 1024)),
       "available_mb": $((MEM_AVAIL / 1024)),
       "used_mb": $((MEM_USED / 1024)),
-      "used_pct": ${MEM_PCT:-0}
+      "used_pct": ${MEM_PCT:-0},
+      "phys_total_mb": $((MEM_PHYS_TOTAL / 1024)),
+      "phys_avail_mb": $((MEM_PHYS_AVAIL / 1024)),
+      "zram_total_mb": $((SWAP_TOTAL / 1024)),
+      "zram_used_mb": $(((SWAP_TOTAL - SWAP_FREE) / 1024))
     },
     "storage": {
       "total_mb": ${OVERLAY_TOTAL:-0},
