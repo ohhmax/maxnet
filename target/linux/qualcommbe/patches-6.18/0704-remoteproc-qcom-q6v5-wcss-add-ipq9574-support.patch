@@ -508,8 +508,8 @@ Signed-off-by: Igor Kravchenko <igor.kravchenko05@gmail.com>
 +};
 +
 +static const struct wcss_data wcss_ipq9574_res_init = {
-+	.q6_firmware_name = "ath11k/IPQ9574/hw1.0/q6_fw.mdt",
-+	.m3_firmware_name = "ath11k/IPQ9574/hw1.0/m3_fw.mdt",
++	.q6_firmware_name = "IPQ9574/q6_fw.mdt",
++	.m3_firmware_name = "IPQ9574/m3_fw.mdt",
 +	.version = WCSS_IPQ9574,
 +	.crash_reason_smem = WCSS_CRASH_REASON,
 +	.aon_reset_required = true,

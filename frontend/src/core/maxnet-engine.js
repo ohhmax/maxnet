@@ -15286,6 +15286,9 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           const fwTftp = document.getElementById('fwTftpCmdVal');
           const fwItbLink = document.getElementById('fwItbDownloadLink');
           const fwPill = document.getElementById('fwUpdateStatusPill');
+          const rowUpgrade = document.getElementById('rowFwUpgradeAction');
+          const rowRamBoot = document.getElementById('rowFwRamBootAction');
+          const fwStatusSub = document.getElementById('fwStatusSubtitle');
 
           if (fwBadge) fwBadge.textContent = (updateData && updateData.current) || 'v2.2.7-b7';
           if (fwModel) fwModel.textContent = (updateData && updateData.model) || 'Jio JIDU6911';
@@ -15300,6 +15303,12 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           if (updateAvailable && updateData) {
             const latVer = updateData.latest || 'v2.2.7';
             const modName = updateData.model || 'JioRouter AX6000';
+
+            if (rowUpgrade) rowUpgrade.style.display = 'flex';
+            if (rowRamBoot) rowRamBoot.style.display = 'flex';
+            if (fwStatusSub) {
+              fwStatusSub.innerHTML = `Installed: <span id="fwCurrentVerBadge" style="font-weight:700;">${escapeHtml(updateData.current || 'v2.2.7-b7')}</span> &bull; Latest: <span id="fwLatestVerVal" style="font-weight:700; color:#f59e0b;">${escapeHtml(latVer)}</span> &bull; <span>${escapeHtml(modName)}</span>`;
+            }
 
             if (pill) { pill.className = 'setting-pill pill-amber'; pill.textContent = `UPDATE: ${latVer}`; }
             if (sub) sub.innerHTML = `<span style="color:#f59e0b; font-weight:700;">Update ${escapeHtml(latVer)} ready</span> &bull; ${escapeHtml(modName)}`;
@@ -15338,6 +15347,14 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           } else {
             const curVer = (updateData && updateData.current) || 'v2.2.7-b7';
             const modName = (updateData && updateData.model) || 'JioRouter AX6000';
+
+            // Router is up to date: hide Upgrade and Safe RAM Boot action rows
+            if (rowUpgrade) rowUpgrade.style.display = 'none';
+            if (rowRamBoot) rowRamBoot.style.display = 'none';
+            if (fwStatusSub) {
+              fwStatusSub.innerHTML = `Installed: <span id="fwCurrentVerBadge" style="font-weight:700;">${escapeHtml(curVer)}</span> &bull; <span style="color:#10b981; font-weight:600;">Router is up to date</span> &bull; <span>${escapeHtml(modName)}</span>`;
+            }
+
             if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = `${curVer} UP TO DATE`; }
             if (sub) sub.textContent = `${modName} is running the latest stable release.`;
             if (fwPill) { fwPill.className = 'setting-pill pill-green'; fwPill.textContent = 'UP TO DATE'; }
@@ -15350,6 +15367,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           }
         }, 600);
       } catch (err) {
+        const rowUpgrade = document.getElementById('rowFwUpgradeAction');
+        const rowRamBoot = document.getElementById('rowFwRamBootAction');
+        if (rowUpgrade) rowUpgrade.style.display = 'none';
+        if (rowRamBoot) rowRamBoot.style.display = 'none';
         if (icon) icon.classList.remove('spinning');
         if (btn) btn.classList.remove('btn-pulse');
         if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = 'UP TO DATE'; }

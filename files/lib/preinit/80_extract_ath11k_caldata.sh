@@ -48,6 +48,17 @@ do_extract_ath11k_caldata() {
 		fi
 		rmdir /tmp/bdf_mnt 2>/dev/null || true
 	fi
+
+	# Ensure board-2.bin aliases exist
+	[ -f /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin ] && ln -sf board.bin /lib/firmware/ath11k/IPQ9574/hw1.0/board-2.bin 2>/dev/null || true
+	[ -f /lib/firmware/ath11k/QCN9074/hw1.0/board.bin ] && [ ! -f /lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin ] && ln -sf board.bin /lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin 2>/dev/null || true
+
+	# Cross-symlink /lib/firmware/IPQ9574 <-> /lib/firmware/ath11k/IPQ9574/hw1.0
+	if [ -d /lib/firmware/IPQ9574 ]; then
+		for f in /lib/firmware/IPQ9574/*; do
+			[ -f "$f" ] && ln -sf "$f" "/lib/firmware/ath11k/IPQ9574/hw1.0/$(basename "$f")" 2>/dev/null || true
+		done
+	fi
 }
 
-boot_hook_add preinit_main do_extract_ath11k_caldata
+type boot_hook_add >/dev/null 2>&1 && boot_hook_add preinit_main do_extract_ath11k_caldata

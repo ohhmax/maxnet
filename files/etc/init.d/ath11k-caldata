@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+# MAXNET OS ath11k Calibration & Firmware Data Extraction Service
+# Ensures 2.4GHz IPQ9574 SoC and 5GHz QCN9074 PCIe radios have proper calibration data
+
+START=15
+
+boot() {
+	[ -f /lib/preinit/80_extract_ath11k_caldata.sh ] && {
+		. /lib/functions.sh
+		. /lib/preinit/80_extract_ath11k_caldata.sh
+		do_extract_ath11k_caldata
+	}
+}
+
+start() {
+	boot
+}

@@ -575,7 +575,7 @@
           <div class="settings-nav-card" id="card-pppoe" onclick="openSettingPage('acc-pppoe')" data-search="pppoe broadband wan isp dialer client server credentials access concentrator ac chap pap pppd">
             <div class="snc-left">
               <div class="snc-icon-box" style="color:#06b6d4;">
-                <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                <svg viewBox="0 0 24 24"><path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3v3H7v-3H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/><line x1="8" y1="10" x2="8" y2="13"/><line x1="12" y1="10" x2="12" y2="13"/><line x1="16" y1="10" x2="16" y2="13"/></svg>
               </div>
               <div class="snc-info">
                 <span class="snc-title">PPPoE Broadband</span>
@@ -1538,7 +1538,7 @@
           <div class="settings-card-header accordion-header" onclick="toggleAccordion('acc-pppoe')">
             <div class="acc-title-left">
               <div class="acc-icon-box" style="color:#06b6d4;">
-                <svg class="svg-icon" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                <svg class="svg-icon" viewBox="0 0 24 24"><path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3v3H7v-3H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/><line x1="8" y1="10" x2="8" y2="13"/><line x1="12" y1="10" x2="12" y2="13"/><line x1="16" y1="10" x2="16" y2="13"/></svg>
               </div>
               <span class="acc-main-title">PPPoE Broadband</span>
             </div>
@@ -3836,7 +3836,7 @@
               </div>
 
               <!-- 2. INSTALL FIRMWARE UPDATE (NAND FLASH) -->
-              <div class="setting-row-item">
+              <div class="setting-row-item" id="rowFwUpgradeAction" style="display:none;">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Install Firmware Update</span>
                   <span class="setting-label-sub" id="fwSysupgradeSub">
@@ -3851,7 +3851,7 @@
               </div>
 
               <!-- 3. SAFE RAM BOOT (.itb) TEST -->
-              <div class="setting-row-item">
+              <div class="setting-row-item" id="rowFwRamBootAction" style="display:none;">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Safe RAM Boot (.itb)</span>
                   <span class="setting-label-sub">
