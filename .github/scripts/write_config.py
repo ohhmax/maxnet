@@ -74,6 +74,16 @@ common_packages = [
     "CONFIG_PACKAGE_iperf3=y",
     "CONFIG_PACKAGE_htop=y",
     "CONFIG_PACKAGE_curl=y",
+
+    # ZRAM Dynamic RAM Compression & OOM Protection
+    "CONFIG_PACKAGE_kmod-zram=y",
+    "CONFIG_PACKAGE_zram-swap=y",
+
+    # Ultra-Lean Wireless Cryptography & Core IEEE 802.11 Stack
+    "CONFIG_PACKAGE_wpad-basic-mbedtls=y",
+    "CONFIG_PACKAGE_iw=y",
+    "CONFIG_PACKAGE_iwinfo=y",
+    "CONFIG_PACKAGE_wireless-regdb=y",
 ]
 
 if args.target == "qualcommbe":
@@ -88,7 +98,6 @@ if args.target == "qualcommbe":
         "CONFIG_TARGET_qualcommbe_ipq95xx_DEVICE_jio_jidu6811=y",
         "CONFIG_TARGET_qualcommbe_ipq95xx_DEVICE_jio_jidu6911=y",
         "CONFIG_TARGET_ROOTFS_INITRAMFS=y",
-        "CONFIG_TARGET_INITRAMFS_FORCE=y",
         "CONFIG_KERNEL_GZIP=y",
         "CONFIG_DEVEL=y",
         "CONFIG_CCACHE=y",
@@ -105,18 +114,15 @@ if args.target == "qualcommbe":
         "CONFIG_PACKAGE_kmod-shortcut-fe=y",
         "CONFIG_PACKAGE_kmod-shortcut-fe-cm=y",
 
-        # Strip unneeded Wi-Fi firmware
-        "CONFIG_PACKAGE_kmod-ath11k=n",
-        "CONFIG_PACKAGE_kmod-ath11k-ahb=n",
-        "CONFIG_PACKAGE_kmod-ath11k-pci=n",
-        "CONFIG_PACKAGE_kmod-mac80211=n",
-        "CONFIG_PACKAGE_kmod-cfg80211=n",
-        "CONFIG_PACKAGE_ath11k-firmware-ipq9574=n",
-        "CONFIG_PACKAGE_ath11k-firmware-qcn9074=n",
-        "CONFIG_PACKAGE_wireless-regdb=n",
-        "CONFIG_PACKAGE_wpad-basic=n",
-        "CONFIG_PACKAGE_wpad=n",
-        "CONFIG_QCOM_Q6V5_WCSS=n",
+        # Qualcomm ath11k Wi-Fi 6 Subsystem (Modular Loading for Zero Idle RAM)
+        "CONFIG_PACKAGE_kmod-qrtr=y",
+        "CONFIG_PACKAGE_kmod-qrtr-smd=y",
+        "CONFIG_PACKAGE_kmod-qrtr-mhi=y",
+        "CONFIG_PACKAGE_kmod-ath11k=y",
+        "CONFIG_PACKAGE_kmod-ath11k-ahb=y",
+        "CONFIG_PACKAGE_kmod-ath11k-pci=y",
+        "CONFIG_PACKAGE_ath11k-firmware-ipq9574=y",
+        "CONFIG_PACKAGE_ath11k-firmware-qcn9074=y",
     ]
 else: # mediatek
     target_config = [
@@ -133,6 +139,10 @@ else: # mediatek
         # MediaTek Ethernet & Switch support
         "CONFIG_PACKAGE_kmod-mt753x=y",
         "CONFIG_PACKAGE_kmod-hwmon-pwmfan=y",
+
+        # MediaTek MT7986 Wi-Fi 6 Filogic
+        "CONFIG_PACKAGE_kmod-mt7915e=y",
+        "CONFIG_PACKAGE_mt7986-firmware=y",
     ]
 
 full_config = target_config + common_packages

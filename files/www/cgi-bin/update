@@ -71,11 +71,18 @@ if [ -s /tmp/manifest.json ]; then
     if command -v jq >/dev/null 2>&1; then
         RESOLVED_DATA=$(jq -r --arg b "$BOARD_NAME" '
             .devices[$b] // (.devices | to_entries[] | select(.key | ascii_downcase | contains($b | ascii_downcase)) | .value)
-            | "\(.download_url // "")|\(.sha256 // "")|\(.filename // "")"
+            | "\(.download_url // "")|\(.sha256 // "")|\(.filename // "")|\(.size // 0)|\(.soc // "")|\(.target // "")|\(.itb_download_url // "")|\(.itb_sha256 // "")|\(.itb_filename // "")|\(.itb_size // 0)"
         ' /tmp/manifest.json 2>/dev/null | head -n 1)
         BIN_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f1)
         EXPECTED_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f2)
         RESOLVED_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f3)
+        FILE_SIZE=$(echo "$RESOLVED_DATA" | cut -d'|' -f4)
+        SOC_NAME=$(echo "$RESOLVED_DATA" | cut -d'|' -f5)
+        TARGET_ARCH=$(echo "$RESOLVED_DATA" | cut -d'|' -f6)
+        ITB_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f7)
+        ITB_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f8)
+        ITB_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f9)
+        ITB_SIZE=$(echo "$RESOLVED_DATA" | cut -d'|' -f10)
     elif command -v python3 >/dev/null 2>&1; then
         RESOLVED_DATA=$(python3 -c "
 import json, sys
@@ -86,10 +93,8 @@ try:
     model = '$MODEL_NAME'.lower()
     devs = m.get('devices', {})
     
-    # Direct board match
     info = devs.get(board)
     if not info:
-        # Alias search
         for k, v in devs.items():
             if k.lower() in model or model in k.lower():
                 info = v
@@ -100,36 +105,63 @@ try:
     if not info and 'jidu6801' in model: info = devs.get('jiorouter,ax6000-jidu6801')
     
     if info:
-        print(f\"{info.get('download_url','')}|{info.get('sha256','')}|{info.get('filename','')}\")
+        print(f\"{info.get('download_url','')}|{info.get('sha256','')}|{info.get('filename','')}|{info.get('size',0)}|{info.get('soc','')}|{info.get('target','')}|{info.get('itb_download_url','')}|{info.get('itb_sha256','')}|{info.get('itb_filename','')}|{info.get('itb_size',0)}\")
     else:
-        print('||')
-except Exception as e:
-    print('||')
+        print('|||||||||')
+except Exception:
+    print('|||||||||')
 " 2>/dev/null)
 
         BIN_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f1)
         EXPECTED_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f2)
         RESOLVED_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f3)
+        FILE_SIZE=$(echo "$RESOLVED_DATA" | cut -d'|' -f4)
+        SOC_NAME=$(echo "$RESOLVED_DATA" | cut -d'|' -f5)
+        TARGET_ARCH=$(echo "$RESOLVED_DATA" | cut -d'|' -f6)
+        ITB_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f7)
+        ITB_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f8)
+        ITB_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f9)
+        ITB_SIZE=$(echo "$RESOLVED_DATA" | cut -d'|' -f10)
     fi
 fi
 
 # Fallback resolution if manifest is unavailable or model not mapped in manifest
 if [ -z "$BIN_URL" ]; then
     case "$BOARD_NAME" in
-        *6811*) BIN_NAME="maxnet-jidu6811-sysupgrade.bin" ;;
-        *6911*) BIN_NAME="maxnet-jidu6911-sysupgrade.bin" ;;
-        *6611*) BIN_NAME="maxnet-jidu6611-sysupgrade.bin" ;;
-        *6411*) BIN_NAME="maxnet-jidu6411-sysupgrade.bin" ;;
-        *6111*) BIN_NAME="maxnet-jidu6111-sysupgrade.bin" ;;
-        *6401*) BIN_NAME="maxnet-jidu6401-sysupgrade.bin" ;;
-        *6801*) BIN_NAME="maxnet-jidu6801-sysupgrade.bin" ;;
-        *6101*) BIN_NAME="maxnet-jidu6101-sysupgrade.bin" ;;
-        *6j01*) BIN_NAME="maxnet-jidu6j01-sysupgrade.bin" ;;
-        *) BIN_NAME="sysupgrade.bin" ;;
+        *6811*) BIN_NAME="maxnet-jidu6811-sysupgrade.bin"; ITB_NAME="maxnet-jidu6811-initramfs.itb"; SOC_NAME="Qualcomm IPQ9574"; TARGET_ARCH="qualcommbe/ipq95xx" ;;
+        *6911*) BIN_NAME="maxnet-jidu6911-sysupgrade.bin"; ITB_NAME="maxnet-jidu6911-initramfs.itb"; SOC_NAME="Qualcomm IPQ9574"; TARGET_ARCH="qualcommbe/ipq95xx" ;;
+        *6611*) BIN_NAME="maxnet-jidu6611-sysupgrade.bin"; ITB_NAME="maxnet-jidu6611-initramfs.itb"; SOC_NAME="Qualcomm IPQ9574"; TARGET_ARCH="qualcommbe/ipq95xx" ;;
+        *6411*) BIN_NAME="maxnet-jidu6411-sysupgrade.bin"; ITB_NAME="maxnet-jidu6411-initramfs.itb"; SOC_NAME="Qualcomm IPQ9574"; TARGET_ARCH="qualcommbe/ipq95xx" ;;
+        *6111*) BIN_NAME="maxnet-jidu6111-sysupgrade.bin"; ITB_NAME="maxnet-jidu6111-initramfs.itb"; SOC_NAME="Qualcomm IPQ9574"; TARGET_ARCH="qualcommbe/ipq95xx" ;;
+        *6401*) BIN_NAME="maxnet-jidu6401-sysupgrade.bin"; ITB_NAME="maxnet-jidu6401-initramfs.itb"; SOC_NAME="MediaTek MT7986A"; TARGET_ARCH="mediatek/filogic" ;;
+        *6801*) BIN_NAME="maxnet-jidu6801-sysupgrade.bin"; ITB_NAME="maxnet-jidu6801-initramfs.itb"; SOC_NAME="MediaTek MT7986A"; TARGET_ARCH="mediatek/filogic" ;;
+        *6101*) BIN_NAME="maxnet-jidu6101-sysupgrade.bin"; ITB_NAME="maxnet-jidu6101-initramfs.itb"; SOC_NAME="MediaTek MT7986A"; TARGET_ARCH="mediatek/filogic" ;;
+        *6j01*) BIN_NAME="maxnet-jidu6j01-sysupgrade.bin"; ITB_NAME="maxnet-jidu6j01-initramfs.itb"; SOC_NAME="MediaTek MT7986A"; TARGET_ARCH="mediatek/filogic" ;;
+        *) BIN_NAME="sysupgrade.bin"; ITB_NAME="initramfs.itb"; SOC_NAME="Universal SoC"; TARGET_ARCH="generic" ;;
     esac
     BIN_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${BIN_NAME}"
     RESOLVED_FILE="$BIN_NAME"
+    ITB_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${ITB_NAME}"
+    ITB_FILE="$ITB_NAME"
 fi
+
+[ -z "$SOC_NAME" ] && SOC_NAME="Qualcomm IPQ9574"
+[ -z "$TARGET_ARCH" ] && TARGET_ARCH="qualcommbe/ipq95xx"
+[ -z "$FILE_SIZE" ] && FILE_SIZE=0
+[ -z "$ITB_SIZE" ] && ITB_SIZE=0
+
+# Determine architecture-specific TFTP command
+case "$TARGET_ARCH" in
+    *qualcommbe*|*ipq95xx*)
+        TFTP_CMD="tftpboot 0x46000000 ${ITB_FILE}; bootm 0x46000000"
+        ;;
+    *mediatek*|*filogic*)
+        TFTP_CMD="tftpboot 0x44000000 ${ITB_FILE}; bootm 0x44000000"
+        ;;
+    *)
+        TFTP_CMD="tftpboot 0x46000000 ${ITB_FILE}; bootm 0x46000000"
+        ;;
+esac
 
 # 3. Handle Flash Execution Action
 if [ "$ACTION" = "flash" ] || [ "$ACTION" = "flash_clean" ]; then
@@ -189,8 +221,7 @@ elif [ "$LATEST_TAG" != "$CURRENT_VER" ] && [ "$CURRENT_BUILD" -eq 0 ]; then
     IS_UPDATE_AVAIL=1
 fi
 
-if [ "$IS_UPDATE_AVAIL" -eq 1 ]; then
-    echo "{\"status\": \"update_available\", \"current\": \"$CURRENT_VER\", \"latest\": \"$LATEST_TAG\", \"latest_build\": $LATEST_BUILD, \"current_build\": $CURRENT_BUILD, \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"url\": \"$BIN_URL\", \"sha256\": \"$EXPECTED_SUM\"}"
-else
-    echo "{\"status\": \"up_to_date\", \"current\": \"$CURRENT_VER\", \"latest\": \"$LATEST_TAG\", \"current_build\": $CURRENT_BUILD, \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\"}"
-fi
+STATUS_STR="up_to_date"
+[ "$IS_UPDATE_AVAIL" -eq 1 ] && STATUS_STR="update_available"
+
+echo "{\"status\": \"$STATUS_STR\", \"is_update\": $IS_UPDATE_AVAIL, \"current\": \"$CURRENT_VER\", \"latest\": \"$LATEST_TAG\", \"latest_build\": $LATEST_BUILD, \"current_build\": $CURRENT_BUILD, \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"soc\": \"$SOC_NAME\", \"target\": \"$TARGET_ARCH\", \"file\": \"$RESOLVED_FILE\", \"url\": \"$BIN_URL\", \"sha256\": \"$EXPECTED_SUM\", \"size\": $FILE_SIZE, \"itb_file\": \"$ITB_FILE\", \"itb_url\": \"$ITB_URL\", \"itb_sha256\": \"$ITB_SUM\", \"itb_size\": $ITB_SIZE, \"tftp_command\": \"$TFTP_CMD\"}"

@@ -370,6 +370,16 @@ let timer = null;
         badge: 'DIAGNOSTICS',
         badgeColor: '#38bdf8'
       },
+      'acc-wifi': {
+        title: 'Wi-Fi & Hotspot',
+        badge: 'WIRELESS',
+        badgeColor: '#10b981'
+      },
+      'acc-firmware': {
+        title: 'Firmware & OS Updates',
+        badge: 'OS UPDATE',
+        badgeColor: '#38bdf8'
+      },
       'acc-maintenance': {
         title: 'Maintenance',
         badge: 'SYSTEM OPS',
@@ -492,6 +502,12 @@ let timer = null;
       } else if (id === 'acc-terminal-cli') {
         document.body.classList.add('terminal-active');
         if (typeof initNativeTerminal === 'function') initNativeTerminal();
+      } else if (id === 'acc-wifi') {
+        document.body.classList.remove('terminal-active');
+        if (typeof fetchWifiConfig === 'function') fetchWifiConfig();
+      } else if (id === 'acc-firmware') {
+        document.body.classList.remove('terminal-active');
+        if (typeof checkLatestFirmwareUpdate === 'function') checkLatestFirmwareUpdate();
       } else if (id === 'acc-maintenance') {
         document.body.classList.remove('terminal-active');
         if (typeof fetchLogs === 'function') fetchLogs();
@@ -15014,11 +15030,18 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const filEl = document.getElementById('flashFileName');
       const shaEl = document.getElementById('flashSha256');
 
-      if (curEl) curEl.textContent = d.current || 'v2.0-legacy';
-      if (latEl) latEl.textContent = d.latest || 'v2.2.3-b3';
+      if (curEl) curEl.textContent = d.current || 'v2.2.7-b7';
+      if (latEl) latEl.textContent = d.latest || d.current || 'v2.2.7-b7';
       if (modEl) modEl.textContent = d.model || 'JioRouter AX6000';
-      if (filEl) filEl.textContent = d.file || 'maxnet-jidu6811-sysupgrade.bin';
+      if (filEl) filEl.textContent = d.file || 'sysupgrade.bin';
       if (shaEl) shaEl.textContent = d.sha256 ? `${d.sha256.substring(0, 16)}...${d.sha256.substring(d.sha256.length - 8)}` : 'Verified via Manifest';
+
+      const itbBtn = document.getElementById('modalItbDownloadBtn');
+      const tftpCmd = document.getElementById('modalTftpCmd');
+      if (itbBtn) itbBtn.href = d.itb_url || '#';
+      if (tftpCmd) tftpCmd.textContent = d.tftp_command || 'tftpboot 0x46000000 initramfs.itb; bootm 0x46000000';
+      const ramBox = document.getElementById('modalRamBootBox');
+      if (ramBox) ramBox.style.display = 'none';
 
       const content = document.getElementById('flashModalContent');
       const footer = document.getElementById('flashModalFooter');
@@ -15132,15 +15155,40 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           if (icon) icon.classList.remove('spinning');
           if (btn) btn.classList.remove('btn-pulse');
 
+          _lastFirmwareUpdateData = updateData;
+
+          // Populate dedicated acc-firmware panel if present
+          const fwBadge = document.getElementById('fwCurrentVerBadge');
+          const fwModel = document.getElementById('fwModelVal');
+          const fwSoc = document.getElementById('fwSocVal');
+          const fwKernel = document.getElementById('fwKernelVal');
+          const fwLatest = document.getElementById('fwLatestVerVal');
+          const fwFile = document.getElementById('fwFileVal');
+          const fwSize = document.getElementById('fwSizeVal');
+          const fwSha = document.getElementById('fwShaVal');
+          const fwTftp = document.getElementById('fwTftpCmdVal');
+          const fwItbLink = document.getElementById('fwItbDownloadLink');
+          const fwPill = document.getElementById('fwUpdateStatusPill');
+
+          if (fwBadge) fwBadge.textContent = (updateData && updateData.current) || 'v2.2.7-b7';
+          if (fwModel) fwModel.textContent = (updateData && updateData.model) || 'Jio JIDU6911';
+          if (fwSoc) fwSoc.textContent = (updateData && updateData.soc) || 'Qualcomm IPQ9574 (AArch64)';
+          if (fwLatest) fwLatest.textContent = (updateData && updateData.latest) || ((updateData && updateData.current) || 'v2.2.7-b7');
+          if (fwFile) fwFile.textContent = (updateData && updateData.file) || 'sysupgrade.bin';
+          if (fwSize) fwSize.textContent = (updateData && updateData.size) ? ((updateData.size / 1048576).toFixed(2) + ' MB') : '24.88 MB';
+          if (fwSha) fwSha.textContent = (updateData && updateData.sha256) ? `${updateData.sha256.substring(0, 16)}...${updateData.sha256.substring(updateData.sha256.length - 8)}` : 'Verified via Release Manifest';
+          if (fwTftp) fwTftp.textContent = (updateData && updateData.tftp_command) || 'tftpboot 0x46000000 initramfs.itb; bootm 0x46000000';
+          if (fwItbLink && updateData && updateData.itb_url) fwItbLink.href = updateData.itb_url;
+
           if (updateAvailable && updateData) {
-            _lastFirmwareUpdateData = updateData;
-            const latVer = updateData.latest || 'v2.2.3';
+            const latVer = updateData.latest || 'v2.2.7';
             const modName = updateData.model || 'JioRouter AX6000';
 
             if (pill) { pill.className = 'setting-pill pill-amber'; pill.textContent = `UPDATE: ${latVer}`; }
             if (sub) sub.innerHTML = `<span style="color:#f59e0b; font-weight:700;">Update ${escapeHtml(latVer)} ready</span> &bull; ${escapeHtml(modName)}`;
+            if (fwPill) { fwPill.className = 'setting-pill pill-amber'; fwPill.textContent = 'UPDATE AVAILABLE'; }
 
-            // Morph right-side check button into glowing Flash Update action button
+            // Morph check button into glowing Flash Update action button
             if (btn) {
               btn.className = 'round-action-btn btn-flash-ready';
               btn.title = `Install Firmware Update (${latVer})`;
@@ -15165,10 +15213,11 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               }
             }
           } else {
-            const curVer = (updateData && updateData.current) || 'v2.2.3-b3';
+            const curVer = (updateData && updateData.current) || 'v2.2.7-b7';
             const modName = (updateData && updateData.model) || 'JioRouter AX6000';
             if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = `${curVer} UP TO DATE`; }
             if (sub) sub.textContent = `${modName} is running the latest stable release.`;
+            if (fwPill) { fwPill.className = 'setting-pill pill-green'; fwPill.textContent = 'UP TO DATE'; }
             if (btn) {
               btn.className = 'round-action-btn';
               btn.title = 'Check for Latest Firmware Update';
@@ -15210,6 +15259,167 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     function confirmCleanUpdate() {
       openFirmwareFlashModal(_lastFirmwareUpdateData);
+    }
+
+    // WI-FI & WIRELESS HOTSPOT CONTROLLERS
+    async function fetchWifiConfig() {
+      try {
+        const res = await apiFetch('/cgi-bin/wifi?action=get');
+        const data = await res.json();
+        if (!data || data.status !== 'ok') return;
+
+        const mToggle = document.getElementById('wifiMasterToggle');
+        if (mToggle) mToggle.checked = data.master_enabled === 1;
+
+        // 2.4 GHz
+        const r2gEn = document.getElementById('wifi2gEnable');
+        const r2gSsid = document.getElementById('wifi2gSsid');
+        const r2gEnc = document.getElementById('wifi2gEnc');
+        const r2gKey = document.getElementById('wifi2gKey');
+        const r2gCh = document.getElementById('wifi2gChannel');
+        const r2gHt = document.getElementById('wifi2gHtmode');
+        const r2gHid = document.getElementById('wifi2gHidden');
+
+        if (r2gEn && data.radio_2g) r2gEn.checked = data.radio_2g.enabled === 1;
+        if (r2gSsid && data.radio_2g) r2gSsid.value = data.radio_2g.ssid || 'MaxNet-2.4G';
+        if (r2gEnc && data.radio_2g) r2gEnc.value = data.radio_2g.encryption || 'psk2';
+        if (r2gKey && data.radio_2g) r2gKey.value = data.radio_2g.key || '';
+        if (r2gCh && data.radio_2g) r2gCh.value = data.radio_2g.channel || '1';
+        if (r2gHt && data.radio_2g) r2gHt.value = data.radio_2g.htmode || 'HE20';
+        if (r2gHid && data.radio_2g) r2gHid.checked = data.radio_2g.hidden === 1;
+
+        // 5 GHz
+        const r5gEn = document.getElementById('wifi5gEnable');
+        const r5gSsid = document.getElementById('wifi5gSsid');
+        const r5gEnc = document.getElementById('wifi5gEnc');
+        const r5gKey = document.getElementById('wifi5gKey');
+        const r5gCh = document.getElementById('wifi5gChannel');
+        const r5gHt = document.getElementById('wifi5gHtmode');
+        const r5gHid = document.getElementById('wifi5gHidden');
+
+        if (r5gEn && data.radio_5g) r5gEn.checked = data.radio_5g.enabled === 1;
+        if (r5gSsid && data.radio_5g) r5gSsid.value = data.radio_5g.ssid || 'MaxNet-5G';
+        if (r5gEnc && data.radio_5g) r5gEnc.value = data.radio_5g.encryption || 'psk2';
+        if (r5gKey && data.radio_5g) r5gKey.value = data.radio_5g.key || '';
+        if (r5gCh && data.radio_5g) r5gCh.value = data.radio_5g.channel || '36';
+        if (r5gHt && data.radio_5g) r5gHt.value = data.radio_5g.htmode || 'HE80';
+        if (r5gHid && data.radio_5g) r5gHid.checked = data.radio_5g.hidden === 1;
+
+        // Render connected clients
+        renderWifiClients(data.clients || []);
+      } catch (err) {
+        console.warn('fetchWifiConfig error:', err);
+      }
+    }
+
+    function renderWifiClients(clients) {
+      const container = document.getElementById('wifiClientsContainer');
+      if (!container) return;
+
+      if (!clients || clients.length === 0) {
+        container.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11.5px;">No wireless devices currently connected.</div>';
+        return;
+      }
+
+      container.innerHTML = clients.map(c => `
+        <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:8px; padding:10px 14px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:32px; height:32px; border-radius:6px; background:rgba(6,182,212,0.15); color:#06b6d4; display:flex; align-items:center; justify-content:center;">
+              <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            </div>
+            <div>
+              <span style="font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--text-main);">${escapeHtml(c.mac)}</span>
+              <div style="font-size:10.5px; color:var(--text-dim); display:flex; gap:8px;">
+                <span>Band: ${escapeHtml(c.band || '2.4 GHz')}</span>
+                <span>Signal: ${c.signal || -60} dBm</span>
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <span style="font-size:11px; font-weight:700; color:#10b981;">${c.tx_mbps || 0} Mbps</span>
+            <div style="font-size:9.5px; color:var(--text-muted);">PHY Link Rate</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function saveWifiSettings() {
+      try {
+        const payload = {
+          master_enabled: document.getElementById('wifiMasterToggle')?.checked ? 1 : 0,
+          enable_2g: document.getElementById('wifi2gEnable')?.checked ? 1 : 0,
+          ssid_2g: document.getElementById('wifi2gSsid')?.value || 'MaxNet-2.4G',
+          enc_2g: document.getElementById('wifi2gEnc')?.value || 'psk2',
+          key_2g: document.getElementById('wifi2gKey')?.value || '',
+          channel_2g: document.getElementById('wifi2gChannel')?.value || '1',
+          htmode_2g: document.getElementById('wifi2gHtmode')?.value || 'HE20',
+          hidden_2g: document.getElementById('wifi2gHidden')?.checked ? 1 : 0,
+
+          enable_5g: document.getElementById('wifi5gEnable')?.checked ? 1 : 0,
+          ssid_5g: document.getElementById('wifi5gSsid')?.value || 'MaxNet-5G',
+          enc_5g: document.getElementById('wifi5gEnc')?.value || 'psk2',
+          key_5g: document.getElementById('wifi5gKey')?.value || '',
+          channel_5g: document.getElementById('wifi5gChannel')?.value || '36',
+          htmode_5g: document.getElementById('wifi5gHtmode')?.value || 'HE80',
+          hidden_5g: document.getElementById('wifi5gHidden')?.checked ? 1 : 0
+        };
+
+        showToast('Applying Wi-Fi settings to wireless radios...', 'info');
+        const res = await apiFetch('/cgi-bin/wifi?action=set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data && data.status === 'ok') {
+          showToast('Wi-Fi settings applied successfully!', 'success');
+          setTimeout(fetchWifiConfig, 1500);
+        } else {
+          showToast(data?.message || 'Failed to apply Wi-Fi settings', 'error');
+        }
+      } catch (err) {
+        showToast('Error saving Wi-Fi settings: ' + err.message, 'error');
+      }
+    }
+
+    function toggleWifiMasterPower(checked) {
+      const payload = { master_enabled: checked ? 1 : 0 };
+      showToast(checked ? 'Enabling Wi-Fi transmitters...' : 'Disabling Wi-Fi transmitters...', 'info');
+      apiFetch('/cgi-bin/wifi?action=set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(() => {
+        showToast(checked ? 'Wi-Fi radios active' : 'Wi-Fi radios disabled (DMA memory reclaimed)', 'success');
+        setTimeout(fetchWifiConfig, 1000);
+      }).catch(err => {
+        showToast('Failed to toggle master Wi-Fi: ' + err.message, 'error');
+      });
+    }
+
+    function toggleRamBootDetailsInModal() {
+      const box = document.getElementById('modalRamBootBox');
+      if (!box) return;
+      box.style.display = (box.style.display === 'none' || !box.style.display) ? 'flex' : 'none';
+    }
+
+    function showRamBootInstructions() {
+      openFirmwareFlashModal(_lastFirmwareUpdateData);
+      const box = document.getElementById('modalRamBootBox');
+      if (box) box.style.display = 'flex';
+    }
+
+    function copyTextToClipboard(text) {
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('Copied to clipboard!', 'success');
+        }).catch(() => {
+          fallbackCopyText(text);
+        });
+      } else {
+        fallbackCopyText(text);
+      }
     }
 
     // AUTO-REFRESH & THEME & UPI
@@ -15998,6 +16208,13 @@ if (typeof window !== 'undefined') {
     checkUpdateStatus,
     executeFirmwareUpdate,
     confirmCleanUpdate,
+    fetchWifiConfig,
+    renderWifiClients,
+    saveWifiSettings,
+    toggleWifiMasterPower,
+    toggleRamBootDetailsInModal,
+    showRamBootInstructions,
+    copyTextToClipboard,
     toggleAutoRefresh,
     setupTimer,
     updateToggleBadge,
@@ -16418,6 +16635,13 @@ export {
   checkUpdateStatus,
   executeFirmwareUpdate,
   confirmCleanUpdate,
+  fetchWifiConfig,
+  renderWifiClients,
+  saveWifiSettings,
+  toggleWifiMasterPower,
+  toggleRamBootDetailsInModal,
+  showRamBootInstructions,
+  copyTextToClipboard,
   toggleAutoRefresh,
   setupTimer,
   updateToggleBadge,
