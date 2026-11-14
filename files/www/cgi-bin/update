@@ -162,12 +162,21 @@ if [ "$ACTION" = "flash" ] || [ "$ACTION" = "flash_clean" ]; then
     mv sysupgrade-new.bin /tmp/sysupgrade.bin
     chmod +x /tmp/sysupgrade.bin
 
+    # Stamp latest version to /etc/maxnet_version before flashing to guarantee state consistency across reboot
+    mkdir -p /etc
+    echo "VERSION=${LATEST_TAG}" > /etc/maxnet_version
+    echo "BUILD=${LATEST_BUILD}" >> /etc/maxnet_version
+    echo "TAG=${LATEST_TAG}" >> /etc/maxnet_version
+    echo "BUILD_TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')" >> /etc/maxnet_version
+
+    echo "[$(date)] Starting sysupgrade for $RESOLVED_FILE (Action: $ACTION)..." > /tmp/sysupgrade.log
+
     if [ "$ACTION" = "flash_clean" ]; then
         echo "{\"status\": \"flashing\", \"mode\": \"clean\", \"tag\": \"$LATEST_TAG\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"message\": \"Firmware verified for $MODEL_NAME. Starting clean sysupgrade & reboot...\"}"
-        ( sleep 2 && sysupgrade -n -F -v /tmp/sysupgrade.bin ) >/dev/null 2>&1 &
+        ( sleep 2 && sysupgrade -n -F -v /tmp/sysupgrade.bin >> /tmp/sysupgrade.log 2>&1 ) </dev/null >/dev/null 2>&1 &
     else
         echo "{\"status\": \"flashing\", \"mode\": \"keep_config\", \"tag\": \"$LATEST_TAG\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"message\": \"Firmware verified for $MODEL_NAME. Starting sysupgrade (preserving config) & reboot...\"}"
-        ( sleep 2 && sysupgrade -F -v /tmp/sysupgrade.bin ) >/dev/null 2>&1 &
+        ( sleep 2 && sysupgrade -F -v /tmp/sysupgrade.bin >> /tmp/sysupgrade.log 2>&1 ) </dev/null >/dev/null 2>&1 &
     fi
     exit 0
 fi
