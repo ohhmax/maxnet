@@ -82,6 +82,8 @@ common_packages = [
     # Ultra-Lean Wireless Cryptography & Core IEEE 802.11 Stack
     "CONFIG_PACKAGE_wpad-basic-mbedtls=y",
     "CONFIG_PACKAGE_iw=y",
+    "CONFIG_PACKAGE_libiwinfo=y",
+    "CONFIG_PACKAGE_libiwinfo-data=y",
     "CONFIG_PACKAGE_iwinfo=y",
     "CONFIG_PACKAGE_wireless-regdb=y",
 ]
