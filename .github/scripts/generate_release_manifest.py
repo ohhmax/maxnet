@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Generates unified manifest.json, standard sysupgrade.bin binaries, and .itb ram-boot images
-for all Jio router models. Enables instant OTA updates and U-Boot ram-boot testing.
+"""Generates unified manifest.json and standard binaries (sysupgrade.bin & factory.ubi/bin)
+for all Jio router models. Completely eliminates obsolete/broken .itb initramfs packaging.
 """
 import os
 import sys
@@ -17,9 +17,9 @@ DEVICE_REGISTRY = {
         "target": "qualcommbe/ipq95xx",
         "soc": "Qualcomm IPQ9574",
         "canonical_name": "maxnet-jidu6811-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6811-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6811-factory.ubi",
         "pattern": r"(jidu6j11[-_]6811|jio[-_]jidu6811|[-_]6811).*sysupgrade",
-        "itb_pattern": r"(jidu6j11[-_]6811|jio[-_]jidu6811|[-_]6811).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6j11[-_]6811|jio[-_]jidu6811|[-_]6811).*factory\.ubi"
     },
     "jiorouter,ax6000-jidu6j11-6911": {
         "model": "JioRouter AX6000 JIDU6J11-6911",
@@ -27,9 +27,9 @@ DEVICE_REGISTRY = {
         "target": "qualcommbe/ipq95xx",
         "soc": "Qualcomm IPQ9574",
         "canonical_name": "maxnet-jidu6911-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6911-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6911-factory.ubi",
         "pattern": r"(jidu6j11[-_]6911|jio[-_]jidu6911|[-_]6911).*sysupgrade",
-        "itb_pattern": r"(jidu6j11[-_]6911|jio[-_]jidu6911|[-_]6911).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6j11[-_]6911|jio[-_]jidu6911|[-_]6911).*factory\.ubi"
     },
     "jiorouter,ax6000-jidu6j11-6611": {
         "model": "JioRouter AX6000 JIDU6J11-6611",
@@ -37,9 +37,9 @@ DEVICE_REGISTRY = {
         "target": "qualcommbe/ipq95xx",
         "soc": "Qualcomm IPQ9574",
         "canonical_name": "maxnet-jidu6611-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6611-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6611-factory.ubi",
         "pattern": r"(jidu6j11[-_]6611|jio[-_]jidu6611|[-_]6611).*sysupgrade",
-        "itb_pattern": r"(jidu6j11[-_]6611|jio[-_]jidu6611|[-_]6611).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6j11[-_]6611|jio[-_]jidu6611|[-_]6611).*factory\.ubi"
     },
     "jiorouter,ax6000-jidu6j11-6411": {
         "model": "JioRouter AX6000 JIDU6J11-6411",
@@ -47,9 +47,9 @@ DEVICE_REGISTRY = {
         "target": "qualcommbe/ipq95xx",
         "soc": "Qualcomm IPQ9574",
         "canonical_name": "maxnet-jidu6411-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6411-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6411-factory.ubi",
         "pattern": r"(jidu6j11[-_]6411|jio[-_]jidu6411|[-_]6411).*sysupgrade",
-        "itb_pattern": r"(jidu6j11[-_]6411|jio[-_]jidu6411|[-_]6411).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6j11[-_]6411|jio[-_]jidu6411|[-_]6411).*factory\.ubi"
     },
     "jiorouter,ax6000-jidu6j11-6111": {
         "model": "JioRouter AX6000 JIDU6J11-6111",
@@ -57,9 +57,9 @@ DEVICE_REGISTRY = {
         "target": "qualcommbe/ipq95xx",
         "soc": "Qualcomm IPQ9574",
         "canonical_name": "maxnet-jidu6111-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6111-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6111-factory.ubi",
         "pattern": r"(jidu6j11[-_]6111|jio[-_]jidu6111|[-_]6111).*sysupgrade",
-        "itb_pattern": r"(jidu6j11[-_]6111|jio[-_]jidu6111|[-_]6111).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6j11[-_]6111|jio[-_]jidu6111|[-_]6111).*factory\.ubi"
     },
     "jio,jidu6811": {
         "model": "Jio JIDU6811",
@@ -67,9 +67,9 @@ DEVICE_REGISTRY = {
         "target": "qualcommbe/ipq95xx",
         "soc": "Qualcomm IPQ9574",
         "canonical_name": "maxnet-jidu6811-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6811-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6811-factory.ubi",
         "pattern": r"(jio[-_]jidu6811|[-_]6811).*sysupgrade",
-        "itb_pattern": r"(jio[-_]jidu6811|[-_]6811).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jio[-_]jidu6811|[-_]6811).*factory\.ubi"
     },
     # MediaTek Family (mediatek/filogic)
     "jiorouter,ax6000-jidu6j01": {
@@ -78,9 +78,9 @@ DEVICE_REGISTRY = {
         "target": "mediatek/filogic",
         "soc": "MediaTek MT7986A",
         "canonical_name": "maxnet-jidu6j01-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6j01-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6j01-factory.bin",
         "pattern": r"(jidu6j01|[-_]6j01).*sysupgrade",
-        "itb_pattern": r"(jidu6j01|[-_]6j01).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6j01|[-_]6j01).*factory\.bin"
     },
     "jiorouter,ax6000-jidu6801": {
         "model": "JioRouter AX6000 JIDU6801",
@@ -88,9 +88,9 @@ DEVICE_REGISTRY = {
         "target": "mediatek/filogic",
         "soc": "MediaTek MT7986A",
         "canonical_name": "maxnet-jidu6801-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6801-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6801-factory.bin",
         "pattern": r"(jidu6801|[-_]6801).*sysupgrade",
-        "itb_pattern": r"(jidu6801|[-_]6801).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6801|[-_]6801).*factory\.bin"
     },
     "jiorouter,ax6000-jidu6401": {
         "model": "JioRouter AX6000 JIDU6401",
@@ -98,9 +98,9 @@ DEVICE_REGISTRY = {
         "target": "mediatek/filogic",
         "soc": "MediaTek MT7986A",
         "canonical_name": "maxnet-jidu6401-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6401-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6401-factory.bin",
         "pattern": r"(jidu6401|[-_]6401).*sysupgrade",
-        "itb_pattern": r"(jidu6401|[-_]6401).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6401|[-_]6401).*factory\.bin"
     },
     "jiorouter,ax6000-jidu6101": {
         "model": "JioRouter AX6000 JIDU6101",
@@ -108,27 +108,28 @@ DEVICE_REGISTRY = {
         "target": "mediatek/filogic",
         "soc": "MediaTek MT7986A",
         "canonical_name": "maxnet-jidu6101-sysupgrade.bin",
-        "canonical_itb": "maxnet-jidu6101-initramfs.itb",
+        "canonical_factory": "maxnet-jidu6101-factory.bin",
         "pattern": r"(jidu6101|[-_]6101).*sysupgrade",
-        "itb_pattern": r"(jidu6101|[-_]6101).*(initramfs|recovery|uImage)"
+        "factory_pattern": r"(jidu6101|[-_]6101).*factory\.bin"
     }
 }
 
 def calc_sha256(filepath):
     h = hashlib.sha256()
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: generate_release_manifest.py <bin_dirs_comma_separated> <out_dir> [tag_name]")
+    if len(sys.argv) < 4:
+        print("Usage: generate_release_manifest.py <harvest_bin_dirs> <out_dir> <tag_name>")
         sys.exit(1)
 
-    bin_dirs = [d.strip() for d in sys.argv[1].split(',') if os.path.isdir(d.strip())]
+    bin_dirs = [d.strip() for d in sys.argv[1].split(",") if d.strip()]
     out_dir = sys.argv[2]
-    tag_name = sys.argv[3] if len(sys.argv) > 3 else "latest"
+    tag_name = sys.argv[3]
+
     os.makedirs(out_dir, exist_ok=True)
 
     repo_url = os.environ.get("GITHUB_REPOSITORY", "ohhmax/maxnet")
@@ -139,8 +140,8 @@ def main():
 
     primary_qcom_bin = None
     primary_mtk_bin = None
-    primary_qcom_itb = None
-    primary_mtk_itb = None
+    primary_qcom_factory = None
+    primary_mtk_factory = None
 
     # Discovered files across all architecture harvest outputs
     discovered_files = []
@@ -152,35 +153,35 @@ def main():
                     continue
                 discovered_files.append((fpath, fname))
 
-                # Identify primary sysupgrade and itb binaries
+                # Identify primary sysupgrade and factory binaries
                 if "qualcomm" in fpath.lower():
                     if "sysupgrade" in fname.lower() and fname.endswith(".bin"):
                         primary_qcom_bin = fpath
-                    if ("initramfs" in fname.lower() or "recovery" in fname.lower() or "fit" in fname.lower()) and (fname.endswith(".itb") or fname.endswith(".bin")):
-                        primary_qcom_itb = fpath
+                    if "factory" in fname.lower() and (fname.endswith(".ubi") or fname.endswith(".bin")):
+                        primary_qcom_factory = fpath
                 elif "mediatek" in fpath.lower():
                     if "sysupgrade" in fname.lower() and fname.endswith(".bin"):
                         primary_mtk_bin = fpath
-                    if ("initramfs" in fname.lower() or "recovery" in fname.lower()) and (fname.endswith(".itb") or fname.endswith(".bin")):
-                        primary_mtk_itb = fpath
+                    if "factory" in fname.lower() and fname.endswith(".bin"):
+                        primary_mtk_factory = fpath
 
     # Process each registered device model
     for board_key, dev in DEVICE_REGISTRY.items():
         matched_bin = None
-        matched_itb = None
+        matched_factory = None
 
         for fpath, fname in discovered_files:
             if re.search(dev["pattern"], fname, re.IGNORECASE) and fname.endswith(".bin"):
                 matched_bin = fpath
-            if re.search(dev.get("itb_pattern", ""), fname, re.IGNORECASE) and (fname.endswith(".itb") or "initramfs" in fname.lower()):
-                matched_itb = fpath
+            if re.search(dev.get("factory_pattern", ""), fname, re.IGNORECASE):
+                matched_factory = fpath
 
         # Apply fallbacks if model-specific file was not generated
         is_qcom = "qualcomm" in dev["target"]
         if not matched_bin:
             matched_bin = primary_qcom_bin if is_qcom else primary_mtk_bin
-        if not matched_itb:
-            matched_itb = primary_qcom_itb if is_qcom else primary_mtk_itb
+        if not matched_factory:
+            matched_factory = primary_qcom_factory if is_qcom else primary_mtk_factory
 
         # 1. Copy Sysupgrade Binary
         dev_entry = {
@@ -204,21 +205,21 @@ def main():
             dev_entry["sha256"] = c_sum
             dev_entry["size"] = f_size
 
-        # 2. Copy ITB (RAM Boot) File
-        if matched_itb and os.path.exists(matched_itb):
-            target_itb_name = dev["canonical_itb"]
-            target_itb_path = os.path.join(out_dir, target_itb_name)
-            if not os.path.exists(target_itb_path) or os.path.getsize(target_itb_path) == 0:
-                shutil.copy2(matched_itb, target_itb_path)
+        # 2. Copy Factory Image (NAND UBI or MediaTek Factory) - NO ITB!
+        if matched_factory and os.path.exists(matched_factory):
+            target_factory_name = dev["canonical_factory"]
+            target_factory_path = os.path.join(out_dir, target_factory_name)
+            if not os.path.exists(target_factory_path) or os.path.getsize(target_factory_path) == 0:
+                shutil.copy2(matched_factory, target_factory_path)
 
-            itb_sum = calc_sha256(target_itb_path)
-            itb_size = os.path.getsize(target_itb_path)
-            sums_lines.append(f"{itb_sum}  {target_itb_name}")
+            factory_sum = calc_sha256(target_factory_path)
+            factory_size = os.path.getsize(target_factory_path)
+            sums_lines.append(f"{factory_sum}  {target_factory_name}")
 
-            dev_entry["itb_filename"] = target_itb_name
-            dev_entry["itb_download_url"] = f"{base_download_url}/{target_itb_name}"
-            dev_entry["itb_sha256"] = itb_sum
-            dev_entry["itb_size"] = itb_size
+            dev_entry["factory_filename"] = target_factory_name
+            dev_entry["factory_download_url"] = f"{base_download_url}/{target_factory_name}"
+            dev_entry["factory_sha256"] = factory_sum
+            dev_entry["factory_size"] = factory_size
 
         manifest_devices[board_key] = dev_entry
         for alias in dev.get("aliases", []):

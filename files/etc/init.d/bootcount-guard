@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+# MAXNET OS Boot Recovery Reset Service
+# Resets bootcount to 0 once userspace services successfully start
+
+START=99
+
+boot() {
+	if command -v fw_setenv >/dev/null 2>&1; then
+		fw_setenv bootcount 0 2>/dev/null || true
+	fi
+	echo "MAXNET Recovery Guard: System reached userspace successfully. bootcount reset to 0." > /dev/kmsg 2>/dev/null || true
+}
+
+start() {
+	boot
+}

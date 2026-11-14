@@ -77,7 +77,7 @@ Official enterprise-grade OpenWrt **Linux 6.18 (AArch64 64-bit)** firmware engin
 | **Process Memory Ceiling** | No process isolation | Unbounded memory per daemon | **Tailscale Go ceiling `GOMEMLIMIT=16MiB`, dynamic on-demand Samba** |
 | **USB 3.0 5G Tethering** | Disabled / Non-functional | Suffers `EVENT_RX_KILL` at >45 MB/s | **SuperSpeed 5000 Mbps with Multi-Packet Aggregation patches** |
 | **ADB Modem Telemetry** | Not available | Requires manual compilation | **Built-in ADB daemon + UI for live RSRP, SINR, band & battery** |
-| **Flash Recovery Risk** | High (risk of permanent brick) | Requires manual TFTP recovery | **Safe RAM Boot (`.itb` FIT image): test without touching NAND** |
+| **Flash Recovery Risk** | High (risk of permanent brick) | Requires manual TFTP recovery | **Production Factory Image (`factory.ubi`): Direct native NAND UBI flashing** |
 | **Storage Sharing** | Disabled / Proprietary | Samba 4 always running (~25MB RAM) | **Dynamic hotplug: Samba 4 runs ONLY when USB drive is connected** |
 | **File Browser** | None | LuCI filemanager (slow) | **DUFS Web file server + WebDAV on port 5000 (open access)** |
 | **Default Passwords** | Random ISP password on label | `root` with no password | **Zero-password out of the box (SSH, WebUI, Samba, DUFS)** |
@@ -99,15 +99,15 @@ MAXNET includes custom Device Trees, pinout configurations, and board profiles t
 - **USB 3.0 Subsystem**: SuperSpeed 5000 Mbps (`dwc3-qcom`), MTU 1500, Multi-Packet Aggregation enabled
 - **Wi-Fi Radios**: Qualcomm QCN9074 (5 GHz 4x4 160MHz) + IPQ9574 internal radio (2.4 GHz 4x4) via `ath11k`
 
-| Model Name | Board ID / DTS Target | Canonical Sysupgrade Binary | Safe RAM-Boot (.itb) Image |
+| Model Name | Board ID / DTS Target | Canonical Sysupgrade Binary | Production Factory Image |
 | :--- | :--- | :--- | :--- |
-| **JIDU6811** | `jiorouter,ax6000-jidu6j11-6811` | `maxnet-jidu6811-sysupgrade.bin` | `maxnet-jidu6811-initramfs.itb` |
-| **JIDU6911** | `jiorouter,ax6000-jidu6j11-6911` | `maxnet-jidu6911-sysupgrade.bin` | `maxnet-jidu6911-initramfs.itb` |
-| **JIDU6611** | `jiorouter,ax6000-jidu6j11-6611` | `maxnet-jidu6611-sysupgrade.bin` | `maxnet-jidu6611-initramfs.itb` |
-| **JIDU6411** | `jiorouter,ax6000-jidu6j11-6411` | `maxnet-jidu6411-sysupgrade.bin` | `maxnet-jidu6411-initramfs.itb` |
-| **JIDU6111** | `jiorouter,ax6000-jidu6j11-6111` | `maxnet-jidu6111-sysupgrade.bin` | `maxnet-jidu6111-initramfs.itb` |
-| **JIO JIDU6811** | `jio,jidu6811` | `maxnet-jidu6811-sysupgrade.bin` | `maxnet-jidu6811-initramfs.itb` |
-| **JIO JIDU6911** | `jio,jidu6911` | `maxnet-jidu6911-sysupgrade.bin` | `maxnet-jidu6911-initramfs.itb` |
+| **JIDU6811** | `jiorouter,ax6000-jidu6j11-6811` | `maxnet-jidu6811-sysupgrade.bin` | `maxnet-jidu6811-factory.ubi` |
+| **JIDU6911** | `jiorouter,ax6000-jidu6j11-6911` | `maxnet-jidu6911-sysupgrade.bin` | `maxnet-jidu6911-factory.ubi` |
+| **JIDU6611** | `jiorouter,ax6000-jidu6j11-6611` | `maxnet-jidu6611-sysupgrade.bin` | `maxnet-jidu6611-factory.ubi` |
+| **JIDU6411** | `jiorouter,ax6000-jidu6j11-6411` | `maxnet-jidu6411-sysupgrade.bin` | `maxnet-jidu6411-factory.ubi` |
+| **JIDU6111** | `jiorouter,ax6000-jidu6j11-6111` | `maxnet-jidu6111-sysupgrade.bin` | `maxnet-jidu6111-factory.ubi` |
+| **JIO JIDU6811** | `jio,jidu6811` | `maxnet-jidu6811-sysupgrade.bin` | `maxnet-jidu6811-factory.ubi` |
+| **JIO JIDU6911** | `jio,jidu6911` | `maxnet-jidu6911-sysupgrade.bin` | `maxnet-jidu6911-factory.ubi` |
 
 ### MediaTek Filogic 830 Family (ARM Cortex-A53)
 
@@ -117,15 +117,15 @@ MAXNET includes custom Device Trees, pinout configurations, and board profiles t
 - **Switch Hardware**: 1x 2.5G WAN + 4x Gigabit LAN via MT7531 Gigabit Switch with Hardware Flow Offload
 - **USB Subsystem**: USB 3.0 / USB 2.0 Host controller
 
-| Model Name | Board ID / DTS Target | Canonical Sysupgrade Binary | Safe RAM-Boot (.itb) Image |
+| Model Name | Board ID / DTS Target | Canonical Sysupgrade Binary | Production Factory Image |
 | :--- | :--- | :--- | :--- |
-| **JIDU6801** | `jiorouter,ax6000-jidu6801` | `maxnet-jidu6801-sysupgrade.bin` | `maxnet-jidu6801-initramfs.itb` |
-| **JIDU6401** | `jiorouter,ax6000-jidu6401` | `maxnet-jidu6401-sysupgrade.bin` | `maxnet-jidu6401-initramfs.itb` |
-| **JIDU6101** | `jiorouter,ax6000-jidu6101` | `maxnet-jidu6101-sysupgrade.bin` | `maxnet-jidu6101-initramfs.itb` |
-| **JIDU6601** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-initramfs.itb` |
-| **JIDU6701** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-initramfs.itb` |
-| **JIDU6201** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-initramfs.itb` |
-| **JIDU6J01** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-initramfs.itb` |
+| **JIDU6801** | `jiorouter,ax6000-jidu6801` | `maxnet-jidu6801-sysupgrade.bin` | `maxnet-jidu6801-factory.bin` |
+| **JIDU6401** | `jiorouter,ax6000-jidu6401` | `maxnet-jidu6401-sysupgrade.bin` | `maxnet-jidu6401-factory.bin` |
+| **JIDU6101** | `jiorouter,ax6000-jidu6101` | `maxnet-jidu6101-sysupgrade.bin` | `maxnet-jidu6101-factory.bin` |
+| **JIDU6601** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
+| **JIDU6701** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
+| **JIDU6201** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
+| **JIDU6J01** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
 
 ### Default Firmware Settings & Access
 
@@ -295,8 +295,8 @@ Copy the 32-character hexadecimal string and paste it into the password prompt.
 2. Connect an Ethernet cable directly from your PC to **LAN Port 4** (or LAN Port 1) on the router.
 3. Start a TFTP server on your PC (`tftpd-hpa` on Linux or `Tftpd64` on Windows).
 4. Download the model-matched files from [GitHub Releases](https://github.com/ohhmax/maxnet/releases):
-   - Safe RAM-boot file: `maxnet-jidu6911-initramfs.itb`
-   - Permanent sysupgrade file: `maxnet-jidu6911-sysupgrade.bin`
+   - Production Factory NAND image: `maxnet-jidu6911-factory.ubi`
+   - Sysupgrade update image: `maxnet-jidu6911-sysupgrade.bin`
 5. Place both files in your TFTP server root directory (e.g., `/srv/tftp/`).
 6. If using Linux, temporarily disable firewalls that block TFTP UDP port 69:
 
@@ -330,7 +330,7 @@ sysupgrade -v -n -F /tmp/sysupgrade.bin
 
 ---
 
-### Method B: Safe RAM Boot via TFTP (First-Time Flash from Stock Jio)
+### Method B: Native Factory UBI Flash via TFTP (First-Time Flash from Stock Jio)
 
 Execute each command below **one by one** at the `IPQ9574#` prompt:
 
@@ -354,43 +354,31 @@ ping 192.168.1.2
 
 *(Ensure the output displays: `host 192.168.1.2 is alive`).*
 
-Command 4: Disable CPU caches for stable kernel handoff:
+Command 4: Download the Factory UBI image from TFTP into RAM:
 
 ```text
-dcache off; icache off
+tftpboot 0x44000000 maxnet-jidu6911-factory.ubi
 ```
 
-Command 5: Unset FDT high relocation:
+Command 5: Erase the target NAND UBI partition:
 
 ```text
-setenv fdt_high
+nand erase.part ubi
 ```
 
-Command 6: Unset initrd high relocation:
+Command 6: Write the Factory image to NAND:
 
 ```text
-setenv initrd_high
+nand write 0x44000000 ubi $filesize
 ```
 
-Command 7: Set kernel boot arguments:
+Command 7: Reboot the router into MAXNET OS:
 
 ```text
-setenv bootargs "console=ttyMSM0,115200n8 earlycon"
+reset
 ```
 
-Command 8: Download the RAM boot image into DDR4 memory:
-
-```text
-tftpboot 0x46000000 maxnet-jidu6911-initramfs.itb
-```
-
-Command 9: Boot the kernel directly from RAM:
-
-```text
-bootm 0x46000000
-```
-
-The router will boot directly into MAXNET in RAM (~25 seconds). Flash memory is completely untouched in this mode.
+The router will boot directly into MAXNET OS with fresh squashfs rootfs and UBIFS overlay partition (~30 seconds).
 
 ---
 

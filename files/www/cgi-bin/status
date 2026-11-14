@@ -510,6 +510,10 @@ HUB_MODEL=""
 HUB_MFG=""
 HUB_PORTS=0
 HUB_SPEED=0
+HAS_USB_DEV=false
+USB_DEV_SPEED=0
+USB_DEV_LINK="Disconnected"
+USB_DEV_MTU=0
 
 for dev in /sys/bus/usb/devices/*; do
   [ -f "$dev/bDeviceClass" ] || continue
@@ -524,9 +528,52 @@ for dev in /sys/bus/usb/devices/*; do
     HUB_MFG=$(cat "$dev/manufacturer" 2>/dev/null || echo "Generic")
     HUB_PORTS=$(cat "$dev/maxchild" 2>/dev/null || echo 4)
     HUB_SPEED=$(cat "$dev/speed" 2>/dev/null || echo 5000)
-    break
+    continue
   fi
+  HAS_USB_DEV=true
+  spd=$(cat "$dev/speed" 2>/dev/null || echo 0)
+  case "$spd" in
+    5000|10000|20000)
+      USB_DEV_SPEED=$spd
+      USB_DEV_LINK="USB 3.0 SuperSpeed"
+      ;;
+    480)
+      USB_DEV_SPEED=480
+      USB_DEV_LINK="USB 2.0 HighSpeed"
+      ;;
+    12)
+      USB_DEV_SPEED=12
+      USB_DEV_LINK="USB 1.1 FullSpeed"
+      ;;
+    *)
+      USB_DEV_SPEED=${spd:-0}
+      [ "$USB_DEV_SPEED" -gt 0 ] && USB_DEV_LINK="USB Connected" || USB_DEV_LINK="Disconnected"
+      ;;
+  esac
 done
+
+if [ "$HAS_USB_DEV" = "true" ] && [ -d /sys/class/net/usb0 ]; then
+  USB_DEV_MTU=$(cat /sys/class/net/usb0/mtu 2>/dev/null || echo 1500)
+  ACT_USB_RX_B=$(cat /sys/class/net/usb0/statistics/rx_bytes 2>/dev/null || echo 0)
+  ACT_USB_TX_B=$(cat /sys/class/net/usb0/statistics/tx_bytes 2>/dev/null || echo 0)
+  ACT_USB_RX_P=$(cat /sys/class/net/usb0/statistics/rx_packets 2>/dev/null || echo 0)
+  ACT_USB_TX_P=$(cat /sys/class/net/usb0/statistics/tx_packets 2>/dev/null || echo 0)
+  ACT_USB_RX_E=$(cat /sys/class/net/usb0/statistics/rx_errors 2>/dev/null || echo 0)
+  ACT_USB_TX_E=$(cat /sys/class/net/usb0/statistics/tx_errors 2>/dev/null || echo 0)
+  ACT_USB_RX_MB=$(awk -v b="$ACT_USB_RX_B" 'BEGIN {printf "%.2f", b/1048576}')
+  ACT_USB_TX_MB=$(awk -v b="$ACT_USB_TX_B" 'BEGIN {printf "%.2f", b/1048576}')
+else
+  ACT_USB_RX_MB="0.00"
+  ACT_USB_TX_MB="0.00"
+  ACT_USB_RX_P=0
+  ACT_USB_TX_P=0
+  ACT_USB_RX_E=0
+  ACT_USB_TX_E=0
+  if [ "$HAS_USB_DEV" != "true" ]; then
+    USB_DEV_SPEED=0
+    USB_DEV_LINK="Disconnected"
+  fi
+fi
 
 USB_HUB_JSON=$(jq -n   --argjson connected "$HAS_HUB"   --arg model "$HUB_MODEL"   --arg mfg "$HUB_MFG"   --argjson ports "${HUB_PORTS:-0}"   --argjson speed "${HUB_SPEED:-0}"   '{"connected": $connected, "model": $model, "manufacturer": $mfg, "ports": $ports, "speed_mbps": $speed}')
 if [ -f /tmp/multilink_status.json ]; then MULTILINK_JSON=$(cat /tmp/multilink_status.json); else MULTILINK_JSON=x27{"active_count":1,"mode":"AUTO MERGE","limit_mbps":0,"combined_speed_mbps":0,"links":[]}x27; fi
@@ -585,15 +632,16 @@ cat << JSON
       "used_pct": ${OVERLAY_PCT:-0}
     },
     "usb": {
-      "speed_mbps": 5000,
-      "link_mode": "USB 3.0 SuperSpeed",
-      "mtu": 1400,
-      "rx_mb": ${USB_RX_MB},
-      "tx_mb": ${USB_TX_MB},
-      "rx_packets": ${USB_RX_P},
-      "tx_packets": ${USB_TX_P},
-      "rx_errors": ${USB_RX_E},
-      "tx_errors": ${USB_TX_E}
+      "connected": ${HAS_USB_DEV},
+      "speed_mbps": ${USB_DEV_SPEED},
+      "link_mode": "${USB_DEV_LINK}",
+      "mtu": ${USB_DEV_MTU:-0},
+      "rx_mb": ${ACT_USB_RX_MB},
+      "tx_mb": ${ACT_USB_TX_MB},
+      "rx_packets": ${ACT_USB_RX_P},
+      "tx_packets": ${ACT_USB_TX_P},
+      "rx_errors": ${ACT_USB_RX_E},
+      "tx_errors": ${ACT_USB_TX_E}
     }
   },
   "usb_devices": ${USB_DEVICES_JSON:-[]},

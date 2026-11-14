@@ -2772,9 +2772,14 @@ function handleSettingsBack() {
 
         const tiles = [];
         tiles.push(makeTile('WAN IP Address', `<span>${esc(wanIp)}</span> ${copyBtn(wanIp)}`, 'DHCP Upstream Carrier Lease'));
-        const linkStd = usbDev.standard || router.usb?.link_mode || 'USB 3.0 SuperSpeed';
-        const speedVal = usbDev.speed_mbps || router.usb?.speed_mbps || 5000;
-        tiles.push(makeTile('USB Hardware Link', `${esc(linkStd)} (${speedVal} Mbps)`, `Bus: ${usbDev.bus || '2-1'} • Port: ${usbDev.port || '1'}`));
+        const isUsbConnected = !!(router.usb?.connected || usbDev.connected || mobile.connected);
+        const linkStd = isUsbConnected ? (usbDev.standard || router.usb?.link_mode || 'USB 3.0 SuperSpeed') : 'Disconnected';
+        const speedVal = isUsbConnected ? (usbDev.speed_mbps || router.usb?.speed_mbps || 5000) : 0;
+        if (isUsbConnected) {
+          tiles.push(makeTile('USB Hardware Link', `${esc(linkStd)} (${speedVal} Mbps)`, `Bus: ${usbDev.bus || '2-1'} • Port: ${usbDev.port || '1'}`));
+        } else {
+          tiles.push(makeTile('USB Hardware Port', 'Port Ready (No Device)', 'USB 3.0 Host Port Active'));
+        }
 
         if (!isStorage) {
           const carrier = usbDev.operator || mobile.cellular?.operator || 'Jio';
@@ -4453,22 +4458,27 @@ function drawStorageIconSmall(x, y, color, parent) {
       // Detect USB standard: USB 3.0 (5Gbps) or USB 2.0 (480Mbps)
       let isUsb3 = true;
       let usbWireSpeed = "5Gbps";
+      const isUsbWanConn = !!(window._lastDataCache?.router?.usb?.connected || (Array.isArray(window._lastDataCache?.usb_devices) && window._lastDataCache.usb_devices.length > 0 && window._lastDataCache.usb_devices[0].status === "online") || (window._lastDataCache?.mobile?.connected));
       if (window._lastDataCache) {
         const rtrUsb = window._lastDataCache.router && window._lastDataCache.router.usb;
         const usbDev = Array.isArray(window._lastDataCache.usb_devices) && window._lastDataCache.usb_devices[0];
-        const spd = (rtrUsb && rtrUsb.speed_mbps) || (usbDev && usbDev.speed_mbps) || 5000;
-        if (spd < 1000) {
+        const spd = (rtrUsb && rtrUsb.speed_mbps) || (usbDev && usbDev.speed_mbps) || (isUsbWanConn ? 5000 : 0);
+        if (spd > 0 && spd < 1000) {
           isUsb3 = false;
           usbWireSpeed = "480Mbps";
-        } else {
+        } else if (spd >= 1000) {
           isUsb3 = true;
           usbWireSpeed = "5Gbps";
+        } else {
+          isUsb3 = false;
+          usbWireSpeed = "Offline";
         }
       }
       const usbStyle = getUsbThemeStyle(isUsb3 ? "usb3" : "usb2", isLight);
 
       // 1. WAN UPLINK CHIP ON TOP OF GATEWAY (Curve UI matching cards, Hotspot tethering + ADB icons, USB standard wire speed)
-      if (prefs.showWan) {
+      const hasAnyWan = isWanUp || isUsbWanConn || (d.network && d.network.wan_ip && d.network.wan_ip !== "--" && d.network.wan_ip !== "");
+      if (prefs.showWan && hasAnyWan) {
 
         const wanW = isPhone ? 210 : (isTablet ? 230 : 250);
         const wanH = 34;
@@ -5385,39 +5395,36 @@ function drawStorageIconSmall(x, y, color, parent) {
           displayType = "USB 1.1";
         }
 
-        const isConn = !!(slot0Connected || dev0.model || dev0.status === "online");
-        let devName = "Standby";
+        const isConn = !!(slot0Connected || (dev0.model && dev0.model !== "No Device") || (dev0.status && dev0.status === "online") || (d.router?.usb?.connected));
+        bwLinks = [];
         if (isConn) {
-          devName = dev0.model || dev0.raw_model || mob.model || (links[0] && links[0].model) || "Connected Device";
-        }
-
-        bwLinks = [
-          {
+          let devName = dev0.model || dev0.raw_model || mob.model || (links[0] && links[0].model) || "Connected Device";
+          bwLinks.push({
             cls: detectedStd === "usb3" ? "u3" : (detectedStd === "usb2" ? "u2" : "u1"),
             type: displayType,
             usbStd: detectedStd,
-            connected: isConn,
-            brand: dev0.brand || dev0.manufacturer || (isConn ? "SAMSUNG" : ""),
+            connected: true,
+            brand: dev0.brand || dev0.manufacturer || "Device",
             model: dev0.model || dev0.raw_model || devName,
             name: devName,
-            hostname: dev0.hostname || (isConn ? "usb0-Galaxy-S21-FE-5G" : ""),
+            hostname: dev0.hostname || "usb0",
             virtual_ip: dev0.virtual_ip || dev0.ip || "",
-            status: dev0.status || (isConn ? "online" : "offline"),
-            status_color: dev0.status_color || (isConn ? "green" : "gray"),
-            device_type: dev0.device_type || (isConn ? "phone" : "unknown"),
-            has_tethering: dev0.has_tethering !== undefined ? dev0.has_tethering : isConn,
+            status: dev0.status || "online",
+            status_color: dev0.status_color || "green",
+            device_type: dev0.device_type || "phone",
+            has_tethering: dev0.has_tethering !== undefined ? dev0.has_tethering : true,
             has_adb: dev0.has_adb !== undefined ? dev0.has_adb : (dev0.adb_enabled || false),
             has_mtp: !!dev0.has_mtp,
             has_storage: !!dev0.has_storage,
             has_internet: dev0.has_internet !== undefined ? dev0.has_internet : true,
-            internet_status: dev0.internet_status || (isConn ? "Online" : "--"),
-            v: isConn ? liveDev1Speed : 0,
+            internet_status: dev0.internet_status || "Online",
+            v: liveDev1Speed,
             max: detectedStd === "usb3" ? 5000 : (detectedStd === "usb2" ? 480 : 12),
             nodeKey: "modem",
             subIndex: 0,
             deviceData: dev0
-          }
-        ];
+          });
+        }
         if (isWanUp) {
           bwLinks.push({
             cls: "w",
