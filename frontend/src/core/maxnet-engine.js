@@ -2847,10 +2847,22 @@ function handleSettingsBack() {
         const cpuPct = router.cpu_pct !== undefined ? `${router.cpu_pct}%` : '--';
         tiles.push(makeTile('CPU Processor Load', `${esc(cpuPct)} Active`, 'Qualcomm Quad-Core SoC'));
 
-        const memUsedPct = router.memory?.used_pct !== undefined ? `${router.memory.used_pct}%` : '--';
-        const memUsedMb = router.memory?.used_mb || '--';
-        const memTotalMb = router.memory?.total_mb || '--';
-        tiles.push(makeTile('Memory (RAM)', `${memUsedPct} Used (${memUsedMb} / ${memTotalMb} MB)`, `${router.memory?.available_mb || '--'} MB Available Free`));
+        const mem = router.memory || {};
+        const pTot = Number(mem.phys_total_mb) || 432;
+        const pAvail = Number(mem.phys_avail_mb) || 0;
+        const pUsed = Math.max(0, pTot - pAvail);
+        const pPct = mem.phys_used_pct !== undefined ? Number(mem.phys_used_pct).toFixed(1) : (pTot > 0 ? ((pUsed * 100) / pTot).toFixed(1) : '0');
+        tiles.push(makeTile('Physical Hardware RAM', `${pPct}% Used (${pUsed} / ${pTot} MB)`, `${pAvail} MB Physical Available Free`));
+
+        const zTot = Number(mem.zram_total_mb) || 215;
+        const zUsed = Number(mem.zram_used_mb) || 0;
+        const zPct = mem.zram_used_pct !== undefined ? Number(mem.zram_used_pct).toFixed(1) : (zTot > 0 ? ((zUsed * 100) / zTot).toFixed(1) : '0');
+        tiles.push(makeTile('ZRAM Compressed Swap', `${zUsed} MB / ${zTot} MB Used (${zPct}%)`, 'Engine: LZO-RLE • Dynamic Swap Active'));
+
+        const poolTot = Number(mem.total_mb) || (pTot + zTot);
+        const poolUsed = Number(mem.used_mb) || (pUsed + zUsed);
+        const poolPct = mem.used_pct !== undefined ? mem.used_pct : Math.round((poolUsed * 100) / poolTot);
+        tiles.push(makeTile('Total Working Memory Pool', `${poolPct}% Used (${poolUsed} / ${poolTot} MB)`, `${mem.available_mb || (poolTot - poolUsed)} MB Combined Available`));
 
         const tempC = router.temp_c !== undefined ? `${router.temp_c.toFixed(1)}°C` : '--';
         tiles.push(makeTile('Core Temperature', `${tempC}`, 'All Thermal Zones Optimal'));
@@ -4455,29 +4467,31 @@ function drawStorageIconSmall(x, y, color, parent) {
       let globalMaxX = rtrCenterX + 100;
       let globalMaxY = rootY + 100;
 
+      const d = window._lastDataCache || {};
+      const wanPort = (d.ports || []).find(p => p.id === "wan" || p.id === "wan0" || p.name === "WAN");
+      const isWanUp = !!(wanPort && wanPort.status === "up") || !!(d.network && d.network.wan_ip && d.network.wan_ip !== "--" && d.network.wan_ip !== "");
+      const isUsbWanConn = !!(d.router?.usb?.connected || (Array.isArray(d.usb_devices) && d.usb_devices.length > 0 && d.usb_devices[0].status === "online") || (d.mobile?.connected));
+
       // Detect USB standard: USB 3.0 (5Gbps) or USB 2.0 (480Mbps)
       let isUsb3 = true;
       let usbWireSpeed = "5Gbps";
-      const isUsbWanConn = !!(window._lastDataCache?.router?.usb?.connected || (Array.isArray(window._lastDataCache?.usb_devices) && window._lastDataCache.usb_devices.length > 0 && window._lastDataCache.usb_devices[0].status === "online") || (window._lastDataCache?.mobile?.connected));
-      if (window._lastDataCache) {
-        const rtrUsb = window._lastDataCache.router && window._lastDataCache.router.usb;
-        const usbDev = Array.isArray(window._lastDataCache.usb_devices) && window._lastDataCache.usb_devices[0];
-        const spd = (rtrUsb && rtrUsb.speed_mbps) || (usbDev && usbDev.speed_mbps) || (isUsbWanConn ? 5000 : 0);
-        if (spd > 0 && spd < 1000) {
-          isUsb3 = false;
-          usbWireSpeed = "480Mbps";
-        } else if (spd >= 1000) {
-          isUsb3 = true;
-          usbWireSpeed = "5Gbps";
-        } else {
-          isUsb3 = false;
-          usbWireSpeed = "Offline";
-        }
+      const rtrUsb = d.router && d.router.usb;
+      const usbDev = Array.isArray(d.usb_devices) && d.usb_devices[0];
+      const spd = (rtrUsb && rtrUsb.speed_mbps) || (usbDev && usbDev.speed_mbps) || (isUsbWanConn ? 5000 : 0);
+      if (spd > 0 && spd < 1000) {
+        isUsb3 = false;
+        usbWireSpeed = "480Mbps";
+      } else if (spd >= 1000) {
+        isUsb3 = true;
+        usbWireSpeed = "5Gbps";
+      } else {
+        isUsb3 = false;
+        usbWireSpeed = "Offline";
       }
       const usbStyle = getUsbThemeStyle(isUsb3 ? "usb3" : "usb2", isLight);
 
       // 1. WAN UPLINK CHIP ON TOP OF GATEWAY (Curve UI matching cards, Hotspot tethering + ADB icons, USB standard wire speed)
-      const hasAnyWan = isWanUp || isUsbWanConn || (d.network && d.network.wan_ip && d.network.wan_ip !== "--" && d.network.wan_ip !== "");
+      const hasAnyWan = isWanUp || isUsbWanConn;
       if (prefs.showWan && hasAnyWan) {
 
         const wanW = isPhone ? 210 : (isTablet ? 230 : 250);
@@ -5652,11 +5666,24 @@ function drawStorageIconSmall(x, y, color, parent) {
           const rawCpu = (d.router.cpu_pct !== undefined) ? d.router.cpu_pct : 0;
           dCpu.textContent = (typeof rawCpu === 'number' ? rawCpu.toFixed(1) : rawCpu) + '%';
         }
+        const mem = d.router.memory || {};
         const dRam = document.getElementById('topoDockRam');
         if (dRam) {
-          const mem = d.router.memory || {};
-          const ramPct = (mem.used_pct !== undefined) ? mem.used_pct : 0;
-          dRam.textContent = (typeof ramPct === 'number' ? ramPct.toFixed(1) : ramPct) + '%';
+          // Pure physical RAM usage without ZRAM
+          const pTot = Number(mem.phys_total_mb) || 432;
+          const pAvail = Number(mem.phys_avail_mb) || 0;
+          const pUsed = Math.max(0, pTot - pAvail);
+          const pPct = mem.phys_used_pct !== undefined ? Number(mem.phys_used_pct) : (pTot > 0 ? ((pUsed * 100) / pTot) : ((mem.used_pct !== undefined) ? Number(mem.used_pct) : 0));
+          dRam.textContent = (typeof pPct === 'number' ? pPct.toFixed(1) : pPct) + '%';
+          dRam.title = `Physical RAM: ${pUsed} MB / ${pTot} MB (${(typeof pPct === 'number' ? pPct.toFixed(1) : pPct)}%)`;
+        }
+        const dZram = document.getElementById('topoDockZram');
+        if (dZram) {
+          const zTot = Number(mem.zram_total_mb) || 215;
+          const zUsed = Number(mem.zram_used_mb) || 0;
+          const zPct = mem.zram_used_pct !== undefined ? Number(mem.zram_used_pct) : (zTot > 0 ? ((zUsed * 100) / zTot) : 0);
+          dZram.textContent = `${zUsed} MB (${(typeof zPct === 'number' ? zPct.toFixed(1) : zPct)}%)`;
+          dZram.title = `ZRAM Compressed Pool: ${zUsed} MB / ${zTot} MB (${(typeof zPct === 'number' ? zPct.toFixed(1) : zPct)}%)`;
         }
         const dTemp = document.getElementById('topoDockTemp');
         if (dTemp) {
@@ -15778,9 +15805,37 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const loadAvgEl = document.getElementById('sysLoadAvg');
         if (loadAvgEl) loadAvgEl.textContent = `Usage: ${cpu.usage_pct || 0}% • Load: ${cpu.load_1m || '0.00'}, ${cpu.load_5m || '0.00'}, ${cpu.load_15m || '0.00'} • BogoMIPS: ${cpu.bogomips || '48.00'}`;
 
-        // RAM
+        // Physical RAM, ZRAM, and Memory Pool
         const ramSubEl = document.getElementById('sysRamSub');
-        if (ramSubEl) ramSubEl.textContent = `Used: ${mem.used_mb || 0} MB / ${mem.total_mb || 0} MB (${mem.used_pct || 0}%) • Free: ${mem.free_mb || 0} MB • Avail: ${mem.avail_mb || 0} MB`;
+        const pTot = mem.phys_total_mb || (mem.total_mb > 500 ? 432 : mem.total_mb);
+        const pAvail = mem.phys_avail_mb || mem.avail_mb || 0;
+        const pUsed = mem.phys_used_mb || Math.max(0, pTot - pAvail);
+        const pFree = mem.phys_free_mb || mem.free_mb || 0;
+        const pPct = mem.phys_used_pct !== undefined ? mem.phys_used_pct : (pTot > 0 ? Math.round((pUsed * 100) / pTot) : 0);
+        if (ramSubEl) {
+          ramSubEl.textContent = `Used: ${pUsed} MB / ${pTot} MB (${pPct}%) • Free: ${pFree} MB • Avail: ${pAvail} MB`;
+        }
+
+        const zram = data.zram || {};
+        const zramSubEl = document.getElementById('sysZramSub');
+        const zTot = zram.total_mb || mem.zram_total_mb || 215;
+        const zUsed = zram.used_mb !== undefined ? zram.used_mb : (mem.zram_used_mb || 0);
+        const zFree = zram.free_mb !== undefined ? zram.free_mb : (zTot - zUsed);
+        const zPct = zram.used_pct !== undefined ? zram.used_pct : (zTot > 0 ? Math.round((zUsed * 100) / zTot) : 0);
+        const zAlgo = (zram.algorithm || 'lzo-rle').toUpperCase();
+        const zRatio = zram.ratio || '1.00x';
+        if (zramSubEl) {
+          zramSubEl.textContent = `Engine: ${zAlgo} • Pool: ${zTot} MB • Used: ${zUsed} MB (${zPct}%) • Free: ${zFree} MB • Ratio: ${zRatio}`;
+        }
+
+        const poolSubEl = document.getElementById('sysMemPoolSub');
+        const poolTot = mem.total_mb || (pTot + zTot);
+        const poolAvail = mem.avail_mb || (pAvail + zFree);
+        const poolUsed = mem.used_mb || (poolTot - poolAvail);
+        const poolPct = mem.used_pct !== undefined ? mem.used_pct : (poolTot > 0 ? Math.round((poolUsed * 100) / poolTot) : 0);
+        if (poolSubEl) {
+          poolSubEl.textContent = `Total Pool: ${poolTot} MB • Used: ${poolUsed} MB (${poolPct}%) • Available: ${poolAvail} MB Free`;
+        }
 
         // Thermals & Device Health Status Gauge
         const thermals = data.thermals || [];

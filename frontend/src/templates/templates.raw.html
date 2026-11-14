@@ -83,21 +83,27 @@
           <svg id="usbBwSvg" role="img" aria-label="End-to-End Multi-Link Bandwidth Pipeline"></svg>
         </div>
 
-        <!-- REAL-TIME ROUTER TELEMETRY DOCK (0 CPU LOAD, REAL-TIME CPU %, RAM %, AVG TEMP) -->
+        <!-- REAL-TIME ROUTER TELEMETRY DOCK (0 CPU LOAD, REAL-TIME CPU %, PURE RAM %, ZRAM, AVG TEMP) -->
         <div class="topo-telemetry-dock" id="topoTelemetryDock">
-          <div class="topo-tele-item">
+          <div class="topo-tele-item" title="CPU Processor Load">
             <svg style="width:13px;height:13px;stroke:#38bdf8;fill:none;stroke-width:2;" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3m6-3v3M9 20v3m6-3v3M20 9h3m-3 6h3M1 9h3m-3 6h3"/></svg>
             <span>CPU</span>
             <span class="topo-tele-val" id="topoDockCpu" style="color:#38bdf8;">--%</span>
           </div>
           <div class="topo-tele-sep"></div>
-          <div class="topo-tele-item">
+          <div class="topo-tele-item" title="Pure Physical RAM Hardware Usage">
             <svg style="width:13px;height:13px;stroke:#10b981;fill:none;stroke-width:2;" viewBox="0 0 24 24"><path d="M6 19v-3m4 3v-6m4 3v-2m4 5V5"/><rect x="2" y="3" width="20" height="18" rx="2"/></svg>
             <span>RAM</span>
             <span class="topo-tele-val" id="topoDockRam" style="color:#10b981;">--%</span>
           </div>
           <div class="topo-tele-sep"></div>
-          <div class="topo-tele-item">
+          <div class="topo-tele-item" title="ZRAM Compressed Dynamic Swap Memory Pool">
+            <svg style="width:13px;height:13px;stroke:#a855f7;fill:none;stroke-width:2;" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <span>ZRAM</span>
+            <span class="topo-tele-val" id="topoDockZram" style="color:#a855f7;">--</span>
+          </div>
+          <div class="topo-tele-sep"></div>
+          <div class="topo-tele-item" title="Core SoC Temperature">
             <svg style="width:13px;height:13px;stroke:#f59e0b;fill:none;stroke-width:2;" viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
             <span>TEMP</span>
             <span class="topo-tele-val" id="topoDockTemp" style="color:#f59e0b;">--°C</span>
@@ -2481,14 +2487,28 @@
                 </div>
               </div>
 
-              <!-- SECTION 2: MEMORY (RAM) -->
+              <!-- SECTION 2: MEMORY (RAM) & ZRAM -->
               <div class="setting-section-divider"></div>
-              <div class="setting-section-header">System Memory (RAM)</div>
+              <div class="setting-section-header">System Memory & ZRAM Swap</div>
 
               <div class="setting-row-item">
                 <div class="setting-label-col">
-                  <span class="setting-label-bold">Memory Allocation</span>
+                  <span class="setting-label-bold">Physical Hardware RAM (DDR4)</span>
                   <span class="setting-label-sub" id="sysRamSub">Used: -- MB &bull; Free: -- MB &bull; Avail: -- MB</span>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">ZRAM Compressed Swap Engine</span>
+                  <span class="setting-label-sub" id="sysZramSub">Algorithm: LZO-RLE &bull; Pool: 215 MB &bull; Used: 0 MB &bull; Ratio: 1.00x</span>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Total Working Memory Pool</span>
+                  <span class="setting-label-sub" id="sysMemPoolSub">Total: 648 MB &bull; Available: -- MB &bull; Active Usage: --%</span>
                 </div>
               </div>
 

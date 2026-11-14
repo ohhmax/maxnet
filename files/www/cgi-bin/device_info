@@ -39,19 +39,45 @@ if [ "$CPU_PCT" -eq 0 ]; then
     CPU_PCT=$(awk -v l="$L1" -v c="$CORES" 'BEGIN {p=int((l/c)*100); if(p>100) p=100; if(p<1) p=1; print p}')
 fi
 
-# 2. RAM Memory (Physical + ZRAM Combined Working Pool)
+# 2. RAM Memory & ZRAM
 MEM_PHYS_TOTAL=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_FREE=$(awk '/MemFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_PHYS_AVAIL=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_PHYS_USED=$((MEM_PHYS_TOTAL - MEM_PHYS_AVAIL))
+[ "$MEM_PHYS_TOTAL" -gt 0 ] && MEM_PHYS_PCT=$((100 * MEM_PHYS_USED / MEM_PHYS_TOTAL)) || MEM_PHYS_PCT=0
+
 MEM_BUFFERS=$(awk '/Buffers/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_CACHED=$(awk '/^Cached/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+
 SWAP_TOTAL=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 SWAP_FREE=$(awk '/SwapFree/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+SWAP_USED=$((SWAP_TOTAL - SWAP_FREE))
+[ "$SWAP_TOTAL" -gt 0 ] && SWAP_PCT=$((100 * SWAP_USED / SWAP_TOTAL)) || SWAP_PCT=0
 
 MEM_TOTAL=$((MEM_PHYS_TOTAL + SWAP_TOTAL))
 MEM_AVAIL=$((MEM_PHYS_AVAIL + SWAP_FREE))
 MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
 [ "$MEM_TOTAL" -gt 0 ] && MEM_PCT=$((100 * MEM_USED / MEM_TOTAL)) || MEM_PCT=0
+
+# ZRAM Detailed Metrics
+ZRAM_ALGO=$(cat /sys/block/zram0/comp_algorithm 2>/dev/null | grep -o '\[[a-zA-Z0-9_-]*\]' | tr -d '[]')
+[ -z "$ZRAM_ALGO" ] && ZRAM_ALGO=$(cat /sys/block/zram0/comp_algorithm 2>/dev/null | awk '{print $1}')
+[ -z "$ZRAM_ALGO" ] && ZRAM_ALGO="lzo-rle"
+
+ZRAM_DISKSIZE=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
+ZRAM_MM_STAT=$(cat /sys/block/zram0/mm_stat 2>/dev/null)
+ZRAM_ORIG_BYTES=$(echo "$ZRAM_MM_STAT" | awk '{print $1}')
+ZRAM_COMPR_BYTES=$(echo "$ZRAM_MM_STAT" | awk '{print $2}')
+ZRAM_MEM_USED_BYTES=$(echo "$ZRAM_MM_STAT" | awk '{print $3}')
+
+[ -z "$ZRAM_ORIG_BYTES" ] && ZRAM_ORIG_BYTES=0
+[ -z "$ZRAM_COMPR_BYTES" ] && ZRAM_COMPR_BYTES=0
+[ -z "$ZRAM_MEM_USED_BYTES" ] && ZRAM_MEM_USED_BYTES=0
+
+ZRAM_RATIO="1.00x"
+if [ "$ZRAM_COMPR_BYTES" -gt 0 ] 2>/dev/null; then
+    ZRAM_RATIO=$(awk -v o="$ZRAM_ORIG_BYTES" -v c="$ZRAM_COMPR_BYTES" 'BEGIN {if(c>0) printf "%.2fx", (o/c); else print "1.00x"}')
+fi
 
 # 3. Thermals (all thermal zones)
 THERMAL_JSON="["
@@ -173,7 +199,28 @@ cat << JSON_END
     "avail_mb": ${MEM_AVAIL},
     "buffers_mb": ${MEM_BUFFERS},
     "cached_mb": ${MEM_CACHED},
-    "used_pct": ${MEM_PCT}
+    "used_pct": ${MEM_PCT},
+    "phys_total_mb": ${MEM_PHYS_TOTAL},
+    "phys_used_mb": ${MEM_PHYS_USED},
+    "phys_avail_mb": ${MEM_PHYS_AVAIL},
+    "phys_used_pct": ${MEM_PHYS_PCT},
+    "zram_total_mb": ${SWAP_TOTAL},
+    "zram_used_mb": ${SWAP_USED},
+    "zram_free_mb": ${SWAP_FREE},
+    "zram_used_pct": ${SWAP_PCT}
+  },
+  "zram": {
+    "enabled": $([ "$SWAP_TOTAL" -gt 0 ] && echo "true" || echo "false"),
+    "algorithm": "${ZRAM_ALGO}",
+    "total_mb": ${SWAP_TOTAL},
+    "used_mb": ${SWAP_USED},
+    "free_mb": ${SWAP_FREE},
+    "used_pct": ${SWAP_PCT},
+    "ratio": "${ZRAM_RATIO}",
+    "disksize_bytes": ${ZRAM_DISKSIZE},
+    "orig_bytes": ${ZRAM_ORIG_BYTES},
+    "compr_bytes": ${ZRAM_COMPR_BYTES},
+    "mem_used_bytes": ${ZRAM_MEM_USED_BYTES}
   },
   "thermals": ${THERMAL_JSON},
   "storage": ${STORAGE_JSON},
