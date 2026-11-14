@@ -141,112 +141,104 @@
     </div>
   </div>
 
-  <!-- ==================== FIRMWARE FLASH OPTIONS & PROGRESS MODAL ==================== -->
+  <!-- ==================== FIRMWARE FLASH MODAL (CLEAN & SIMPLE) ==================== -->
   <div id="firmwareFlashModalOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeFirmwareFlashModal()">
-    <div class="android-modal-card firmware-modal-card">
-      <div class="android-modal-header firmware-modal-header">
+    <div class="android-modal-card" style="max-width:460px; width:92%;">
+      <div class="android-modal-header">
         <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
-          <div style="display:flex; align-items:center; gap:9px;">
-            <div style="width:30px; height:30px; border-radius:8px; background:rgba(56,189,248,0.15); color:#38bdf8; display:flex; align-items:center; justify-content:center;">
-              <svg viewBox="0 0 24 24" style="width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            </div>
-            <div>
-              <span class="android-modal-title" style="color:var(--text-main);">Firmware Upgrade</span>
-              <div class="android-modal-desc" id="flashModalSubtitle">Verified sysupgrade image ready</div>
-            </div>
-          </div>
+          <span class="android-modal-title">Firmware Upgrade</span>
           <button type="button" class="btn-ghost" onclick="closeFirmwareFlashModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;" aria-label="Close">
             <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+        <span class="android-modal-desc" id="flashModalSubtitle">Install new firmware release on NAND storage</span>
       </div>
 
-      <div class="android-modal-body" id="flashModalContent" style="padding:16px 20px; font-size:12px; display:flex; flex-direction:column; gap:12px;">
-        <!-- Version Comparison Matrix -->
-        <div class="flash-version-grid">
-          <div style="display:flex; flex-direction:column; gap:3px;">
-            <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); font-weight:700;">Installed Version</span>
-            <span id="flashCurrentVer" style="font-family:var(--font-mono); font-size:13px; font-weight:800; color:var(--text-main);">v2.0-legacy</span>
+      <!-- Action Selection State -->
+      <div class="android-modal-body" id="flashModalContent" style="padding:16px 20px; font-size:12.5px; display:flex; flex-direction:column; gap:14px;">
+        <div style="display:flex; justify-content:space-between; padding:12px 14px; background:var(--bg-sub, rgba(255,255,255,0.03)); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:8px;">
+          <div>
+            <div style="font-size:10.5px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Installed</div>
+            <div id="flashCurrentVer" style="font-size:13px; font-weight:700; color:var(--text-main); font-family:var(--font-mono);">v2.2.7-b7</div>
           </div>
-          <div style="display:flex; flex-direction:column; gap:3px; border-left:1px solid var(--border-sub, rgba(255,255,255,0.08)); padding-left:10px;">
-            <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.8px; color:#38bdf8; font-weight:700;">Latest Build</span>
-            <span id="flashLatestVer" style="font-family:var(--font-mono); font-size:13px; font-weight:800; color:#38bdf8;">v2.2.3-b3</span>
-          </div>
-        </div>
-
-        <!-- Hardware & Image Metadata -->
-        <div class="flash-meta-box">
-          <div style="display:flex; justify-content:space-between;">
-            <span style="color:var(--text-muted);">Hardware Target:</span>
-            <span id="flashModelName" style="color:var(--text-main); font-weight:700;">JioRouter AX6000 JIDU6J11-6811</span>
-          </div>
-          <div style="display:flex; justify-content:space-between;">
-            <span style="color:var(--text-muted);">Target Image:</span>
-            <span id="flashFileName" style="color:#38bdf8; font-weight:600;">maxnet-jidu6811-sysupgrade.bin</span>
-          </div>
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="color:var(--text-muted);">SHA256:</span>
-            <span id="flashSha256" style="color:var(--text-dim); font-size:9.5px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">--</span>
+          <div style="text-align:right;">
+            <div style="font-size:10.5px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Latest Build</div>
+            <div id="flashLatestVer" style="font-size:13px; font-weight:700; color:var(--primary, #10b981); font-family:var(--font-mono);">v2.2.10-b10</div>
           </div>
         </div>
 
-        <!-- Action Choices -->
-        <div style="display:flex; flex-direction:column; gap:10px; margin-top:4px;">
-          <button type="button" class="flash-action-btn flash-btn-keep" onclick="startFirmwareFlash(false)">
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span class="flash-btn-title">Keep Settings &amp; Update</span>
-              <span class="flash-btn-sub">Preserves network configurations, Wi-Fi keys, and passwords</span>
-            </div>
-            <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2.2; flex-shrink:0; margin-left:8px;"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
+        <div style="font-size:11.5px; color:var(--text-muted); line-height:1.5;">
+          Target Image: <span id="flashFileName" style="color:var(--text-main); font-family:var(--font-mono);">maxnet-jidu6911-sysupgrade.bin</span> (<span id="flashFileSize">28.60 MB</span>)
+        </div>
 
-          <button type="button" class="flash-action-btn flash-btn-clean" onclick="startFirmwareFlash(true)">
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span class="flash-btn-title">Clean Flash (Factory Reset)</span>
-              <span class="flash-btn-sub">Erases all partitions, clears old configs, boots fresh system</span>
-            </div>
-            <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2.2; flex-shrink:0; margin-left:8px;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <button type="button" class="mh-btn btn-primary" onclick="startFirmwareFlash(false)" style="width:100%; justify-content:center; padding:10px 16px; font-size:12.5px; font-weight:700;">
+            Just Update (Keep Settings)
           </button>
-
-          <button type="button" class="flash-action-btn" onclick="toggleRamBootDetailsInModal()" style="border:1px solid rgba(56,189,248,0.3); background:rgba(56,189,248,0.06);">
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span class="flash-btn-title" style="color:#38bdf8;">Test in RAM First (.itb Safe Boot)</span>
-              <span class="flash-btn-sub">Boot OS into volatile memory without touching flash - zero brick risk</span>
-            </div>
-            <svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:#38bdf8; stroke-width:2.2; flex-shrink:0; margin-left:8px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <button type="button" class="mh-btn btn-ghost" onclick="startFirmwareFlash(true)" style="width:100%; justify-content:center; padding:10px 16px; font-size:12.5px; font-weight:700;">
+            Clean Flash (Reset All Settings)
           </button>
-
-          <!-- RAM Boot Details Box (revealed on click) -->
-          <div id="modalRamBootBox" style="display:none; background:rgba(0,0,0,0.3); border:1px solid rgba(56,189,248,0.25); border-radius:8px; padding:12px; font-size:11px; flex-direction:column; gap:8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-weight:700; color:#38bdf8;">TFTP Safe RAM Boot:</span>
-              <a id="modalItbDownloadBtn" href="#" target="_blank" class="mh-btn btn-sm" style="font-size:10px; padding:2px 8px; text-decoration:none;">Download .itb</a>
-            </div>
-            <div style="font-family:var(--font-mono); font-size:10px; background:rgba(0,0,0,0.5); padding:6px 8px; border-radius:4px; color:#38bdf8; word-break:break-all;" id="modalTftpCmd">
-              tftpboot 0x46000000 maxnet-jidu6911-initramfs.itb; bootm 0x46000000
-            </div>
-            <div style="font-size:10.5px; color:var(--text-dim); line-height:1.4;">
-              Configure TFTP server on 192.168.1.10. Load into RAM and test all services safely before permanently updating.
-            </div>
-          </div>
         </div>
       </div>
 
-      <!-- Live Flashing Progress State (Replaces Body when Flashing) -->
+      <!-- Live Flashing Progress State -->
       <div class="android-modal-body" id="flashProgressState" style="display:none; padding:24px 20px; flex-direction:column; align-items:center; text-align:center; gap:16px;">
-        <div class="spin-icon-large" style="width:48px; height:48px; border:3px solid rgba(56,189,248,0.2); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.9s linear infinite;"></div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <span style="font-size:15px; font-weight:800; color:var(--text-main);" id="flashProgressTitle">Flashing Firmware...</span>
-          <span style="font-size:12px; color:var(--text-dim); line-height:1.5;" id="flashProgressDesc">Downloading binary from release server and writing to flash memory. Please DO NOT disconnect power.</span>
+        <div class="m-spinner" style="width:40px; height:40px;"></div>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <span style="font-size:14px; font-weight:800; color:var(--text-main);" id="flashProgressTitle">Downloading Firmware...</span>
+          <span style="font-size:12px; color:var(--text-muted); line-height:1.5;" id="flashProgressDesc">Starting background download from release mirror...</span>
         </div>
-        <div style="width:100%; background:rgba(255,255,255,0.08); height:6px; border-radius:3px; overflow:hidden;">
-          <div id="flashProgressBar" style="width:15%; height:100%; background:linear-gradient(90deg, #38bdf8, #10b981); transition:width 0.4s ease;"></div>
+        <div style="width:100%; background:var(--bg-sub, rgba(255,255,255,0.08)); height:6px; border-radius:3px; overflow:hidden;">
+          <div id="flashProgressBar" style="width:5%; height:100%; background:var(--primary, #10b981); transition:width 0.4s ease;"></div>
         </div>
-        <div style="font-family:var(--font-mono); font-size:12px; font-weight:700; color:#38bdf8;" id="flashCountdownTimer">Estimated time remaining: 75s</div>
+        <div style="font-family:var(--font-mono); font-size:11.5px; font-weight:700; color:var(--text-muted);" id="flashCountdownTimer">Please do not disconnect power</div>
       </div>
 
       <div class="android-modal-footer" id="flashModalFooter">
         <button type="button" class="mh-btn btn-ghost" onclick="closeFirmwareFlashModal()" style="padding:7px 18px; font-size:12px; font-weight:700;">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SAFE RAM BOOT MODAL (CLEAN & SIMPLE) ==================== -->
+  <div id="ramBootModalOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeRamBootModal()">
+    <div class="android-modal-card" style="max-width:480px; width:92%;">
+      <div class="android-modal-header">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <span class="android-modal-title">Safe RAM Boot (.itb)</span>
+          <button type="button" class="btn-ghost" onclick="closeRamBootModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;" aria-label="Close">
+            <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <span class="android-modal-desc">Test firmware directly in DDR RAM without flashing NAND</span>
+      </div>
+
+      <div class="android-modal-body" id="ramBootModalContent" style="padding:16px 20px; font-size:12px; display:flex; flex-direction:column; gap:14px;">
+        <p style="margin:0; color:var(--text-muted); line-height:1.5;">
+          Loads the entire operating system into volatile DDR RAM. Flash memory is untouched. If powered off, the router returns to its previous system with zero risk of bricking.
+        </p>
+
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <button type="button" class="mh-btn btn-primary" id="btnExecDirectRamBoot" onclick="executeDirectRamBoot()" style="width:100%; justify-content:center; padding:10px 16px; font-size:12.5px; font-weight:700;">
+            Reboot into RAM Boot Mode
+          </button>
+          <span style="font-size:10.5px; color:var(--text-dim); text-align:center;">Sets U-Boot bootcmd and restarts gateway</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:6px; border-top:1px solid var(--border-sub, rgba(255,255,255,0.08)); padding-top:12px;">
+          <span style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">TFTP Command</span>
+          <div style="display:flex; align-items:center; background:var(--bg-sub, rgba(0,0,0,0.4)); padding:8px 10px; border-radius:6px; font-family:var(--font-mono); font-size:11px; color:var(--text-main); justify-content:space-between; border:1px solid var(--border-sub, rgba(255,255,255,0.06));">
+            <span id="ramBootTftpCmd" style="user-select:all; word-break:break-all;">tftpboot 0x46000000 maxnet-jidu6911-initramfs.itb; bootm 0x46000000</span>
+            <button type="button" class="btn-ghost" onclick="copyTextToClipboard(document.getElementById('ramBootTftpCmd').textContent)" style="padding:2px 8px; font-size:10px; border:none; background:transparent; color:var(--primary, #10b981); cursor:pointer; font-weight:700;">COPY</button>
+          </div>
+          <a id="ramBootItbDownloadLink" href="#" target="_blank" class="mh-btn btn-ghost" style="width:100%; justify-content:center; padding:8px 14px; font-size:11.5px; font-weight:700; text-decoration:none; margin-top:4px;">
+            Download .itb Binary (<span id="ramBootItbSize">34.16 MB</span>)
+          </a>
+        </div>
+      </div>
+
+      <div class="android-modal-footer">
+        <button type="button" class="mh-btn btn-ghost" onclick="closeRamBootModal()" style="padding:7px 18px; font-size:12px; font-weight:700;">CLOSE</button>
       </div>
     </div>
   </div>
@@ -3827,90 +3819,63 @@
           </div>
           <div class="accordion-content">
             <div class="settings-card-body">
-              <!-- INSTALLED SYSTEM PROFILE -->
-              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:12px; padding:16px; margin-bottom:16px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                  <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">Current System Profile</span>
-                  <span id="fwCurrentVerBadge" class="setting-pill pill-cyan">v2.2.7-b7</span>
+              <!-- 1. FIRMWARE & RELEASE STATUS -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Firmware &amp; OS Updates</span>
+                  <span class="setting-label-sub" id="fwStatusSubtitle">
+                    Installed: <span id="fwCurrentVerBadge" style="font-weight:700;">v2.2.7-b7</span> &bull; Latest: <span id="fwLatestVerVal" style="font-weight:700;">v2.2.10-b10</span> &bull; <span id="fwModelVal">Jio JIDU6911</span>
+                  </span>
                 </div>
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; font-size:12px;">
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">Model &amp; Hardware</span>
-                    <span id="fwModelVal" style="color:var(--text-main); font-weight:700;">Jio JIDU6911</span>
-                  </div>
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">Target SoC Architecture</span>
-                    <span id="fwSocVal" style="color:var(--text-main); font-weight:700;">Qualcomm IPQ9574 (AArch64)</span>
-                  </div>
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">Flash Layout</span>
-                    <span id="fwFlashVal" style="color:var(--text-main); font-weight:700;">SPI-NAND UBI Dual-Slot</span>
-                  </div>
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">Active Kernel</span>
-                    <span id="fwKernelVal" style="color:var(--text-main); font-weight:700;">Linux 6.18.60</span>
-                  </div>
+                <div class="setting-control-col" style="display:flex; align-items:center; gap:8px;">
+                  <span id="fwUpdateStatusPill" class="setting-pill pill-green">UP TO DATE</span>
+                  <button class="round-action-btn" id="btnCheckFwPage" title="Check for New Releases" onclick="checkLatestFirmwareUpdate()">
+                    <svg id="iconCheckFwPage" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                  </button>
                 </div>
               </div>
 
-              <!-- LATEST RELEASE DIAGNOSTICS & STATUS -->
-              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:12px; padding:16px; margin-bottom:16px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                  <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">Release Server Diagnostics</span>
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <span id="fwUpdateStatusPill" class="setting-pill pill-green">UP TO DATE</span>
-                    <button class="round-action-btn" id="btnCheckFwPage" title="Check for New Releases" onclick="checkLatestFirmwareUpdate()" style="width:28px; height:28px; min-width:28px;">
-                      <svg id="iconCheckFwPage" viewBox="0 0 24 24" style="width:14px; height:14px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                    </button>
-                  </div>
+              <!-- 2. INSTALL FIRMWARE UPDATE (NAND FLASH) -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Install Firmware Update</span>
+                  <span class="setting-label-sub" id="fwSysupgradeSub">
+                    Download &amp; flash verified sysupgrade image (<span id="fwSizeVal">28.60 MB</span>) to NAND storage
+                  </span>
                 </div>
-
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; font-size:12px; margin-bottom:12px;">
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">Latest Available Build</span>
-                    <span id="fwLatestVerVal" style="color:#38bdf8; font-weight:700;">v2.2.7-b7</span>
-                  </div>
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">Sysupgrade Image</span>
-                    <span id="fwFileVal" style="color:var(--text-main); font-family:var(--font-mono); font-size:11px; word-break:break-all;">maxnet-jidu6911-sysupgrade.bin</span>
-                  </div>
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">Sysupgrade Size</span>
-                    <span id="fwSizeVal" style="color:var(--text-main); font-weight:700;">24.88 MB</span>
-                  </div>
-                  <div>
-                    <span style="color:var(--text-muted); display:block; font-size:10.5px;">SHA-256 Checksum</span>
-                    <span id="fwShaVal" style="color:var(--text-dim); font-family:var(--font-mono); font-size:10px; word-break:break-all;">Verified via Release Manifest</span>
-                  </div>
-                </div>
-
-                <!-- SAFE RAM BOOT (.itb) TEST SUITE -->
-                <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2); border-radius:10px; padding:12px 14px; margin-top:10px;">
-                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-                    <span style="font-size:11.5px; font-weight:800; color:#38bdf8; display:flex; align-items:center; gap:6px;">
-                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2.2;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                      Safe RAM Boot Test (.itb)
-                    </span>
-                    <a id="fwItbDownloadLink" href="#" target="_blank" class="mh-btn btn-sm" style="font-size:10px; padding:3px 10px; background:rgba(56,189,248,0.2); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); text-decoration:none;">DOWNLOAD .ITB</a>
-                  </div>
-                  <p style="font-size:11px; color:var(--text-dim); line-height:1.5; margin:0 0 8px 0;">
-                    Load the operating system entirely into volatile RAM without writing to NAND flash. Router reboots to original state if powered off. Test Wi-Fi and stability with 100% zero risk of bricking.
-                  </p>
-                  <div style="display:flex; flex-direction:column; gap:4px;">
-                    <span style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">U-Boot TFTP Ram Boot Command:</span>
-                    <div style="display:flex; align-items:center; background:rgba(0,0,0,0.4); padding:6px 10px; border-radius:6px; font-family:var(--font-mono); font-size:10.5px; color:#38bdf8; justify-content:space-between;">
-                      <span id="fwTftpCmdVal" style="user-select:all; word-break:break-all;">tftpboot 0x46000000 maxnet-jidu6911-initramfs.itb; bootm 0x46000000</span>
-                      <button type="button" class="btn-ghost" onclick="copyTextToClipboard(document.getElementById('fwTftpCmdVal').textContent)" style="padding:2px 6px; font-size:10px; color:#38bdf8; border:none; background:transparent; cursor:pointer;" title="Copy Command">COPY</button>
-                    </div>
-                  </div>
+                <div class="setting-control-col">
+                  <button type="button" class="mh-btn btn-primary" id="btnFwFlashDirect" onclick="openFirmwareFlashModal()" style="min-width:110px; font-weight:700; padding:7px 18px; font-size:12px;">
+                    UPGRADE
+                  </button>
                 </div>
               </div>
 
-              <!-- FIRMWARE ACTION CONTROLS -->
-              <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-end;">
-                <button type="button" class="mh-btn btn-ghost" onclick="checkLatestFirmwareUpdate()" style="padding:8px 18px; font-size:12px; font-weight:700;">CHECK FOR UPDATES</button>
-                <button type="button" class="mh-btn" id="btnFwRamBootTest" onclick="showRamBootInstructions()" style="padding:8px 18px; font-size:12px; font-weight:700; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">TEST IN RAM (.ITB)</button>
-                <button type="button" class="mh-btn btn-primary" id="btnFwFlashDirect" onclick="openFirmwareFlashModal(_lastFirmwareUpdateData)" style="padding:8px 22px; font-size:12px; font-weight:800;">INSTALL UPDATE</button>
+              <!-- 3. SAFE RAM BOOT (.itb) TEST -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Safe RAM Boot (.itb)</span>
+                  <span class="setting-label-sub">
+                    Test firmware in DDR RAM without flashing NAND memory (Zero brick risk)
+                  </span>
+                </div>
+                <div class="setting-control-col">
+                  <button type="button" class="mh-btn btn-ghost" id="btnFwRamBootTest" onclick="openRamBootModal()" style="min-width:110px; font-weight:700; padding:7px 18px; font-size:12px;">
+                    TEST IN RAM
+                  </button>
+                </div>
+              </div>
+
+              <!-- 4. SYSTEM ARCHITECTURE & DETAILS -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">System Architecture</span>
+                  <span class="setting-label-sub">
+                    SoC: <span id="fwSocVal">Qualcomm IPQ9574 (AArch64)</span> &bull; Kernel: <span id="fwKernelVal">Linux 6.18.60</span> &bull; Flash: <span id="fwFlashVal">SPI-NAND UBI Dual-Slot</span>
+                  </span>
+                </div>
+                <div class="setting-control-col">
+                  <span class="setting-pill pill-cyan">ACTIVE</span>
+                </div>
               </div>
             </div>
           </div>

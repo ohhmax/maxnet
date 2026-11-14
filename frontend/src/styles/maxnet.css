@@ -7533,105 +7533,15 @@ body[data-theme="dark"] {
       color: #0f172a !important;
     }
 
-    .flash-action-btn {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 16px;
-      border-radius: 12px;
-      cursor: pointer;
-      text-align: left;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      width: 100%;
-      box-sizing: border-box;
-    }
-
-    /* KEEP SETTINGS BUTTON */
-    .flash-btn-keep {
-      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-      color: #ffffff;
-      border: 1px solid #38bdf8;
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
-    }
-    .flash-btn-keep .flash-btn-title {
-      font-size: 13.5px;
-      font-weight: 800;
-      color: #ffffff;
-    }
-    .flash-btn-keep .flash-btn-sub {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.85);
-    }
-    .flash-btn-keep:hover {
-      background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
-      box-shadow: 0 6px 20px rgba(56, 189, 248, 0.5);
-      transform: translateY(-1px);
-    }
-
-    [data-theme="light"] .flash-btn-keep {
-      background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%) !important;
-      color: #ffffff !important;
-      border: 1px solid #0284c7 !important;
-      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.25) !important;
-    }
-    [data-theme="light"] .flash-btn-keep .flash-btn-title {
-      color: #ffffff !important;
-    }
-    [data-theme="light"] .flash-btn-keep .flash-btn-sub {
-      color: rgba(255, 255, 255, 0.95) !important;
-    }
-
-    /* CLEAN FLASH BUTTON */
-    .flash-btn-clean {
-      background: rgba(239, 68, 68, 0.1);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.35);
-    }
-    .flash-btn-clean .flash-btn-title {
-      font-size: 13.5px;
-      font-weight: 800;
-      color: #ef4444;
-    }
-    .flash-btn-clean .flash-btn-sub {
-      font-size: 11px;
-      color: #fca5a5;
-    }
-    .flash-btn-clean:hover {
-      background: rgba(239, 68, 68, 0.2);
-      border-color: #ef4444;
-      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
-      transform: translateY(-1px);
-    }
-
-    [data-theme="light"] .flash-btn-clean {
-      background: #fef2f2 !important;
-      border: 1.5px solid #f87171 !important;
-      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08) !important;
-    }
-    [data-theme="light"] .flash-btn-clean .flash-btn-title {
-      color: #b91c1c !important;
-    }
-    [data-theme="light"] .flash-btn-clean .flash-btn-sub {
-      color: #7f1d1d !important;
-    }
-    [data-theme="light"] .flash-btn-clean:hover {
-      background: #fee2e2 !important;
-      border-color: #ef4444 !important;
-      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.16) !important;
-    }
-
     /* Modal typography in light mode */
     [data-theme="light"] #flashCurrentVer {
       color: #0f172a !important;
     }
     [data-theme="light"] #flashLatestVer {
-      color: #0284c7 !important;
-    }
-    [data-theme="light"] #flashModelName {
-      color: #0f172a !important;
+      color: var(--primary, #0284c7) !important;
     }
     [data-theme="light"] #flashFileName {
-      color: #0284c7 !important;
+      color: #0f172a !important;
     }
     [data-theme="light"] #flashSha256 {
       color: #475569 !important;

@@ -92,6 +92,9 @@ import {
   closeFactoryResetModal,
   openFirmwareFlashModal,
   closeFirmwareFlashModal,
+  openRamBootModal,
+  closeRamBootModal,
+  executeDirectRamBoot,
   startFirmwareFlash,
   executeFactoryReset,
   downloadBackupArchive,
@@ -234,6 +237,9 @@ if (typeof window !== 'undefined') {
   window.closeFactoryResetModal = closeFactoryResetModal;
   window.openFirmwareFlashModal = openFirmwareFlashModal;
   window.closeFirmwareFlashModal = closeFirmwareFlashModal;
+  window.openRamBootModal = openRamBootModal;
+  window.closeRamBootModal = closeRamBootModal;
+  window.executeDirectRamBoot = executeDirectRamBoot;
   window.startFirmwareFlash = startFirmwareFlash;
   window.executeFactoryReset = executeFactoryReset;
   window.downloadBackupArchive = downloadBackupArchive;
@@ -470,6 +476,9 @@ export {
   closeFactoryResetModal,
   openFirmwareFlashModal,
   closeFirmwareFlashModal,
+  openRamBootModal,
+  closeRamBootModal,
+  executeDirectRamBoot,
   startFirmwareFlash,
   executeFactoryReset,
   downloadBackupArchive,

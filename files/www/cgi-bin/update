@@ -11,7 +11,25 @@ echo "Access-Control-Allow-Origin: *"
 echo ""
 
 ACTION="$1"
+[ -n "$ACTION" ] && echo "$ACTION" | grep -q '=' && ACTION=$(echo "$ACTION" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
 [ -z "$ACTION" ] && ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+
+# Fast path: Status & Progress Queries (Instant return, zero network delay)
+if [ "$ACTION" = "status" ] || [ "$ACTION" = "progress" ]; then
+    if [ -f /tmp/ota_status.json ]; then
+        cat /tmp/ota_status.json
+    else
+        echo '{"state":"idle","progress":0,"message":"No update task active"}'
+    fi
+    exit 0
+fi
+
+# Fast path: RAM Boot Reboot execution
+if [ "$ACTION" = "ram_boot_reboot" ]; then
+    echo "{\"status\": \"rebooting\", \"message\": \"Rebooting router into Safe RAM Boot mode...\"}"
+    ( sleep 2 && reboot ) </dev/null >/dev/null 2>&1 &
+    exit 0
+fi
 
 BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "jiorouter,ax6000-jidu6j11-6811")
 MODEL_NAME=$(cat /tmp/sysinfo/model 2>/dev/null || echo "JioRouter AX6000")
@@ -163,53 +181,25 @@ case "$TARGET_ARCH" in
         ;;
 esac
 
-# 3. Handle Flash Execution Action
+# 3. Handle Safe RAM Boot Setup
+if [ "$ACTION" = "ram_boot" ]; then
+    # Ensure fw_env.config exists for Qualcomm U-Boot
+    if [ ! -f /etc/fw_env.config ]; then
+        mtdnum=$(grep -i 'APPSBLENV' /proc/mtd | cut -d: -f1 | sed 's/mtd//')
+        [ -n "$mtdnum" ] && echo "/dev/mtd$mtdnum 0x0 0x40000 0x20000" > /etc/fw_env.config
+    fi
+    if command -v fw_setenv >/dev/null 2>&1; then
+        fw_setenv bootcmd "tftpboot 0x46000000 ${ITB_FILE}; bootm 0x46000000; ubi part ubi; ubi read 0x44000000 kernel; bootm 0x44000000" 2>/dev/null || true
+    fi
+    echo "{\"status\": \"ram_boot_configured\", \"tftp_command\": \"$TFTP_CMD\", \"itb_file\": \"$ITB_FILE\", \"itb_url\": \"$ITB_URL\", \"message\": \"Safe RAM Boot configured in U-Boot environment.\"}"
+    exit 0
+fi
+
+# 4. Handle Background Asynchronous Flash Execution
 if [ "$ACTION" = "flash" ] || [ "$ACTION" = "flash_clean" ]; then
-    cd /tmp
-    rm -f sysupgrade-new.bin sha256sums-new
-
-    curl -s -L --connect-timeout 10 --max-time 300 -o sysupgrade-new.bin "$BIN_URL"
-    
-    # If no expected sum from manifest, fetch sha256sums file
-    if [ -z "$EXPECTED_SUM" ]; then
-        SUM_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/sha256sums"
-        curl -s -L --connect-timeout 8 --max-time 30 -o sha256sums-new "$SUM_URL" 2>/dev/null
-        EXPECTED_SUM=$(grep -E "${RESOLVED_FILE}|sysupgrade\.bin" sha256sums-new 2>/dev/null | awk '{print $1}' | head -n 1)
-    fi
-
-    ACTUAL_SUM=$(sha256sum sysupgrade-new.bin 2>/dev/null | awk '{print $1}')
-
-    if [ -n "$EXPECTED_SUM" ] && [ "$EXPECTED_SUM" != "$ACTUAL_SUM" ]; then
-        echo "{\"status\": \"error\", \"message\": \"SHA256 mismatch for $RESOLVED_FILE (expected $EXPECTED_SUM, got $ACTUAL_SUM)\"}"
-        exit 0
-    fi
-
-    # Verify minimum image size (> 10MB) to protect router from flashing corrupted partial file
-    IMG_SIZE=$(wc -c < sysupgrade-new.bin 2>/dev/null || echo 0)
-    if [ "$IMG_SIZE" -lt 10485760 ]; then
-        echo "{\"status\": \"error\", \"message\": \"Downloaded image too small (${IMG_SIZE} bytes), aborting flash to protect router\"}"
-        exit 0
-    fi
-
-    mv sysupgrade-new.bin /tmp/sysupgrade.bin
-    chmod +x /tmp/sysupgrade.bin
-
-    # Stamp latest version to /etc/maxnet_version before flashing to guarantee state consistency across reboot
-    mkdir -p /etc
-    echo "VERSION=${LATEST_TAG}" > /etc/maxnet_version
-    echo "BUILD=${LATEST_BUILD}" >> /etc/maxnet_version
-    echo "TAG=${LATEST_TAG}" >> /etc/maxnet_version
-    echo "BUILD_TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')" >> /etc/maxnet_version
-
-    echo "[$(date)] Starting sysupgrade for $RESOLVED_FILE (Action: $ACTION)..." > /tmp/sysupgrade.log
-
-    if [ "$ACTION" = "flash_clean" ]; then
-        echo "{\"status\": \"flashing\", \"mode\": \"clean\", \"tag\": \"$LATEST_TAG\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"message\": \"Firmware verified for $MODEL_NAME. Starting clean sysupgrade & reboot...\"}"
-        ( sleep 2 && sysupgrade -n -F -v /tmp/sysupgrade.bin >> /tmp/sysupgrade.log 2>&1 ) </dev/null >/dev/null 2>&1 &
-    else
-        echo "{\"status\": \"flashing\", \"mode\": \"keep_config\", \"tag\": \"$LATEST_TAG\", \"model\": \"$MODEL_NAME\", \"file\": \"$RESOLVED_FILE\", \"message\": \"Firmware verified for $MODEL_NAME. Starting sysupgrade (preserving config) & reboot...\"}"
-        ( sleep 2 && sysupgrade -F -v /tmp/sysupgrade.bin >> /tmp/sysupgrade.log 2>&1 ) </dev/null >/dev/null 2>&1 &
-    fi
+    rm -f /tmp/ota_status.json
+    /usr/bin/maxnet_ota_worker.sh "$ACTION" "$BIN_URL" "$EXPECTED_SUM" "$FILE_SIZE" "$LATEST_TAG" "$LATEST_BUILD" </dev/null >/dev/null 2>&1 &
+    echo "{\"status\": \"started\", \"action\": \"$ACTION\", \"target\": \"$RESOLVED_FILE\", \"latest\": \"$LATEST_TAG\", \"message\": \"Firmware upgrade process started in background\"}"
     exit 0
 fi
 

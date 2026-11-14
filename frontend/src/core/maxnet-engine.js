@@ -15016,32 +15016,25 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
 
     let _lastFirmwareUpdateData = null;
+    window._lastFirmwareUpdateData = null;
     let _isFlashingActive = false;
 
     function openFirmwareFlashModal(data) {
       if (data) _lastFirmwareUpdateData = data;
+      if (!_lastFirmwareUpdateData && window._lastFirmwareUpdateData) _lastFirmwareUpdateData = window._lastFirmwareUpdateData;
       const d = _lastFirmwareUpdateData || {};
       const overlay = document.getElementById('firmwareFlashModalOverlay');
       if (!overlay) return;
 
       const curEl = document.getElementById('flashCurrentVer');
       const latEl = document.getElementById('flashLatestVer');
-      const modEl = document.getElementById('flashModelName');
       const filEl = document.getElementById('flashFileName');
-      const shaEl = document.getElementById('flashSha256');
+      const sizEl = document.getElementById('flashFileSize');
 
       if (curEl) curEl.textContent = d.current || 'v2.2.7-b7';
       if (latEl) latEl.textContent = d.latest || d.current || 'v2.2.7-b7';
-      if (modEl) modEl.textContent = d.model || 'JioRouter AX6000';
-      if (filEl) filEl.textContent = d.file || 'sysupgrade.bin';
-      if (shaEl) shaEl.textContent = d.sha256 ? `${d.sha256.substring(0, 16)}...${d.sha256.substring(d.sha256.length - 8)}` : 'Verified via Manifest';
-
-      const itbBtn = document.getElementById('modalItbDownloadBtn');
-      const tftpCmd = document.getElementById('modalTftpCmd');
-      if (itbBtn) itbBtn.href = d.itb_url || '#';
-      if (tftpCmd) tftpCmd.textContent = d.tftp_command || 'tftpboot 0x46000000 initramfs.itb; bootm 0x46000000';
-      const ramBox = document.getElementById('modalRamBootBox');
-      if (ramBox) ramBox.style.display = 'none';
+      if (filEl) filEl.textContent = d.file || 'maxnet-jidu6911-sysupgrade.bin';
+      if (sizEl) sizEl.textContent = d.size ? ((d.size / 1048576).toFixed(2) + ' MB') : '28.60 MB';
 
       const content = document.getElementById('flashModalContent');
       const footer = document.getElementById('flashModalFooter');
@@ -15057,13 +15050,85 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     function closeFirmwareFlashModal() {
       if (_isFlashingActive) {
-        showToast('Firmware flashing in progress. Please do not close.', 'warning');
+        showToast('Firmware upgrade in progress. Please do not close.', 'warning');
         return;
       }
       const overlay = document.getElementById('firmwareFlashModalOverlay');
       if (overlay) {
         overlay.classList.remove('active');
         setTimeout(() => { overlay.style.display = 'none'; }, 200);
+      }
+    }
+
+    function openRamBootModal(data) {
+      if (data) _lastFirmwareUpdateData = data;
+      if (!_lastFirmwareUpdateData && window._lastFirmwareUpdateData) _lastFirmwareUpdateData = window._lastFirmwareUpdateData;
+      const d = _lastFirmwareUpdateData || {};
+      const overlay = document.getElementById('ramBootModalOverlay');
+      if (!overlay) return;
+
+      const tftpCmd = document.getElementById('ramBootTftpCmd');
+      const itbLink = document.getElementById('ramBootItbDownloadLink');
+      const itbSize = document.getElementById('ramBootItbSize');
+
+      if (tftpCmd) tftpCmd.textContent = d.tftp_command || 'tftpboot 0x46000000 maxnet-jidu6911-initramfs.itb; bootm 0x46000000';
+      if (itbLink) itbLink.href = d.itb_url || '#';
+      if (itbSize) itbSize.textContent = d.itb_size ? ((d.itb_size / 1048576).toFixed(2) + ' MB') : '34.16 MB';
+
+      overlay.style.display = 'flex';
+      requestAnimationFrame(() => overlay.classList.add('active'));
+    }
+
+    function closeRamBootModal() {
+      const overlay = document.getElementById('ramBootModalOverlay');
+      if (overlay) {
+        overlay.classList.remove('active');
+        setTimeout(() => { overlay.style.display = 'none'; }, 200);
+      }
+    }
+
+    async function executeDirectRamBoot() {
+      const btn = document.getElementById('btnExecDirectRamBoot');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="m-spinner" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:6px;"></span> Configuring U-Boot...';
+      }
+
+      try {
+        showToast('Configuring U-Boot bootcmd for Safe RAM Boot...', 'info');
+        await apiFetch('/cgi-bin/update?action=ram_boot');
+
+        showToast('Safe RAM Boot configured! Rebooting router into RAM mode...', 'success');
+
+        // Trigger reboot
+        await apiFetch('/cgi-bin/update?action=ram_boot_reboot').catch(() => {});
+
+        setTimeout(() => {
+          closeRamBootModal();
+          showToast('Gateway rebooting into volatile RAM. Reconnecting...', 'info');
+          let attempts = 0;
+          const pingInterval = setInterval(async () => {
+            attempts++;
+            try {
+              const ping = await fetch('/cgi-bin/status?t=' + Date.now(), { method: 'GET', cache: 'no-store' });
+              if (ping.ok) {
+                clearInterval(pingInterval);
+                showToast('Router online in Safe RAM Boot mode!', 'success');
+                setTimeout(() => location.reload(), 1500);
+              }
+            } catch (e) {}
+            if (attempts > 60) {
+              clearInterval(pingInterval);
+              location.reload();
+            }
+          }, 2000);
+        }, 1500);
+      } catch (err) {
+        showToast('Failed to trigger RAM Boot: ' + err.message, 'error');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Reboot into RAM Boot Mode';
+        }
       }
     }
 
@@ -15081,47 +15146,98 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (footer) footer.style.display = 'none';
       if (prog) prog.style.display = 'flex';
 
-      if (pTitle) pTitle.textContent = isClean ? 'Executing Clean Flash & Wipe...' : 'Flashing Firmware Update...';
+      if (pTitle) pTitle.textContent = isClean ? 'Executing Clean Flash & Wipe...' : 'Starting Firmware Upgrade...';
       if (pDesc) pDesc.textContent = isClean
-        ? 'Erasing old configurations, flashing verified sysupgrade image, and rebooting. Please DO NOT power off router.'
-        : 'Preserving current network settings, flashing verified sysupgrade image, and rebooting. Please DO NOT power off router.';
+        ? 'Erasing configurations and starting download worker in background...'
+        : 'Preserving network settings and starting download worker in background...';
+      if (pBar) {
+        pBar.style.width = '5%';
+        pBar.style.background = 'var(--primary, #10b981)';
+      }
+      if (pTimer) pTimer.textContent = 'Contacting release mirror...';
 
+      // 1. Trigger background OTA worker via CGI
       try {
-        apiFetch('/cgi-bin/update?action=' + (isClean ? 'flash_clean' : 'flash')).catch(() => {});
+        await apiFetch('/cgi-bin/update?action=' + (isClean ? 'flash_clean' : 'flash'));
       } catch (e) {}
 
-      let timeLeft = 75;
-      let progress = 15;
-      if (pBar) pBar.style.width = '15%';
+      // 2. Poll /cgi-bin/update?action=status every 1000ms
+      let pollCount = 0;
+      let isRebooting = false;
+      const pollTimer = setInterval(async () => {
+        pollCount++;
+        try {
+          const res = await fetch('/cgi-bin/update?action=status&t=' + Date.now(), { method: 'GET', cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
 
-      const countdownInterval = setInterval(() => {
-        timeLeft--;
-        progress = Math.min(92, progress + 1.1);
-        if (pBar) pBar.style.width = `${progress}%`;
-        if (pTimer) pTimer.textContent = `Estimated time remaining: ${timeLeft}s`;
+          if (data.state === 'downloading') {
+            if (pTitle) pTitle.textContent = 'Downloading Firmware...';
+            if (pDesc) pDesc.textContent = data.message || 'Downloading firmware from GitHub release...';
+            const pct = Math.max(5, Math.min(85, data.progress || 10));
+            if (pBar) pBar.style.width = `${pct}%`;
+            if (pTimer) pTimer.textContent = `${pct}% downloaded`;
+          } else if (data.state === 'verifying') {
+            if (pTitle) pTitle.textContent = 'Verifying Firmware Integrity...';
+            if (pDesc) pDesc.textContent = data.message || 'Verifying SHA-256 hash and sysupgrade header...';
+            if (pBar) pBar.style.width = `${data.progress || 90}%`;
+            if (pTimer) pTimer.textContent = 'Integrity check passed';
+          } else if (data.state === 'flashing') {
+            clearInterval(pollTimer);
+            isRebooting = true;
+            if (pTitle) pTitle.textContent = 'Flashing NAND & Rebooting...';
+            if (pDesc) pDesc.textContent = 'Writing firmware to SPI-NAND flash. System is rebooting. Please DO NOT power off router!';
+            if (pBar) pBar.style.width = '96%';
+            if (pTimer) pTimer.textContent = 'Rebooting Maxnet Gateway...';
 
-        // Start pinging router once past reboot phase (after 40 seconds)
-        if (timeLeft <= 35 && timeLeft % 3 === 0) {
-          fetch('/cgi-bin/status?t=' + Date.now(), { method: 'GET', cache: 'no-store' })
-            .then(res => {
-              if (res.ok) {
-                clearInterval(countdownInterval);
-                if (pBar) pBar.style.width = '100%';
-                if (pTitle) pTitle.textContent = 'Gateway Online!';
-                if (pDesc) pDesc.textContent = 'Firmware upgrade complete. Reloading MAXNET interface...';
-                if (pTimer) pTimer.textContent = 'Reconnected successfully!';
-                setTimeout(() => { window.location.reload(); }, 2000);
+            let pingAttempts = 0;
+            const pingInterval = setInterval(async () => {
+              pingAttempts++;
+              if (pingAttempts > 15) {
+                try {
+                  const ping = await fetch('/cgi-bin/status?t=' + Date.now(), { method: 'GET', cache: 'no-store' });
+                  if (ping.ok) {
+                    clearInterval(pingInterval);
+                    if (pBar) pBar.style.width = '100%';
+                    if (pTitle) pTitle.textContent = 'Firmware Updated Successfully!';
+                    if (pDesc) pDesc.textContent = 'Router online. Reloading interface...';
+                    setTimeout(() => location.reload(), 1500);
+                  }
+                } catch (e) {}
               }
-            })
-            .catch(() => {});
+              if (pingAttempts > 70) {
+                clearInterval(pingInterval);
+                location.reload();
+              }
+            }, 2000);
+          } else if (data.state === 'error') {
+            clearInterval(pollTimer);
+            _isFlashingActive = false;
+            if (pTitle) pTitle.textContent = 'Firmware Update Failed';
+            if (pDesc) pDesc.textContent = data.message || 'An error occurred during firmware update.';
+            if (pBar) {
+              pBar.style.width = '100%';
+              pBar.style.background = '#ef4444';
+            }
+            if (pTimer) pTimer.textContent = 'Error';
+            if (footer) {
+              footer.style.display = 'flex';
+              footer.innerHTML = '<button type="button" class="mh-btn btn-ghost" onclick="closeFirmwareFlashModal()" style="padding:7px 18px; font-size:12px; font-weight:700;">CLOSE</button>';
+            }
+          }
+        } catch (err) {
+          if (pollCount > 15 && !isRebooting) {
+            isRebooting = true;
+            if (pTitle) pTitle.textContent = 'Flashing & Rebooting...';
+            if (pDesc) pDesc.textContent = 'Writing to flash and restarting. Waiting for gateway to come back online...';
+            if (pBar) pBar.style.width = '95%';
+          }
         }
 
-        if (timeLeft <= 0) {
-          clearInterval(countdownInterval);
-          if (pBar) pBar.style.width = '100%';
-          if (pTitle) pTitle.textContent = 'Rebooting Finished';
-          if (pDesc) pDesc.textContent = 'Reloading dashboard...';
-          setTimeout(() => { window.location.reload(); }, 3000);
+        if (pollCount > 120 && !isRebooting) {
+          clearInterval(pollTimer);
+          _isFlashingActive = false;
+          if (footer) footer.style.display = 'flex';
         }
       }, 1000);
     }
@@ -15156,6 +15272,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           if (btn) btn.classList.remove('btn-pulse');
 
           _lastFirmwareUpdateData = updateData;
+          window._lastFirmwareUpdateData = updateData;
 
           // Populate dedicated acc-firmware panel if present
           const fwBadge = document.getElementById('fwCurrentVerBadge');
@@ -15194,6 +15311,12 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               btn.title = `Install Firmware Update (${latVer})`;
               btn.onclick = () => openFirmwareFlashModal(updateData);
               btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:2.3;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+            }
+
+            const btnDirect = document.getElementById('btnFwFlashDirect');
+            if (btnDirect) {
+              btnDirect.textContent = `UPGRADE TO ${latVer}`;
+              btnDirect.classList.add('btn-pulse');
             }
 
             // Dispatch notification once; suppress duplicates if same build was already notified
@@ -16195,6 +16318,9 @@ if (typeof window !== 'undefined') {
     closeFactoryResetModal,
     openFirmwareFlashModal,
     closeFirmwareFlashModal,
+    openRamBootModal,
+    closeRamBootModal,
+    executeDirectRamBoot,
     startFirmwareFlash,
     executeFactoryReset,
     confirmFactoryReset,
@@ -16622,6 +16748,9 @@ export {
   closeFactoryResetModal,
   openFirmwareFlashModal,
   closeFirmwareFlashModal,
+  openRamBootModal,
+  closeRamBootModal,
+  executeDirectRamBoot,
   startFirmwareFlash,
   executeFactoryReset,
   confirmFactoryReset,
