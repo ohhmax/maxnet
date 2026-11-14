@@ -116,7 +116,12 @@ import {
   apiFetch,
   fetchDeviceInfo,
   fetchTailscale,
-  fetchAdbLiveTelemetry
+  fetchAdbLiveTelemetry,
+  fetchWifiConfig,
+  renderWifiClients,
+  saveWifiSettings,
+  toggleWifiMasterPower,
+  togglePasswordVisibility
 } from './maxnet-engine.js';
 
 // Helper aliases and inline handler adapters
@@ -267,9 +272,19 @@ if (typeof window !== 'undefined') {
   window.showNotificationToast = showNotificationToast;
   window.saveSmbGuestSetting = saveSmbGuestSetting;
   window.powerCycleUsbHub = powerCycleUsbHub;
+  window.fetchWifiConfig = fetchWifiConfig;
+  window.renderWifiClients = renderWifiClients;
+  window.saveWifiSettings = saveWifiSettings;
+  window.toggleWifiMasterPower = toggleWifiMasterPower;
+  window.togglePasswordVisibility = togglePasswordVisibility;
 
   // Mass object assign
   Object.assign(window, {
+    fetchWifiConfig,
+    renderWifiClients,
+    saveWifiSettings,
+    toggleWifiMasterPower,
+    togglePasswordVisibility,
     submitLogin,
     logoutSession,
     hideLogoutConfirm,
@@ -505,5 +520,10 @@ export {
   filterAdbContacts,
   showNotificationToast,
   saveSmbGuestSetting,
-  powerCycleUsbHub
+  powerCycleUsbHub,
+  fetchWifiConfig,
+  renderWifiClients,
+  saveWifiSettings,
+  toggleWifiMasterPower,
+  togglePasswordVisibility
 };
