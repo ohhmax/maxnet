@@ -48,16 +48,22 @@ platform_do_upgrade() {
 
 platform_check_image() {
 	local board=$(board_name)
+	local board_clean="${board//,/_}"
 
 	case "$board" in
 	jio,jidu6*|jiorouter,ax6000-jidu6*|*jidu6*)
-		nand_do_platform_check "jio,jidu6811" "$1" || \
-		nand_do_platform_check "jio,jidu6911" "$1" || \
+		nand_do_platform_check "jio_jidu6911" "$1" || \
+		nand_do_platform_check "jio_jidu6811" "$1" || \
+		nand_do_platform_check "jio_jidu6611" "$1" || \
+		nand_do_platform_check "jio_jidu6411" "$1" || \
+		nand_do_platform_check "jio_jidu6111" "$1" || \
+		nand_do_platform_check "$board_clean" "$1" || \
 		nand_do_platform_check "$board" "$1"
 		return $?
 		;;
 	*)
 		if grep -q '"ubi"' /proc/mtd 2>/dev/null; then
+			nand_do_platform_check "$board_clean" "$1" || \
 			nand_do_platform_check "$board" "$1" || return 0
 		else
 			return 0
