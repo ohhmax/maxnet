@@ -53,13 +53,14 @@ do_extract_ath11k_caldata() {
 	[ -f /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin ] && ln -sf board.bin /lib/firmware/ath11k/IPQ9574/hw1.0/board-2.bin 2>/dev/null || true
 	[ -f /lib/firmware/ath11k/QCN9074/hw1.0/board.bin ] && [ ! -f /lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin ] && ln -sf board.bin /lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin 2>/dev/null || true
 
-	# Cross-symlink /lib/firmware/IPQ9574 <-> /lib/firmware/ath11k/IPQ9574/hw1.0
+	# Cross-symlink /lib/firmware/IPQ9574 <-> /lib/firmware/ath11k/IPQ9574/hw1.0 safely
+	mkdir -p /lib/firmware/IPQ9574
 	if [ -d /lib/firmware/IPQ9574 ]; then
 		for f in /lib/firmware/IPQ9574/*; do
 			[ -f "$f" ] && ln -sf "$f" "/lib/firmware/ath11k/IPQ9574/hw1.0/$(basename "$f")" 2>/dev/null || true
 		done
-		ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0 /lib/firmware/IPQ9574/hw1.0 2>/dev/null || true
-		ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin /lib/firmware/IPQ9574/board.bin 2>/dev/null || true
+		[ ! -e /lib/firmware/IPQ9574/hw1.0 ] && ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0 /lib/firmware/IPQ9574/hw1.0 2>/dev/null || true
+		[ ! -e /lib/firmware/IPQ9574/board.bin ] && ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin /lib/firmware/IPQ9574/board.bin 2>/dev/null || true
 	fi
 }
 
