@@ -1687,199 +1687,267 @@
           <div class="accordion-content">
             <div class="settings-card-body">
               <!-- MASTER WI-FI POWER SWITCH -->
-              <div class="setting-row-item" style="border-bottom:1px solid var(--border-sub, rgba(255,255,255,0.08)); padding-bottom:14px; margin-bottom:14px;">
+              <div class="setting-row-item">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Wi-Fi Gateway Master Power</span>
                   <span class="setting-label-sub">Enable or disable all wireless transmitters dynamically</span>
                 </div>
-                <div class="setting-control-col">
-                  <label class="switch-toggle">
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
                     <input type="checkbox" id="wifiMasterToggle" onchange="toggleWifiMasterPower(this.checked)">
-                    <span class="slider"></span>
+                    <span class="toggle-slider"></span>
                   </label>
                 </div>
               </div>
 
               <!-- 2.4 GHz BAND (QUALCOMM IPQ9574 WCSS) -->
-              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:12px; padding:16px; margin-bottom:16px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:13px; font-weight:800; color:var(--text-main);">2.4 GHz High-Efficiency (Wi-Fi 6)</span>
-                    <span class="setting-pill pill-cyan">HE20 / 2.4G</span>
-                  </div>
-                  <label class="switch-toggle">
+              <div class="setting-section-divider"></div>
+              <div class="setting-section-header">2.4 GHz High-Efficiency (Wi-Fi 6)</div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">2.4 GHz Radio Power</span>
+                  <span class="setting-label-sub">Qualcomm IPQ9574 WCSS integrated wireless radio</span>
+                </div>
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
                     <input type="checkbox" id="wifi2gEnable" checked>
-                    <span class="slider"></span>
+                    <span class="toggle-slider"></span>
                   </label>
                 </div>
+              </div>
 
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Network Name (SSID)</label>
-                    <input type="text" class="mh-input" id="wifi2gSsid" value="MAXNET" placeholder="e.g. MAXNET" style="width:100%; font-size:12px;">
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Network Name (SSID)</span>
+                  <span class="setting-label-sub">Broadcast identifier for 2.4 GHz wireless clients</span>
+                </div>
+                <div class="setting-control-col">
+                  <input type="text" class="mh-input" id="wifi2gSsid" value="MAXNET" placeholder="MAXNET" style="min-width:180px; font-size:12px;">
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Security Mode</span>
+                  <span class="setting-label-sub">Authentication and encryption protocol</span>
+                </div>
+                <div class="setting-control-col">
+                  <select class="mh-input" id="wifi2gEnc" style="min-width:180px; font-size:12px;">
+                    <option value="none">Open (No Security)</option>
+                    <option value="psk2">WPA2-PSK (AES)</option>
+                    <option value="sae">WPA3-SAE</option>
+                    <option value="sae-mixed">WPA2/WPA3 Mixed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Wi-Fi Password</span>
+                  <span class="setting-label-sub">Pre-shared key (leave blank for Open network)</span>
+                </div>
+                <div class="setting-control-col">
+                  <div style="position:relative; display:flex; align-items:center;">
+                    <input type="password" class="mh-input" id="wifi2gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="min-width:180px; font-size:12px; padding-right:32px;">
+                    <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi2gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
+                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
                   </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Security Mode</label>
-                    <select class="mh-input" id="wifi2gEnc" style="width:100%; font-size:12px;">
-                      <option value="none">Open (No Security)</option>
-                      <option value="psk2">WPA2-PSK (AES) - High Compatibility</option>
-                      <option value="sae">WPA3-SAE - Maximum Security</option>
-                      <option value="sae-mixed">WPA2/WPA3 Mixed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Wi-Fi Password</label>
-                    <div style="position:relative; display:flex; align-items:center;">
-                      <input type="password" class="mh-input" id="wifi2gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="width:100%; font-size:12px; padding-right:32px;">
-                      <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi2gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
-                        <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Operating Channel</label>
-                    <select class="mh-input" id="wifi2gChannel" style="width:100%; font-size:12px;">
-                      <option value="1">Channel 1 (2412 MHz) - Standard</option>
-                      <option value="6">Channel 6 (2437 MHz)</option>
-                      <option value="11">Channel 11 (2462 MHz)</option>
-                      <option value="auto">Auto Select</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Channel Bandwidth</label>
-                    <select class="mh-input" id="wifi2gHtmode" style="width:100%; font-size:12px;">
-                      <option value="HE20">HE20 (20 MHz - Best Stability &amp; Range)</option>
-                      <option value="HE40">HE40 (40 MHz - High Throughput)</option>
-                      <option value="HT20">HT20 (Legacy Compatibility)</option>
-                    </select>
-                  </div>
-                  <div style="display:flex; align-items:center; justify-content:space-between; padding-top:16px;">
-                    <div>
-                      <span class="setting-label-bold" style="font-size:11px; display:block;">Hide Network SSID</span>
-                      <span class="setting-label-sub" style="font-size:10px;">Do not broadcast name</span>
-                    </div>
-                    <label class="switch-toggle">
-                      <input type="checkbox" id="wifi2gHidden">
-                      <span class="slider"></span>
-                    </label>
-                  </div>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Operating Channel</span>
+                  <span class="setting-label-sub">2.4 GHz radio frequency channel allocation</span>
+                </div>
+                <div class="setting-control-col">
+                  <select class="mh-input" id="wifi2gChannel" style="min-width:180px; font-size:12px;">
+                    <option value="1">Channel 1 (2412 MHz)</option>
+                    <option value="6">Channel 6 (2437 MHz)</option>
+                    <option value="11">Channel 11 (2462 MHz)</option>
+                    <option value="auto">Auto Select</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Channel Bandwidth</span>
+                  <span class="setting-label-sub">HE20 for optimal range and stability, HE40 for speed</span>
+                </div>
+                <div class="setting-control-col">
+                  <select class="mh-input" id="wifi2gHtmode" style="min-width:180px; font-size:12px;">
+                    <option value="HE20">HE20 (20 MHz)</option>
+                    <option value="HE40">HE40 (40 MHz)</option>
+                    <option value="HT20">HT20 (Legacy)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Hide Network SSID</span>
+                  <span class="setting-label-sub">Do not broadcast network name in beacon frames</span>
+                </div>
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="wifi2gHidden">
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
               </div>
 
               <!-- 5 GHz BAND (QUALCOMM QCN9074 PINE) -->
-              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:12px; padding:16px; margin-bottom:16px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:13px; font-weight:800; color:var(--text-main);">5 GHz Ultra-Speed (Wi-Fi 6)</span>
-                    <span class="setting-pill pill-cyan">HE80/HE160 / 5G</span>
-                  </div>
-                  <label class="switch-toggle">
+              <div class="setting-section-divider"></div>
+              <div class="setting-section-header">5 GHz Ultra-Speed (Wi-Fi 6)</div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">5 GHz Radio Power</span>
+                  <span class="setting-label-sub">Qualcomm QCN9074 4x4 high-performance PCIe radio</span>
+                </div>
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
                     <input type="checkbox" id="wifi5gEnable" checked>
-                    <span class="slider"></span>
+                    <span class="toggle-slider"></span>
                   </label>
                 </div>
+              </div>
 
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Network Name (SSID)</label>
-                    <input type="text" class="mh-input" id="wifi5gSsid" value="MAXNET-5G" placeholder="e.g. MAXNET-5G" style="width:100%; font-size:12px;">
-                  </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Security Mode</label>
-                    <select class="mh-input" id="wifi5gEnc" style="width:100%; font-size:12px;">
-                      <option value="none">Open (No Security)</option>
-                      <option value="psk2">WPA2-PSK (AES) - High Compatibility</option>
-                      <option value="sae">WPA3-SAE - Maximum Security</option>
-                      <option value="sae-mixed">WPA2/WPA3 Mixed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Wi-Fi Password</label>
-                    <div style="position:relative; display:flex; align-items:center;">
-                      <input type="password" class="mh-input" id="wifi5gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="width:100%; font-size:12px; padding-right:32px;">
-                      <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi5gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
-                        <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Operating Channel</label>
-                    <select class="mh-input" id="wifi5gChannel" style="width:100%; font-size:12px;">
-                      <option value="36">Channel 36 (5180 MHz)</option>
-                      <option value="40">Channel 40 (5200 MHz)</option>
-                      <option value="44">Channel 44 (5220 MHz)</option>
-                      <option value="48">Channel 48 (5240 MHz)</option>
-                      <option value="149">Channel 149 (5745 MHz)</option>
-                      <option value="153">Channel 153 (5765 MHz)</option>
-                      <option value="157">Channel 157 (5785 MHz)</option>
-                      <option value="161">Channel 161 (5805 MHz)</option>
-                      <option value="auto">Auto Select</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="setting-label-bold" style="font-size:11px; margin-bottom:4px; display:block;">Channel Bandwidth</label>
-                    <select class="mh-input" id="wifi5gHtmode" style="width:100%; font-size:12px;">
-                      <option value="HE80">HE80 (80 MHz - Fast &amp; Wide Compatibility)</option>
-                      <option value="HE160">HE160 (160 MHz - Ultra Max Speed)</option>
-                      <option value="HE40">HE40 (40 MHz)</option>
-                      <option value="HE20">HE20 (20 MHz)</option>
-                    </select>
-                  </div>
-                  <div style="display:flex; align-items:center; justify-content:space-between; padding-top:16px;">
-                    <div>
-                      <span class="setting-label-bold" style="font-size:11px; display:block;">Hide Network SSID</span>
-                      <span class="setting-label-sub" style="font-size:10px;">Do not broadcast name</span>
-                    </div>
-                    <label class="switch-toggle">
-                      <input type="checkbox" id="wifi5gHidden">
-                      <span class="slider"></span>
-                    </label>
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Network Name (SSID)</span>
+                  <span class="setting-label-sub">Broadcast identifier for 5 GHz wireless clients</span>
+                </div>
+                <div class="setting-control-col">
+                  <input type="text" class="mh-input" id="wifi5gSsid" value="MAXNET-5G" placeholder="MAXNET-5G" style="min-width:180px; font-size:12px;">
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Security Mode</span>
+                  <span class="setting-label-sub">Authentication and encryption protocol</span>
+                </div>
+                <div class="setting-control-col">
+                  <select class="mh-input" id="wifi5gEnc" style="min-width:180px; font-size:12px;">
+                    <option value="none">Open (No Security)</option>
+                    <option value="psk2">WPA2-PSK (AES)</option>
+                    <option value="sae">WPA3-SAE</option>
+                    <option value="sae-mixed">WPA2/WPA3 Mixed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Wi-Fi Password</span>
+                  <span class="setting-label-sub">Pre-shared key (leave blank for Open network)</span>
+                </div>
+                <div class="setting-control-col">
+                  <div style="position:relative; display:flex; align-items:center;">
+                    <input type="password" class="mh-input" id="wifi5gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="min-width:180px; font-size:12px; padding-right:32px;">
+                    <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi5gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
+                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
                   </div>
                 </div>
               </div>
 
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Operating Channel</span>
+                  <span class="setting-label-sub">5 GHz radio frequency channel allocation</span>
+                </div>
+                <div class="setting-control-col">
+                  <select class="mh-input" id="wifi5gChannel" style="min-width:180px; font-size:12px;">
+                    <option value="36">Channel 36 (5180 MHz)</option>
+                    <option value="40">Channel 40 (5200 MHz)</option>
+                    <option value="44">Channel 44 (5220 MHz)</option>
+                    <option value="48">Channel 48 (5240 MHz)</option>
+                    <option value="149">Channel 149 (5745 MHz)</option>
+                    <option value="153">Channel 153 (5765 MHz)</option>
+                    <option value="157">Channel 157 (5785 MHz)</option>
+                    <option value="161">Channel 161 (5805 MHz)</option>
+                    <option value="auto">Auto Select</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Channel Bandwidth</span>
+                  <span class="setting-label-sub">HE80 for wide compatibility, HE160 for gigabit speeds</span>
+                </div>
+                <div class="setting-control-col">
+                  <select class="mh-input" id="wifi5gHtmode" style="min-width:180px; font-size:12px;">
+                    <option value="HE80">HE80 (80 MHz)</option>
+                    <option value="HE160">HE160 (160 MHz)</option>
+                    <option value="HE40">HE40 (40 MHz)</option>
+                    <option value="HE20">HE20 (20 MHz)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Hide Network SSID</span>
+                  <span class="setting-label-sub">Do not broadcast network name in beacon frames</span>
+                </div>
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="wifi5gHidden">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+
               <!-- SECTION: WI-FI WAN / WIRELESS REPEATER UPLINK -->
-              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:12px; padding:16px; margin-bottom:16px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:13px; font-weight:800; color:var(--text-main);">Wi-Fi WAN Uplink (Client / Repeater)</span>
-                    <span class="setting-pill pill-cyan" id="wifiWanStatusBadge">OFFLINE</span>
-                  </div>
+              <div class="setting-section-divider"></div>
+              <div class="setting-section-header">Wi-Fi WAN Uplink (Wireless Repeater)</div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Wireless WAN Client</span>
+                  <span class="setting-label-sub">Connect to nearby Wi-Fi network as internet uplink</span>
+                </div>
+                <div class="setting-control-col" style="display:flex; align-items:center; gap:8px;">
+                  <span class="setting-pill pill-cyan" id="wifiWanStatusBadge">OFFLINE</span>
                   <button type="button" class="mh-btn btn-sm btn-outline" id="btnScanWifi" onclick="scanNearbyWifi()" style="font-size:11px; padding:5px 12px; border-radius:8px;">
                     <svg viewBox="0 0 24 24" style="width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2; margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     Scan Wi-Fi
                   </button>
                 </div>
-                <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Search for nearby wireless networks and connect to use them as an uplink internet source (Wireless WAN).</div>
-                
-                <div id="wifiActiveWanInfo" style="display:none; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:8px; padding:10px 12px; margin-bottom:12px; align-items:center; justify-content:space-between;">
-                  <div style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main);">
-                    Connected: <strong id="wifiActiveWanSsid" style="color:#10b981;">--</strong> &bull; IP: <span id="wifiActiveWanIp">--</span>
-                  </div>
-                  <button type="button" class="mh-btn btn-sm btn-ghost" onclick="disconnectWifiWan()" style="color:#ef4444; font-size:10.5px; padding:3px 8px;">Disconnect</button>
-                </div>
+              </div>
 
-                <!-- SCAN RESULTS CONTAINER -->
-                <div id="wifiScanResults" style="display:none; flex-direction:column; gap:6px; max-height:240px; overflow-y:auto; padding-right:4px;">
-                  <div style="padding:10px; text-align:center; color:var(--text-dim); font-size:11px;">Scanning frequencies...</div>
+              <div id="wifiActiveWanInfo" style="display:none; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:8px; padding:10px 12px; margin:8px 0; align-items:center; justify-content:space-between;">
+                <div style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main);">
+                  Connected: <strong id="wifiActiveWanSsid" style="color:#10b981;">--</strong> &bull; IP: <span id="wifiActiveWanIp">--</span>
                 </div>
+                <button type="button" class="mh-btn btn-sm btn-ghost" onclick="disconnectWifiWan()" style="color:#ef4444; font-size:10.5px; padding:3px 8px;">Disconnect</button>
+              </div>
+
+              <!-- SCAN RESULTS CONTAINER -->
+              <div id="wifiScanResults" style="display:none; flex-direction:column; gap:6px; max-height:240px; overflow-y:auto; padding:4px 0;">
+                <div style="padding:10px; text-align:center; color:var(--text-dim); font-size:11px;">Scanning frequencies...</div>
               </div>
 
               <!-- CONNECTED WIRELESS CLIENTS -->
-              <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-sub, rgba(255,255,255,0.08)); border-radius:12px; padding:16px; margin-bottom:16px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                  <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">Connected Wireless Devices</span>
-                  <button type="button" class="round-action-btn" onclick="fetchWifiConfig()" style="width:26px; height:26px; min-width:26px;" title="Refresh Devices">
-                    <svg viewBox="0 0 24 24" style="width:13px; height:13px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                  </button>
-                </div>
-                <div id="wifiClientsContainer" style="display:flex; flex-direction:column; gap:8px;">
-                  <div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11.5px;">No wireless devices currently connected.</div>
-                </div>
+              <div class="setting-section-divider"></div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:8px;">
+                <div class="setting-section-header" style="margin-bottom:0;">Connected Wireless Devices</div>
+                <button type="button" class="round-action-btn" onclick="fetchWifiConfig()" style="width:26px; height:26px; min-width:26px;" title="Refresh Devices">
+                  <svg viewBox="0 0 24 24" style="width:13px; height:13px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                </button>
+              </div>
+              <div id="wifiClientsContainer" style="display:flex; flex-direction:column; gap:8px;">
+                <div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11.5px;">No wireless devices currently connected.</div>
               </div>
 
               <!-- ACTION BAR -->
-              <div style="display:flex; justify-content:flex-end; gap:10px;">
+              <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
                 <button type="button" class="mh-btn btn-ghost" onclick="fetchWifiConfig()" style="padding:8px 18px; font-size:12px; font-weight:700;">RESET FORM</button>
                 <button type="button" class="mh-btn btn-primary" onclick="saveWifiSettings()" style="padding:8px 22px; font-size:12px; font-weight:800;">APPLY WI-FI SETTINGS</button>
               </div>
@@ -2619,15 +2687,17 @@
                   </div>
                 </div>
 
-                <!-- UPI Support & Donation -->
-                <div class="setting-row-item" style="background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.25); border-radius:10px; padding:12px 14px; margin:4px 0 8px 0;">
+                <!-- Donation & Support via UPI -->
+                <div class="setting-row-item">
                   <div class="setting-label-col">
-                    <span class="setting-label-bold" style="color:#a78bfa;">Donation &amp; Support via UPI</span>
-                    <span class="setting-label-sub" style="font-family:var(--font-mono); font-size:12px; color:#e2e8f0; font-weight:700;">9824584454@ybl</span>
-                    <span style="font-size:10.5px; color:var(--text-dim); margin-top:2px;">Developed by Mahendra Mali - Max &bull; Every contribution powers MAXNET innovation</span>
+                    <span class="setting-label-bold">Donation &amp; Support (UPI)</span>
+                    <span class="setting-label-sub" id="devUpiText" style="font-family:var(--font-mono); font-size:12.5px; font-weight:700;">9824584454@ybl</span>
+                    <span class="setting-label-sub" style="font-size:10.5px; margin-top:2px;">Mahendra Mali (Max) &bull; Direct contribution to MAXNET development</span>
                   </div>
                   <div class="setting-control-col">
-                    <button type="button" class="mh-btn" style="padding:6px 12px; font-size:11px; background:#8b5cf6; color:#fff; font-weight:700; border-radius:6px;" onclick="navigator.clipboard.writeText('9824584454@ybl'); showNotificationToast('Copied UPI ID: 9824584454@ybl to clipboard!')">COPY UPI</button>
+                    <button type="button" class="round-action-btn" onclick="navigator.clipboard.writeText('9824584454@ybl'); if(typeof showNotificationToast === 'function') showNotificationToast('Copied UPI ID: 9824584454@ybl'); else if(typeof showToast === 'function') showToast('Copied UPI ID: 9824584454@ybl', 'success'); else alert('Copied UPI ID: 9824584454@ybl');" title="Copy UPI ID" aria-label="Copy UPI ID" style="width:34px; height:34px; min-width:34px;">
+                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
                   </div>
                 </div>
 
@@ -3896,7 +3966,50 @@
                 </div>
               </div>
 
-              <!-- 4. SYSTEM ARCHITECTURE & DETAILS -->
+              <!-- 4. MANUAL FIRMWARE FILE UPGRADE (.bin / .ubi) -->
+              <div class="setting-row-item" style="border-top:1px solid var(--border-sub, rgba(255,255,255,0.06)); padding-top:14px; margin-top:4px;">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Manual Firmware Upgrade (.bin / .ubi)</span>
+                  <span class="setting-label-sub" id="localFwStatusSub">
+                    Select a local firmware image file (.bin or .ubi) to upload, verify integrity, and flash
+                  </span>
+                  <div id="localFwFileInfo" style="display:none; margin-top:6px; font-size:11px; font-family:var(--font-mono); color:#38bdf8;">
+                    Selected: <strong id="localFwFileName">--</strong> (<span id="localFwFileSize">--</span>)
+                  </div>
+                  <!-- Upload progress bar -->
+                  <div id="localFwProgressBox" style="display:none; margin-top:8px;">
+                    <div style="display:flex; justify-content:space-between; font-size:10.5px; font-family:var(--font-mono); color:var(--text-muted); margin-bottom:3px;">
+                      <span id="localFwProgressLabel">Uploading...</span>
+                      <span id="localFwProgressPct">0%</span>
+                    </div>
+                    <div style="width:100%; height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
+                      <div id="localFwProgressBar" style="width:0%; height:100%; background:linear-gradient(90deg, #38bdf8, #10b981); transition:width 0.2s;"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="setting-control-col" style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+                  <input type="file" id="localFwFileInput" accept=".bin,.ubi,.itb" style="display:none;" onchange="onSelectLocalFirmwareFile(event)">
+                  <div style="display:flex; gap:8px;">
+                    <button type="button" class="mh-btn btn-secondary" id="btnChooseLocalFw" onclick="document.getElementById('localFwFileInput').click()" style="padding:7px 14px; font-size:11.5px; font-weight:700;">
+                      SELECT FILE
+                    </button>
+                    <button type="button" class="mh-btn btn-primary" id="btnUploadLocalFw" onclick="uploadAndVerifyLocalFirmware()" style="display:none; padding:7px 16px; font-size:11.5px; font-weight:800;">
+                      UPLOAD &amp; VERIFY
+                    </button>
+                  </div>
+                  <!-- Post-verification flash controls -->
+                  <div id="localFwFlashActions" style="display:none; gap:6px;">
+                    <button type="button" class="mh-btn btn-ghost" onclick="executeLocalSysupgrade(false)" style="padding:6px 12px; font-size:11px; font-weight:700;">
+                      KEEP SETTINGS
+                    </button>
+                    <button type="button" class="mh-btn btn-danger" onclick="executeLocalSysupgrade(true)" style="padding:6px 14px; font-size:11px; font-weight:800;">
+                      FLASH CLEAN (FACTORY)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 5. SYSTEM ARCHITECTURE & DETAILS -->
               <div class="setting-row-item">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">System Architecture</span>
@@ -4283,13 +4396,17 @@
                 </div>
               </div>
 
-              <div style="font-size:11.5px; color:var(--text-dim); margin-top:14px;">
-                Direct Developer Support &amp; Donations (UPI):
-              </div>
-              <div class="about-upi-capsule" style="margin-top:8px;">
-                <span class="upi-tag">UPI</span>
-                <span class="upi-string" id="upiText">9824584454@ybl</span>
-                <button class="btn-copy-capsule" onclick="copyUpi()">COPY</button>
+              <div class="setting-row-item" style="margin-top:10px;">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Donation &amp; Support (UPI)</span>
+                  <span class="setting-label-sub" id="upiText" style="font-family:var(--font-mono); font-size:12.5px; font-weight:700;">9824584454@ybl</span>
+                  <span class="setting-label-sub" style="font-size:10.5px; margin-top:2px;">Direct Developer Support &bull; Mahendra Mali (Max)</span>
+                </div>
+                <div class="setting-control-col">
+                  <button type="button" class="round-action-btn" onclick="copyUpi()" title="Copy UPI ID" aria-label="Copy UPI ID" style="width:34px; height:34px; min-width:34px;">
+                    <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

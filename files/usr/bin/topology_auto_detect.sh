@@ -86,11 +86,19 @@ for ip in $UNIQUE_IPS; do
   port_num=$(awk -v mac="$mac" '$2==mac {print $1; exit}' "$PORT_MACS_FILE")
   [ -z "$port_num" ] && port_num=$(brctl showmacs br-lan 2>/dev/null | awk -v mac="$mac" '$2==mac && $3=="no" {print $1; exit}')
   if [ -n "$port_num" ]; then
-    port_label="LAN $port_num"
+    if [ "$port_num" = "1" ]; then port_label="LAN 1"
+    elif [ "$port_num" = "2" ]; then port_label="LAN 2"
+    elif [ "$port_num" = "3" ]; then port_label="LAN 3"
+    elif [ "$port_num" = "4" ]; then port_label="LAN 4"
+    else
+      port_label="WiFi"
+      is_direct_wifi=true
+    fi
     port_mac_count=$(awk -v p="$port_num" '$1==p {c++} END {print c+0}' "$PORT_MACS_FILE")
     [ "$port_mac_count" -eq 0 ] && port_mac_count=$(brctl showmacs br-lan 2>/dev/null | awk -v p="$port_num" '$1==p && $3=="no" {c++} END {print c+0}')
   else
-    port_label="Unknown"
+    port_label="WiFi"
+    is_direct_wifi=true
     port_mac_count=0
   fi
 
@@ -410,11 +418,11 @@ FINAL_JSON=$(jq -n \
         } end)
       ],
       wireless_clients: [
-        $wifi_nodes[] | {
+        $wifi_nodes[] | select(.is_online == true) | {
           name: .name,
           ip: .ip,
           mac: .mac,
-          status: (if .is_online then "online" else "offline" end),
+          status: "online",
           confidence: .confidence,
           band: "WiFi",
           linkSpeed: "144 Mbps"

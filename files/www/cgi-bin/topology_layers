@@ -85,7 +85,7 @@ case "$QS" in
       | ($active | map(select(.port == "LAN 2"))) as $lan2_devs
       | ($active | map(select(.port == "LAN 3"))) as $lan3_devs
       | ($active | map(select(.port == "LAN 4"))) as $lan4_devs
-      | ($active | map(select(.port == "WiFi" or ((.conn_type // "") | contains("WiFi"))))) as $wifi_devs
+      | ($active | map(select(.port == "WiFi" or ((.conn_type // "") | contains("WiFi")) or .is_wifi == true or (.port != "LAN 1" and .port != "LAN 2" and .port != "LAN 3" and .port != "LAN 4")))) as $wifi_devs
       | {
           status: "ok",
           version: 2,

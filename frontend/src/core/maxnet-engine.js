@@ -5641,12 +5641,18 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       window._bwLanOutputs = lanPortsData;
 
-      // Rebuild SVG if hub state changed, link count changed, clients changed, or svg is empty
+      // Rebuild SVG if hub state changed, link count changed, clients changed, connected state changed, or svg is empty
       const prevClientsTotal = window._bwClientsTotal || 0;
       const curClientsTotal = clients.length;
       window._bwClientsTotal = curClientsTotal;
+
+      // Fingerprint connected clients so any disconnect / connect immediately re-renders SVG
+      const curConnectedKey = clients.filter(c => c && c.connected).map(c => `${c.mac}:${c.port}:${c.ip}`).sort().join('|');
+      const prevConnectedKey = window._prevConnectedKey || '';
+      window._prevConnectedKey = curConnectedKey;
+
       const svg = document.getElementById("usbBwSvg");
-      if (prevHasHub !== hasHub || prevLinkCount !== bwLinks.length || prevClientsTotal !== curClientsTotal || !svg || !svg.hasChildNodes()) {
+      if (prevHasHub !== hasHub || prevLinkCount !== bwLinks.length || prevConnectedKey !== curConnectedKey || prevClientsTotal !== curClientsTotal || !svg || !svg.hasChildNodes()) {
         buildUsbBwSvg();
       }
 
@@ -6650,10 +6656,11 @@ function drawStorageIconSmall(x, y, color, parent) {
       // 2. Sync Direct Wireless Clients on Host Gateway
       if (!Array.isArray(tree.wireless_clients)) tree.wireless_clients = [];
 
-      // Gather all active Wi-Fi clients
+      // Gather strictly active connected Wi-Fi clients
       const activeWifi = [];
       clients.forEach(c => {
-        if (c.connected && (c.port === 'WiFi' || (c.conn_type && c.conn_type.includes('WiFi')))) {
+        const isWifi = c.port === 'WiFi' || (c.conn_type && c.conn_type.includes('WiFi')) || c.is_wifi || (!c.port?.startsWith('LAN ') && c.port !== 'LOCAL (Router)');
+        if (isWifi && c.connected === true) {
           activeWifi.push(c);
         }
       });
@@ -15401,6 +15408,130 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       openFirmwareFlashModal(_lastFirmwareUpdateData || { latest: tag });
     }
 
+    let _selectedLocalFwFile = null;
+
+    function onSelectLocalFirmwareFile(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      _selectedLocalFwFile = file;
+
+      const infoBox = document.getElementById('localFwFileInfo');
+      const nameEl = document.getElementById('localFwFileName');
+      const sizeEl = document.getElementById('localFwFileSize');
+      const btnUpload = document.getElementById('btnUploadLocalFw');
+      const flashActions = document.getElementById('localFwFlashActions');
+      const progressBox = document.getElementById('localFwProgressBox');
+
+      if (nameEl) nameEl.textContent = file.name;
+      if (sizeEl) sizeEl.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+      if (infoBox) infoBox.style.display = 'block';
+      if (btnUpload) btnUpload.style.display = 'inline-block';
+      if (flashActions) flashActions.style.display = 'none';
+      if (progressBox) progressBox.style.display = 'none';
+      showToast(`Selected: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`, 'info');
+    }
+
+    function uploadAndVerifyLocalFirmware() {
+      if (!_selectedLocalFwFile) {
+        showToast('Please select a .bin firmware file first', 'warning');
+        return;
+      }
+
+      const file = _selectedLocalFwFile;
+      const progressBox = document.getElementById('localFwProgressBox');
+      const progressBar = document.getElementById('localFwProgressBar');
+      const progressLabel = document.getElementById('localFwProgressLabel');
+      const progressPct = document.getElementById('localFwProgressPct');
+      const btnUpload = document.getElementById('btnUploadLocalFw');
+      const btnChoose = document.getElementById('btnChooseLocalFw');
+      const flashActions = document.getElementById('localFwFlashActions');
+
+      if (progressBox) progressBox.style.display = 'block';
+      if (progressBar) { progressBar.style.width = '0%'; progressBar.style.background = 'linear-gradient(90deg, #38bdf8, #10b981)'; }
+      if (progressPct) progressPct.textContent = '0%';
+      if (progressLabel) progressLabel.textContent = 'Uploading firmware to router RAM...';
+      if (btnUpload) btnUpload.disabled = true;
+      if (btnChoose) btnChoose.disabled = true;
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/cgi-bin/update?action=upload_bin', true);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          if (progressBar) progressBar.style.width = `${pct}%`;
+          if (progressPct) progressPct.textContent = `${pct}%`;
+          if (pct >= 100 && progressLabel) {
+            progressLabel.textContent = 'Verifying sysupgrade checksum & architecture...';
+          }
+        }
+      };
+
+      xhr.onload = () => {
+        if (btnUpload) btnUpload.disabled = false;
+        if (btnChoose) btnChoose.disabled = false;
+
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if (res && res.verified) {
+            if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#10b981'; }
+            if (progressLabel) progressLabel.textContent = res.message || 'Verification Passed! Ready to flash.';
+            if (btnUpload) btnUpload.style.display = 'none';
+            if (flashActions) flashActions.style.display = 'flex';
+            showToast(res.message || 'Firmware verified! Choose Keep Settings or Clean Flash.', 'success');
+          } else {
+            if (progressBar) progressBar.style.background = '#ef4444';
+            if (progressLabel) progressLabel.textContent = res.message || 'Sysupgrade verification failed.';
+            showToast(res.message || 'Verification failed. Incompatible image.', 'error');
+          }
+        } catch (e) {
+          if (progressLabel) progressLabel.textContent = 'Invalid server response during verification.';
+          showToast('Server response error.', 'error');
+        }
+      };
+
+      xhr.onerror = () => {
+        if (btnUpload) btnUpload.disabled = false;
+        if (btnChoose) btnChoose.disabled = false;
+        if (progressLabel) progressLabel.textContent = 'Network error during upload.';
+        showToast('Network error uploading firmware file', 'error');
+      };
+
+      xhr.send(file);
+    }
+
+    async function executeLocalSysupgrade(isClean = false) {
+      const modeText = isClean ? 'Clean Factory Install (resets settings)' : 'Keep Existing Settings';
+      if (!confirm(`Are you sure you want to flash this firmware with: ${modeText}?\n\nThe router will write NAND flash and reboot in ~60-90 seconds.`)) {
+        return;
+      }
+
+      const flashActions = document.getElementById('localFwFlashActions');
+      const progressLabel = document.getElementById('localFwProgressLabel');
+      const progressBar = document.getElementById('localFwProgressBar');
+      if (flashActions) flashActions.style.display = 'none';
+      if (progressLabel) progressLabel.textContent = 'Flashing NAND flash memory & rebooting...';
+      if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#f59e0b'; }
+
+      showToast('Sysupgrade flash command sent! Router is writing NAND and rebooting...', 'warning');
+
+      try {
+        await apiFetch(`/cgi-bin/update?action=flash_uploaded&clean=${isClean ? 1 : 0}`);
+        let countdown = 75;
+        const interval = setInterval(() => {
+          countdown -= 1;
+          if (progressLabel) progressLabel.textContent = `Rebooting gateway... Reconnecting in ${countdown}s`;
+          if (countdown <= 0) {
+            clearInterval(interval);
+            location.href = '/?nocache=' + Date.now();
+          }
+        }, 1000);
+      } catch (e) {
+        showToast('Flash initiated. Waiting for router to come back online...', 'info');
+      }
+    }
+
     function confirmRebootRouter() {
       showToast('Rebooting Maxnet Gateway...', 'warning');
       fetch('/cgi-bin/restore?action=reboot', { method: 'POST' })
@@ -15860,11 +15991,16 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
 
     function showCopied() {
-      const btn = document.querySelector('.btn-copy-capsule');
-      if (btn) {
-        btn.innerText = 'COPIED!';
-        setTimeout(() => { btn.innerText = 'COPY'; }, 2000);
+      if (typeof showToast === 'function') {
+        showToast('Copied UPI ID: 9824584454@ybl to clipboard!', 'success');
+      } else if (typeof showNotificationToast === 'function') {
+        showNotificationToast('Copied UPI ID: 9824584454@ybl to clipboard!');
       }
+      const btns = document.querySelectorAll('button[onclick*="copyUpi"]');
+      btns.forEach(b => {
+        b.style.color = '#10b981';
+        setTimeout(() => { b.style.color = ''; }, 2000);
+      });
     }
 
     function escapeHtml(str) {
@@ -16611,6 +16747,9 @@ if (typeof window !== 'undefined') {
     showToast,
     checkLatestFirmwareUpdate,
     installSysupgradeUpdate,
+    onSelectLocalFirmwareFile,
+    uploadAndVerifyLocalFirmware,
+    executeLocalSysupgrade,
     confirmRebootRouter,
     checkUpdateStatus,
     executeFirmwareUpdate,
@@ -17043,6 +17182,9 @@ export {
   showToast,
   checkLatestFirmwareUpdate,
   installSysupgradeUpdate,
+  onSelectLocalFirmwareFile,
+  uploadAndVerifyLocalFirmware,
+  executeLocalSysupgrade,
   confirmRebootRouter,
   checkUpdateStatus,
   executeFirmwareUpdate,

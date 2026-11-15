@@ -31,6 +31,49 @@ if [ "$ACTION" = "ram_boot_reboot" ]; then
     exit 0
 fi
 
+# Upload and verify manual .bin firmware image
+if [ "$ACTION" = "upload_bin" ]; then
+    UPLOAD_FILE="/tmp/uploaded_sysupgrade.bin"
+    rm -f "$UPLOAD_FILE" 2>/dev/null
+    # Stream binary payload from stdin
+    cat > "$UPLOAD_FILE"
+    FILE_SIZE=$(wc -c < "$UPLOAD_FILE" 2>/dev/null || echo 0)
+
+    if [ "$FILE_SIZE" -lt 1000000 ]; then
+        echo "{\"status\":\"error\",\"verified\":false,\"message\":\"Uploaded file is too small ($FILE_SIZE bytes). Please select a valid sysupgrade .bin file.\"}"
+        exit 0
+    fi
+
+    # Run sysupgrade verification test
+    CHECK_OUTPUT=$(sysupgrade -T "$UPLOAD_FILE" 2>&1)
+    CHECK_STATUS=$?
+
+    if [ $CHECK_STATUS -eq 0 ]; then
+        BOARD_MATCH=$(tar -Oxzf "$UPLOAD_FILE" sysupgrade-*/CONTROL 2>/dev/null | grep '^BOARD=' | cut -d= -f2 || echo "compatible")
+        [ -z "$BOARD_MATCH" ] && BOARD_MATCH=$(tar -Oxf "$UPLOAD_FILE" sysupgrade-*/CONTROL 2>/dev/null | grep '^BOARD=' | cut -d= -f2 || echo "compatible")
+        SIZE_MB=$(awk -v s="$FILE_SIZE" 'BEGIN {printf "%.2f MB", s/1048576}')
+        echo "{\"status\":\"ok\",\"verified\":true,\"board\":\"$BOARD_MATCH\",\"size\":$FILE_SIZE,\"size_mb\":\"$SIZE_MB\",\"message\":\"Image verified successfully ($BOARD_MATCH, $SIZE_MB). Ready to flash.\"}"
+    else
+        echo "{\"status\":\"error\",\"verified\":false,\"message\":\"Sysupgrade tar integrity check failed: $CHECK_OUTPUT\"}"
+    fi
+    exit 0
+fi
+
+# Flash uploaded manual firmware
+if [ "$ACTION" = "flash_uploaded" ]; then
+    UPLOAD_FILE="/tmp/uploaded_sysupgrade.bin"
+    if [ ! -s "$UPLOAD_FILE" ]; then
+        echo '{"status":"error","message":"No uploaded firmware image found in /tmp. Please upload first."}'
+        exit 0
+    fi
+    CLEAN_FLAG=""
+    echo "$QUERY_STRING" | grep -q 'clean=1' && CLEAN_FLAG="-n"
+
+    echo "{\"status\":\"ok\",\"message\":\"Sysupgrade initiated ($CLEAN_FLAG). Router will flash NAND and reboot in ~60-90 seconds.\"}"
+    ( sleep 2 && sysupgrade -v $CLEAN_FLAG "$UPLOAD_FILE" ) </dev/null >/dev/null 2>&1 &
+    exit 0
+fi
+
 BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "jiorouter,ax6000-jidu6j11-6811")
 MODEL_NAME=$(cat /tmp/sysinfo/model 2>/dev/null || echo "JioRouter AX6000")
 

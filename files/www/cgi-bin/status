@@ -132,8 +132,40 @@ USB_TX_E=$(cat /sys/class/net/usb0/statistics/tx_errors 2>/dev/null || echo 0)
 USB_RX_MB=$(awk -v b="$USB_RX_B" 'BEGIN {printf "%.2f", b/1048576}')
 USB_TX_MB=$(awk -v b="$USB_TX_B" 'BEGIN {printf "%.2f", b/1048576}')
 
-# Connected LAN Clients (1-pass high-speed awk + persistent traffic accounting)
+# Connected LAN & Wi-Fi Clients (1-pass high-speed awk + persistent traffic accounting)
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+# Gather active Wi-Fi stations dynamically from wireless drivers
+WIFI_STATIONS_TMP="/tmp/wifi_stations.tsv"
+> "$WIFI_STATIONS_TMP"
+for hapd in $(ubus list 2>/dev/null | grep '^hostapd\.'); do
+  ubus call "$hapd" get_clients 2>/dev/null | jq -r '.clients | to_entries[] | "\(.key) hostapd \(.value.signal // -55)dBm \((.value.tx // {}).bitrate // 144000)kbit/s"' 2>/dev/null >> "$WIFI_STATIONS_TMP"
+done
+for wdev in $(ls /sys/class/net 2>/dev/null | grep -E '^phy[0-9]-ap|^wlan|^ath'); do
+  iw dev "$wdev" station dump 2>/dev/null | awk -v iface="$wdev" '
+    /^Station/ {
+      if (cur_mac != "") {
+        print cur_mac, iface, (sig != "" ? sig : "-50 dBm"), (tx != "" ? tx : "144.0 MBit/s");
+      }
+      cur_mac = tolower($2);
+      sig = "";
+      tx = "";
+    }
+    /signal:/ { sig = $2" "$3; }
+    /tx bitrate:/ { tx = $3" "$4; }
+    END {
+      if (cur_mac != "") {
+        print cur_mac, iface, (sig != "" ? sig : "-50 dBm"), (tx != "" ? tx : "144.0 MBit/s");
+      }
+    }
+  ' >> "$WIFI_STATIONS_TMP"
+done
+if command -v iwinfo >/dev/null 2>&1; then
+  for ifc in $(iwinfo 2>/dev/null | grep -o '^[a-zA-Z0-9_-]*'); do
+    iwinfo "$ifc" assoclist 2>/dev/null | awk -v iface="$ifc" '/[0-9a-f:]{17}/ {print tolower($1), iface, $2" "$3, "144.0 MBit/s"}' >> "$WIFI_STATIONS_TMP"
+  done
+fi
+
 CLIENTS_JSON=$(awk -v lan_ip="$LAN_IP" -v router_mac="$ROUTER_MAC" '
 function get_vendor(m,   p, c2) {
   if (m in vendor) return vendor[m];
@@ -212,38 +244,6 @@ BEGIN {
   ip_name["10.0.0.197"] = "realme-6";
   ip_name["10.0.0.104"] = "POCO-X6-5G";
 
-  port["10:65:30:7a:9c:02"] = "LAN 2";
-  port["f8:59:71:1c:1a:d8"] = "LAN 2";
-  port["00:11:32:92:02:1b"] = "LAN 3";
-  port["8c:a3:99:7b:81:2b"] = "LAN 3";
-  port["a8:1b:5a:c3:01:13"] = "LAN 3";
-  port["16:cb:1a:6a:a2:81"] = "LAN 3";
-  port["f6:93:15:10:10:d2"] = "LAN 3";
-  port["f2:82:95:8f:db:29"] = "LAN 3";
-  port["ee:e5:0b:24:d5:eb"] = "LAN 3";
-  port["46:df:eb:aa:43:32"] = "LAN 3";
-  port["76:74:c6:67:5a:89"] = "LAN 3";
-
-  vendor["10:65:30:7a:9c:02"] = "Intel Corporation";
-  vendor["f8:59:71:1c:1a:d8"] = "Intel Corporation";
-  vendor["00:11:32:92:02:1b"] = "Synology Inc.";
-  vendor["8c:a3:99:7b:81:2b"] = "Broadcom / Reliance";
-  vendor["a8:1b:5a:c3:01:13"] = "ASUSTeK Computer";
-  vendor["16:cb:1a:6a:a2:81"] = "Xiaomi Communications";
-  vendor["f6:93:15:10:10:d2"] = "Xiaomi Communications";
-  vendor["76:74:c6:67:5a:89"] = "Xiaomi Communications";
-  vendor["9e:9c:3c:19:a6:5c"] = "Xiaomi Communications";
-  vendor["f2:82:95:8f:db:29"] = "Vivo Mobile";
-  vendor["ee:e5:0b:24:d5:eb"] = "Vivo Mobile";
-  vendor["52:60:c0:21:e2:51"] = "Vivo Mobile";
-  vendor["46:df:eb:aa:43:32"] = "Realme Mobile";
-  vendor["d2:61:fb:c9:5e:c5"] = "Qualcomm Atheros";
-
-  netbios_name["10.0.0.5"] = "HOMEDRIVE";
-  netbios_name["10.0.0.111"] = "MAXOS";
-  netbios_name[lan_ip] = "MAXNET-GATEWAY";
-  netbios_name["10.0.0.2"] = "MAXNET-B";
-
   while ((getline nbline < "/tmp/netbios_cache.json") > 0) {
     if (nbline ~ /": "/) {
       split(nbline, nbp, "\"");
@@ -254,11 +254,37 @@ BEGIN {
   }
   close("/tmp/netbios_cache.json");
 
+  # Active Wi-Fi stations from wireless drivers
+  while ((getline wline < "/tmp/wifi_stations.tsv") > 0) {
+    split(wline, wp, " ");
+    w_mac = tolower(wp[1]);
+    if (w_mac != "") {
+      wifi_sta[w_mac] = wp[2];
+      wifi_sig[w_mac] = wp[3] " " wp[4];
+      wifi_rate[w_mac] = wp[5] " " wp[6];
+      port[w_mac] = "WiFi";
+      is_wifi_dev[w_mac] = 1;
+      is_on_bridge[w_mac] = 1;
+      is_reach[w_mac] = 1;
+      all_macs[w_mac] = 1;
+    }
+  }
+  close("/tmp/wifi_stations.tsv");
+
   while (("/usr/sbin/brctl showmacs br-lan" | getline line) > 0) {
     split(line, p, " ");
     if (p[3] == "no") {
       m = tolower(p[2]);
-      port[m] = (p[1] == "1" ? "LAN 1" : (p[1] == "2" ? "LAN 2" : (p[1] == "3" ? "LAN 3" : (p[1] == "4" ? "LAN 4" : "LAN Switch"))));
+      if (!(m in is_wifi_dev)) {
+        if (p[1] == "1") port[m] = "LAN 1";
+        else if (p[1] == "2") port[m] = "LAN 2";
+        else if (p[1] == "3") port[m] = "LAN 3";
+        else if (p[1] == "4") port[m] = "LAN 4";
+        else {
+          port[m] = "WiFi";
+          is_wifi_dev[m] = 1;
+        }
+      }
       is_on_bridge[m] = 1;
     }
   }
@@ -370,15 +396,27 @@ BEGIN {
     }
     if (ip == "" || ip == lan_ip) continue;
 
-    # Check live bridge and neighbor connectivity
-    is_live = ((mac in is_on_bridge) || (mac in is_reach)) ? 1 : 0;
-    if ((ip in failed_ip) && !(mac in is_on_bridge)) is_live = 0;
+    h = (mac in name) ? name[mac] : ((ip in ip_name) ? ip_name[ip] : "Device");
+    pt = (mac in port) ? port[mac] : "WiFi";
+    if (pt == "LAN Switch" || !(mac in port)) {
+      pt = "WiFi";
+      is_wifi_dev[mac] = 1;
+    }
+    c_is_wifi = ((mac in is_wifi_dev) || (pt == "WiFi")) ? 1 : 0;
+    c_conn_type = c_is_wifi ? "WiFi" : "Ethernet";
+
+    # Strict real-time connectivity determination:
+    # Wireless clients: MUST be actively associated to wireless radio (in wifi_sta)
+    # Wired clients: must be on physical bridge (in is_on_bridge) or reachable via ARP
+    if (c_is_wifi) {
+      is_live = (mac in wifi_sta) ? 1 : 0;
+    } else {
+      is_live = ((mac in is_on_bridge) || (mac in is_reach)) ? 1 : 0;
+      if ((ip in failed_ip) && !(mac in is_on_bridge)) is_live = 0;
+    }
     conn_str = is_live ? "true" : "false";
 
-    h = (mac in name) ? name[mac] : ((ip in ip_name) ? ip_name[ip] : "Device");
-    pt = (mac in port) ? port[mac] : "LAN Switch";
     c_ip6 = (mac in ipv6) ? ipv6[mac] : "";
-
     c_rx = (mac in rx) ? rx[mac] : ((ip in con_rx) ? con_rx[ip] : 0);
     c_tx = (mac in tx) ? tx[mac] : ((ip in con_tx) ? con_tx[ip] : 0);
     c_tot = c_rx + c_tx;
@@ -393,8 +431,8 @@ BEGIN {
     ll_nm = (h != "" && h != "Device") ? toupper(h) : "DEVICE";
     nb_nm = (ip in netbios_name) ? netbios_name[ip] : ll_nm;
 
-    printf ",{\"ip\":\"%s\",\"ipv6\":\"%s\",\"mac\":\"%s\",\"name\":\"%s\",\"port\":\"%s\",\"vendor\":\"%s\",\"dns_name\":\"%s\",\"domain\":\"lan\",\"mdns\":\"%s\",\"netbios\":\"%s\",\"llmnr\":\"%s\",\"rx_mb\":\"%s\",\"tx_mb\":\"%s\",\"total_mb\":\"%s\",\"rx_bytes\":%.0f,\"tx_bytes\":%.0f,\"total_bytes\":%.0f,\"connected\":%s,\"blocked\":%s}",
-      ip, c_ip6, mac, h, pt, v_nm, d_nm, m_nm, nb_nm, ll_nm, rx_mb, tx_mb, tot_mb, c_rx, c_tx, c_tot, conn_str, blk;
+    printf ",{\"ip\":\"%s\",\"ipv6\":\"%s\",\"mac\":\"%s\",\"name\":\"%s\",\"port\":\"%s\",\"vendor\":\"%s\",\"dns_name\":\"%s\",\"domain\":\"lan\",\"mdns\":\"%s\",\"netbios\":\"%s\",\"llmnr\":\"%s\",\"rx_mb\":\"%s\",\"tx_mb\":\"%s\",\"total_mb\":\"%s\",\"rx_bytes\":%.0f,\"tx_bytes\":%.0f,\"total_bytes\":%.0f,\"connected\":%s,\"blocked\":%s,\"conn_type\":\"%s\",\"is_wifi\":%s}",
+      ip, c_ip6, mac, h, pt, v_nm, d_nm, m_nm, nb_nm, ll_nm, rx_mb, tx_mb, tot_mb, c_rx, c_tx, c_tot, conn_str, blk, c_conn_type, (c_is_wifi ? "true" : "false");
   }
 
   hist_file = "/etc/device_history_30d.json";
