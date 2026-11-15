@@ -367,16 +367,19 @@
 	pinctrl-0 = <&pcie_qcn9074_pins>;
 	pinctrl-names = "default";
 	perst-gpios = <&tlmm 26 GPIO_ACTIVE_LOW>;
-	wake-gpios = <&tlmm 27 GPIO_ACTIVE_LOW>;
 	status = "okay";
 
 	pcie@0 {
+		device_type = "pci";
+		reg = <0x0 0x0 0x0 0x0 0x0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+		ranges;
+
 		wifi1: wifi@0,0 {
 			compatible = "pci17cb,1104";
 			reg = <0x00010000 0 0 0 0>;
 			qcom,ath11k-fw-memory-mode = <2>;
-			nvmem-cells = <&base_mac 3>;
-			nvmem-cell-names = "mac-address";
 		};
 	};
 };
@@ -621,26 +624,12 @@
 
 	/* PCIe 1 (QCN9074 5GHz) */
 	pcie_qcn9074_pins: pcie-qcn9074-state {
-		clkreq-n-pins {
-			pins = "gpio25";
-			function = "pcie1_clk";
-			drive-strength = <6>;
-			bias-pull-up;
-		};
-
 		perst-n-pins {
 			pins = "gpio26";
 			function = "gpio";
 			drive-strength = <8>;
 			bias-pull-down;
 			output-low;
-		};
-
-		wake-n-pins {
-			pins = "gpio27";
-			function = "pcie1_wake";
-			drive-strength = <6>;
-			bias-pull-up;
 		};
 	};
 

@@ -5700,10 +5700,10 @@ function drawStorageIconSmall(x, y, color, parent) {
         }
         const dZram = document.getElementById('topoDockZram');
         if (dZram) {
-          const zTot = Number(mem.zram_total_mb) || 384;
+          const zTot = Number(mem.zram_total_mb) || 256;
           const zUsed = Number(mem.zram_used_mb) || 0;
           const zPct = mem.zram_used_pct !== undefined ? Number(mem.zram_used_pct) : (zTot > 0 ? ((zUsed * 100) / zTot) : 0);
-          dZram.textContent = `${zUsed}M`;
+          dZram.textContent = Math.round(zPct) + '%';
           dZram.title = `ZRAM Pool: ${zUsed} MB / ${zTot} MB (${Math.round(zPct)}%)`;
         }
         const dTemp = document.getElementById('topoDockTemp');

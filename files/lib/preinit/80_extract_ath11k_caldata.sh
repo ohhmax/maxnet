@@ -49,18 +49,19 @@ do_extract_ath11k_caldata() {
 		rmdir /tmp/bdf_mnt 2>/dev/null || true
 	fi
 
-	# Ensure board-2.bin aliases exist
-	[ -f /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin ] && ln -sf board.bin /lib/firmware/ath11k/IPQ9574/hw1.0/board-2.bin 2>/dev/null || true
-	[ -f /lib/firmware/ath11k/QCN9074/hw1.0/board.bin ] && [ ! -f /lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin ] && ln -sf board.bin /lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin 2>/dev/null || true
-
-	# Cross-symlink /lib/firmware/IPQ9574 <-> /lib/firmware/ath11k/IPQ9574/hw1.0 safely
+	# Mirror board.bin safely between IPQ9574 and ath11k/IPQ9574/hw1.0 without symlink loops
 	mkdir -p /lib/firmware/IPQ9574
+	if [ -f /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin ]; then
+		cp -f /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin /lib/firmware/IPQ9574/board.bin 2>/dev/null || true
+	elif [ -f /lib/firmware/IPQ9574/board.bin ]; then
+		cp -f /lib/firmware/IPQ9574/board.bin /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin 2>/dev/null || true
+	fi
+
+	# Link DSP/M3 firmware files from /lib/firmware/IPQ9574 into hw1.0 if not already present
 	if [ -d /lib/firmware/IPQ9574 ]; then
-		for f in /lib/firmware/IPQ9574/*; do
-			[ -f "$f" ] && ln -sf "$f" "/lib/firmware/ath11k/IPQ9574/hw1.0/$(basename "$f")" 2>/dev/null || true
+		for f in /lib/firmware/IPQ9574/q6_fw.* /lib/firmware/IPQ9574/m3_fw.*; do
+			[ -f "$f" ] && [ ! -e "/lib/firmware/ath11k/IPQ9574/hw1.0/$(basename "$f")" ] && ln -sf "$f" "/lib/firmware/ath11k/IPQ9574/hw1.0/$(basename "$f")" 2>/dev/null || true
 		done
-		[ ! -e /lib/firmware/IPQ9574/hw1.0 ] && ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0 /lib/firmware/IPQ9574/hw1.0 2>/dev/null || true
-		[ ! -e /lib/firmware/IPQ9574/board.bin ] && ln -sf /lib/firmware/ath11k/IPQ9574/hw1.0/board.bin /lib/firmware/IPQ9574/board.bin 2>/dev/null || true
 	fi
 }
 
