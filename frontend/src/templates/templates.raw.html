@@ -30,7 +30,7 @@
         </div>
         <div class="mh-form-group" style="margin:0;">
           <label class="mh-label" style="font-size:10px; text-transform:uppercase; letter-spacing:0.8px;">Password</label>
-          <input type="password" class="mh-input" id="loginPass" placeholder="No password required" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()" style="width:100%; box-sizing:border-box;">
+          <input type="password" class="mh-input" id="loginPass" placeholder="Enter administrator password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()" style="width:100%; box-sizing:border-box;">
         </div>
       </div>
 
@@ -51,17 +51,17 @@
   <!-- ==================== 2. MAIN DASHBOARD VIEWPORT ==================== -->
   <div class="app-viewport" id="dashboardContainer" style="display:none;">
 
-
-
     <!-- ==================== TAB 1: OVERVIEW ==================== -->
     <div id="tabOverview" class="tab-page">
       <div class="usb-bw-container">
 
         <!-- TOP BAR: Host Brand Meta on Left, Canvas Controls on Right (Zero Canvas Overlap) -->
-        <div class="topo-top-bar">
+        <div class="topo-top-bar" id="persistentTopBar">
           <div class="topo-brand-meta">
-            <span class="topo-brand-title" id="dashBrandTitle">MAXNET GATEWAY</span>
-            <span class="topo-brand-subtitle" id="headerVer">v2.2.20</span>
+            <div class="topo-brand-text-col">
+              <span class="topo-brand-title" id="dashBrandTitle">MAXNET</span>
+              <span class="topo-brand-subtitle" id="headerVer">v2.2.29</span>
+            </div>
           </div>
 
           <!-- TOPOLOGY CANVAS CONTROLS (RESET + NOTIFICATIONS + MENU BUTTON) -->
@@ -71,7 +71,7 @@
             </button>
             <button class="topo-tool-btn" onclick="toggleNotificationCenter()" id="btnTopoNotifications" title="Notifications" aria-label="Notifications" style="position:relative;">
               <svg viewBox="0 0 24 24" class="topo-tool-icon"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              <span id="topoNotificationBadge" style="display:none; position:absolute; top:4px; right:4px; width:7px; height:7px; background:#ef4444; border-radius:50%; box-shadow:0 0 6px #ef4444;"></span>
+              <span id="topoNotificationBadge" class="topo-badge-count" style="display:none; position:absolute; top:-2px; right:-2px; min-width:16px; height:16px; padding:0 3px; background:#ef4444; color:#ffffff; font-family:var(--font-mono, monospace); font-size:9.5px; font-weight:800; line-height:16px; text-align:center; border-radius:8px; box-shadow:0 0 8px rgba(239, 68, 68, 0.7); pointer-events:none; box-sizing:border-box;">0</span>
             </button>
             <button class="topo-tool-btn topo-menu-btn" onclick="toggleSettingsMenu()" id="btnTopoMenu" title="Settings" aria-label="Settings">
               <svg viewBox="0 0 24 24" class="topo-tool-icon"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -347,6 +347,244 @@
     </div>
   </div>
 
+  <!-- REPEATER WI-FI CONNECTION MODAL (DHCP / STATIC IP, CUSTOM MAC, MTU, RADIO) -->
+  <div id="repeaterConnectModalOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeRepeaterConnectModal()">
+    <div class="android-modal-card" style="max-width:480px; width:92%;">
+      <div class="android-modal-header">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <span class="android-modal-title" id="repModalSsidTitle">Connect to Wi-Fi Uplink</span>
+          <button type="button" class="btn-ghost" onclick="closeRepeaterConnectModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;" aria-label="Close">
+            <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <span class="android-modal-desc" id="repModalSubtitle">Configure wireless uplink authentication &amp; addressing</span>
+      </div>
+
+      <div class="android-modal-body" style="padding:16px 20px; display:flex; flex-direction:column; gap:12px; max-height:75vh; overflow-y:auto;">
+        <input type="hidden" id="repHiddenBssid">
+        <input type="hidden" id="repHiddenBand">
+        <input type="hidden" id="repHiddenChannel">
+        <input type="hidden" id="repHiddenEnc">
+
+        <div class="mh-form-group">
+          <label class="mh-label">Target Network SSID</label>
+          <input type="text" class="mh-input" id="repTargetSsid" placeholder="Network Name">
+        </div>
+
+        <div class="mh-form-group" id="repKeyGroup">
+          <label class="mh-label">Wi-Fi Password / Key</label>
+          <input type="password" class="mh-input" id="repTargetKey" placeholder="Enter WPA2/WPA3 network password">
+        </div>
+
+        <div class="mh-form-group">
+          <label class="mh-label">Addressing Protocol</label>
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <button type="button" class="tri-btn active" id="btnRepProtoDhcp" onclick="setRepeaterProto('dhcp')" style="flex:1; padding:7px 0; text-align:center;">DHCP (Auto IP)</button>
+            <button type="button" class="tri-btn" id="btnRepProtoStatic" onclick="setRepeaterProto('static')" style="flex:1; padding:7px 0; text-align:center;">Static IPv4</button>
+          </div>
+        </div>
+
+        <!-- STATIC IP CONFIGURATION SUB-PANEL -->
+        <div id="repStaticFieldsPanel" style="display:none; flex-direction:column; gap:10px; background:rgba(255,255,255,0.02); padding:10px 12px; border:1px solid var(--border-sub); border-radius:8px;">
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Static IP Address</label>
+            <input type="text" class="mh-input" id="repStaticIp" placeholder="192.168.1.50">
+          </div>
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Subnet Mask</label>
+            <input type="text" class="mh-input" id="repStaticNetmask" value="255.255.255.0">
+          </div>
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Gateway IP</label>
+            <input type="text" class="mh-input" id="repStaticGateway" placeholder="192.168.1.1">
+          </div>
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Custom DNS</label>
+            <input type="text" class="mh-input" id="repStaticDns" value="1.1.1.1 8.8.8.8">
+          </div>
+        </div>
+
+        <!-- ADVANCED UPLINK TOGGLE & FIELDS -->
+        <div style="margin-top:4px;">
+          <button type="button" class="mh-btn btn-ghost" onclick="toggleRepeaterAdvanced()" id="btnToggleRepAdv" style="font-size:10.5px; padding:4px 10px; width:100%; justify-content:center;">
+            SHOW ADVANCED UPLINK PARAMETERS
+          </button>
+        </div>
+
+        <div id="repAdvancedPanel" style="display:none; flex-direction:column; gap:10px; margin-top:4px;">
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Target Radio Band</label>
+            <select class="mh-input" id="repTargetRadio">
+              <option value="auto">Auto Select Radio</option>
+              <option value="radio0">2.4 GHz (radio0)</option>
+              <option value="radio1">5 GHz (radio1)</option>
+            </select>
+          </div>
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Clone Custom MAC Address</label>
+            <input type="text" class="mh-input" id="repCustomMac" placeholder="e.g. 10:65:30:7a:9c:02 (Leave blank for default)">
+          </div>
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Custom MTU</label>
+            <input type="number" class="mh-input" id="repCustomMtu" value="1500" min="576" max="1500">
+          </div>
+          <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">Routing Metric Priority</label>
+            <input type="number" class="mh-input" id="repCustomMetric" value="20" min="1" max="255">
+          </div>
+        </div>
+
+      </div>
+
+      <div class="android-modal-footer">
+        <button type="button" class="mh-btn btn-ghost" onclick="closeRepeaterConnectModal()">CANCEL</button>
+        <button type="button" class="mh-btn" id="btnSubmitRepeaterConnect" onclick="submitRepeaterConnect()">CONNECT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DHCP CLIENT HISTORY 30-DAY LEDGER MODAL -->
+  <div id="dhcpHistoryModalOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeDhcpHistoryModal()">
+    <div class="android-modal-card" style="max-width:580px; width:94%;">
+      <div class="android-modal-header">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <span class="android-modal-title">DHCP Client History Ledger</span>
+          <button type="button" class="btn-ghost" onclick="closeDhcpHistoryModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;" aria-label="Close">
+            <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <span class="android-modal-desc" id="dhcpHistoryModalSubtitle">Tracked clients, departure records &amp; cumulative data usage</span>
+      </div>
+      <div class="android-modal-body" style="padding:14px 18px; max-height:65vh; overflow-y:auto;">
+        <div id="dhcpHistoryModalList" style="display:flex; flex-direction:column; gap:6px;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="android-modal-footer" style="justify-content:space-between;">
+        <button type="button" class="mh-btn btn-danger" onclick="clearDhcpHistoryLedger()" style="padding:6px 14px; font-size:11px;">RESET LEDGER</button>
+        <button type="button" class="mh-btn btn-ghost" onclick="closeDhcpHistoryModal()" style="padding:6px 16px; font-size:11px;">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION SETTINGS MODAL (STORAGE RETENTION, ALERT TRIGGERS & CLEAR ALL) -->
+  <div id="notifSettingsModalOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeNotificationSettingsModal()">
+    <div class="android-modal-card" style="max-width:480px; width:92%; max-height:85vh; display:flex; flex-direction:column; overflow:hidden;">
+      <div class="android-modal-header" style="flex-shrink:0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:28px; height:28px; border-radius:50%; background:rgba(245,158,11,0.15); color:#f59e0b; display:flex; align-items:center; justify-content:center;">
+              <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <span class="android-modal-title">Notification Settings</span>
+          </div>
+          <button type="button" class="btn-ghost" onclick="closeNotificationSettingsModal()" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;" aria-label="Close">
+            <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="android-modal-body" style="padding:14px 16px; overflow-y:auto; flex:1 1 auto; display:flex; flex-direction:column; gap:12px;">
+        <!-- CLEAR ALL NOTIFICATIONS BUTTON ROW -->
+        <div class="setting-row-item" style="padding:10px 14px; border:1px solid rgba(239,68,68,0.25); border-radius:10px; background:rgba(239,68,68,0.04);">
+          <div class="setting-label-col">
+            <span class="setting-label-bold" style="color:#ef4444;">Clear All Notifications</span>
+            <span class="setting-label-sub" id="notifModalStorageSummary">Permanently delete all stored alert records</span>
+          </div>
+          <div class="setting-control-col">
+            <button type="button" class="round-action-btn btn-danger-action" id="btnClearAllNotifsModal" onclick="clearAllNotifications(); closeNotificationSettingsModal();" title="Clear All" aria-label="Clear All">
+              <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- NOTIFICATION STORAGE & RETENTION ROW -->
+        <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('notif_retention')" style="border:1px solid var(--border-sub); border-radius:10px; padding:10px 14px;">
+          <div class="setting-label-col">
+            <span class="setting-label-bold">Storage Retention &amp; Pruning</span>
+            <span class="setting-label-sub" id="disp_notif_retention">Capped at 50 records • Auto-pruned to protect flash</span>
+          </div>
+          <div class="setting-control-col">
+            <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        <!-- ALERT TRIGGER PREFERENCES -->
+        <div style="border:1px solid var(--border-sub); border-radius:10px; overflow:hidden;">
+          <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; padding:8px 12px; background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border-sub);">Alert Trigger Rules</div>
+          <div style="display:flex; flex-direction:column; gap:0;">
+            <div class="setting-row-item" style="border-bottom:1px solid var(--border-sub);">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">Device Connect &amp; Disconnect</span>
+                <span class="setting-label-sub">Alert when network clients join or leave WiFi &amp; LAN</span>
+              </div>
+              <div class="toggle-wrap-cell">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notifTriggerDevice" checked onchange="toggleNotificationTrigger('device', this.checked)">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-row-item" style="border-bottom:1px solid var(--border-sub);">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">Internet WAN Uplink</span>
+                <span class="setting-label-sub">Alert immediately when WAN link drops or recovers</span>
+              </div>
+              <div class="toggle-wrap-cell">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notifTriggerWan" checked onchange="toggleNotificationTrigger('wan', this.checked)">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-row-item" style="border-bottom:1px solid var(--border-sub);">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">Security &amp; WebUI Logins</span>
+                <span class="setting-label-sub">Alert on administrator logins and invalid password attempts</span>
+              </div>
+              <div class="toggle-wrap-cell">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notifTriggerSecurity" checked onchange="toggleNotificationTrigger('security', this.checked)">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-row-item" style="border-bottom:1px solid var(--border-sub);">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">System Health &amp; Thermal</span>
+                <span class="setting-label-sub">Alert when router reboots or CPU temperature exceeds 75&deg;C</span>
+              </div>
+              <div class="toggle-wrap-cell">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notifTriggerHealth" checked onchange="toggleNotificationTrigger('health', this.checked)">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-row-item">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">Firmware &amp; OS Updates</span>
+                <span class="setting-label-sub">Alert when new official MAXNET releases are available</span>
+              </div>
+              <div class="toggle-wrap-cell">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notifTriggerUpdate" checked onchange="toggleNotificationTrigger('update', this.checked)">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="android-modal-actions" style="padding:10px 16px; border-top:1px solid var(--border-sub); display:flex; justify-content:flex-end;">
+        <button type="button" class="mh-btn" onclick="closeNotificationSettingsModal()" style="padding:7px 18px; font-weight:700;">DONE</button>
+      </div>
+    </div>
+  </div>
+
   <div id="settingEditModalOverlay" class="android-modal-overlay" onclick="onModalOverlayClick(event)">
     <div class="android-modal-card" id="settingEditModalCard">
       <div class="android-modal-header">
@@ -609,6 +847,22 @@
             </div>
           </div>
 
+          <!-- Wireless Repeater (Dedicated Uplink / Client WAN) -->
+          <div class="settings-nav-card" id="card-repeater" onclick="openSettingPage('acc-repeater')" data-search="repeater wisp uplink wireless client bridge wifi scan dhcp static wan 2.4ghz 5ghz join connect">
+            <div class="snc-left">
+              <div class="snc-icon-box" style="color:#38bdf8;">
+                <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/><path d="M12 3v6M9 6l3-3 3 3"/></svg>
+              </div>
+              <div class="snc-info">
+                <span class="snc-title">Wireless Repeater</span>
+                <span class="snc-desc">Dual-band Wi-Fi client uplink, WISP repeater, and static/DHCP connection</span>
+              </div>
+            </div>
+            <div class="snc-right">
+              <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+
           <!-- 3. DHCP Clients -->
           <div class="settings-nav-card" id="card-lan-clients" onclick="openSettingPage('acc-lan-clients')" data-search="dhcp clients connected devices leases ip mac hostname allocation">
             <div class="snc-left">
@@ -833,6 +1087,22 @@
             </div>
           </div>
 
+          <!-- Hardware & LED Gestures -->
+          <div class="settings-nav-card" id="card-led-hardware" onclick="openSettingPage('acc-led-hardware')" data-search="led button reset gesture trigger light red green blue blink internet factory history dhcp hardware">
+            <div class="snc-left">
+              <div class="snc-icon-box" style="color:#ec4899;">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              </div>
+              <div class="snc-info">
+                <span class="snc-title">LED &amp; Hardware</span>
+                <span class="snc-desc">Status LED automation, internet indicator triggers, and reset button gestures</span>
+              </div>
+            </div>
+            <div class="snc-right">
+              <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+
           <!-- Firmware & OS Updates -->
           <div class="settings-nav-card" id="card-firmware" onclick="openSettingPage('acc-firmware')" data-search="firmware os updates sysupgrade ota ram boot itb flash changelog sha256 version build check update release">
             <div class="snc-left">
@@ -840,7 +1110,7 @@
                 <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </div>
               <div class="snc-info">
-                <span class="snc-title">Firmware &amp; OS Updates</span>
+                <span class="snc-title">Update</span>
                 <span class="snc-desc">OTA sysupgrade, release diagnostics, changelog, and Safe RAM Boot (.itb) testing</span>
               </div>
             </div>
@@ -882,7 +1152,7 @@
           </div>
 
           <!-- About Developer -->
-          <div class="settings-nav-card" id="card-device-info" onclick="openSettingPage('acc-device-info')" data-search="about developer max mahendra mali firmware architecture openwrt kernel ohhmax website telegram">
+          <div class="settings-nav-card" id="card-device-info" onclick="openSettingPage('acc-device-info')" data-search="about developer max mahendra mali firmware architecture maxnet kernel ohhmax website telegram">
             <div class="snc-left">
               <div class="snc-icon-box" style="color:#8b5cf6;">
                 <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -894,6 +1164,22 @@
             </div>
             <div class="snc-right">
               <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+
+          <!-- Log Out Card (Bottom of Settings Hub) -->
+          <div class="settings-nav-card" id="card-logout" onclick="showLogoutConfirm()" data-search="logout log out sign out exit session terminate disconnect" style="border-color:rgba(239, 68, 68, 0.28); background:linear-gradient(135deg, rgba(239, 68, 68, 0.06), rgba(15, 23, 42, 0.65));">
+            <div class="snc-left">
+              <div class="snc-icon-box" style="color:#ef4444; background:rgba(239, 68, 68, 0.12); border:1px solid rgba(239, 68, 68, 0.25);">
+                <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </div>
+              <div class="snc-info">
+                <span class="snc-title" style="color:#f87171;">Log Out</span>
+                <span class="snc-desc">Terminate administrator session and return to secure login screen</span>
+              </div>
+            </div>
+            <div class="snc-right">
+              <svg class="snc-arrow" viewBox="0 0 24 24" style="color:#ef4444;"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
           </div>
         </div>
@@ -910,6 +1196,14 @@
           <div class="settings-subnav-title-group">
             <span id="settingsDetailNavIcon" class="settings-subnav-icon"></span>
             <span id="settingsDetailNavTitle" class="settings-subnav-title">Settings</span>
+          </div>
+          <div class="settings-subnav-right" id="settingsDetailNavRight" style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+            <button type="button" class="round-action-btn" id="subnavNotifSettingsBtn" onclick="openNotificationSettingsModal()" style="display:none;" title="Notification Settings" aria-label="Notification Settings">
+              <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <button type="button" class="round-action-btn btn-danger-action" id="subnavNotifClearBtn" onclick="clearAllNotifications()" style="display:none;" title="Clear All Notifications" aria-label="Clear All Notifications">
+              <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
           </div>
           <div id="settingsSaveStatusPill" class="setting-save-pill" style="display:none;">
             <svg class="spin-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg>
@@ -1097,6 +1391,29 @@
                   </div>
                 </div>
 
+                <!-- DHCP CLIENT HISTORY & DATA CONSUMPTION LEDGER -->
+                <div class="setting-row-item setting-clickable-row" onclick="openDhcpHistoryModal()">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">DHCP Client History &amp; Data Consumption</span>
+                    <span class="setting-label-sub" id="disp_net_dhcp_history_sub">View 30-day lease records, active/past clients, and cumulative MBs</span>
+                  </div>
+                  <div class="setting-control-col">
+                    <button type="button" class="round-action-btn" title="View Device History Ledger" aria-label="View History">
+                      <svg viewBox="0 0 24 24" style="width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('dhcp_retention_days')">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Client History Retention Period</span>
+                    <span class="setting-label-sub" id="disp_dhcp_retention_days">30 Days (1 Month) &bull; Low flash wear auto-prune</span>
+                  </div>
+                  <div class="setting-arrow-col">
+                    <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                </div>
+
                 <!-- IPV6 DUAL-STACK CONFIGURATION SECTION -->
                 <div class="setting-section-divider"></div>
                 <div class="setting-section-header">IPv6 Dual-Stack Configuration</div>
@@ -1263,7 +1580,10 @@
               </div>
               <span class="acc-main-title">Interfaces</span>
             </div>
-            <div class="acc-right-action">
+            <div class="acc-right-action" style="display:flex; align-items:center; gap:8px;">
+              <button type="button" class="round-action-btn" onclick="event.stopPropagation(); loadWanInterfaceConfig();" title="Refresh Interfaces" aria-label="Refresh Interfaces">
+                <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
               <span class="card-badge emerald" id="wanStatusBadge">WAN ACTIVE</span>
               <svg class="svg-icon acc-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
@@ -1271,26 +1591,48 @@
           <div class="accordion-content">
             <div class="settings-card-body">
               <div class="setting-section-header">Interface Overview</div>
-              <div id="interfacesOverviewGrid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; margin-bottom:14px;">
-                <div style="background:rgba(255,255,255,0.03); padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.07);">
-                  <div style="font-size:10px; font-weight:800; font-family:var(--font-mono); color:var(--text-dim); text-transform:uppercase;">LAN Bridge (br-lan)</div>
-                  <div style="font-size:13px; font-weight:700; color:#38bdf8; font-family:var(--font-mono); margin:2px 0;">10.0.0.1 / 24</div>
-                  <div style="font-size:10.5px; color:var(--text-dim);">Status: UP &bull; Switch Bridge</div>
+
+              <!-- 1. LAN Bridge -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">LAN Bridge (br-lan)</span>
+                  <span class="setting-label-sub">10.0.0.1/24 &bull; Switch Bridge Interface (UP)</span>
                 </div>
-                <div style="background:rgba(255,255,255,0.03); padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.07);">
-                  <div style="font-size:10px; font-weight:800; font-family:var(--font-mono); color:var(--text-dim); text-transform:uppercase;">LAN Switch (lan1-lan4)</div>
-                  <div style="font-size:13px; font-weight:700; color:#38bdf8; font-family:var(--font-mono); margin:2px 0;">Gigabit Ports</div>
-                  <div style="font-size:10.5px; color:var(--text-dim);">4-Port Hardware Switch</div>
+                <div class="setting-control-col">
+                  <span class="card-badge sky" id="ifaceLanBridgeState">ACTIVE</span>
                 </div>
-                <div style="background:rgba(255,255,255,0.03); padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.07);">
-                  <div style="font-size:10px; font-weight:800; font-family:var(--font-mono); color:var(--text-dim); text-transform:uppercase;">Physical WAN (eth0)</div>
-                  <div style="font-size:13px; font-weight:700; color:var(--text-main); font-family:var(--font-mono); margin:2px 0;" id="ifaceEthWanState">Ready</div>
-                  <div style="font-size:10.5px; color:var(--text-dim);">Gigabit Ethernet Port</div>
+              </div>
+
+              <!-- 2. LAN Switch -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">LAN Switch Ports (lan1 - lan4)</span>
+                  <span class="setting-label-sub">4-Port Hardware Gigabit Ethernet Switch</span>
                 </div>
-                <div style="background:rgba(255,255,255,0.03); padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.07);">
-                  <div style="font-size:10px; font-weight:800; font-family:var(--font-mono); color:var(--text-dim); text-transform:uppercase;">IPv6 Carrier (wan6)</div>
-                  <div style="font-size:13px; font-weight:700; color:#a78bfa; font-family:var(--font-mono); margin:2px 0;" id="ifaceIpv6State">Connected</div>
-                  <div style="font-size:10.5px; color:var(--text-dim);">Kernel SLAAC / RA Active</div>
+                <div class="setting-control-col">
+                  <span class="card-badge emerald" id="ifaceLanSwitchState">4 PORTS</span>
+                </div>
+              </div>
+
+              <!-- 3. Physical Ethernet WAN -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Physical Ethernet WAN (eth0)</span>
+                  <span class="setting-label-sub">Gigabit Ethernet Uplink Interface</span>
+                </div>
+                <div class="setting-control-col">
+                  <span class="card-badge" id="ifaceEthWanState">Ready</span>
+                </div>
+              </div>
+
+              <!-- 4. IPv6 Carrier -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">IPv6 Carrier (wan6)</span>
+                  <span class="setting-label-sub">Kernel SLAAC / Router Advertisement Active</span>
+                </div>
+                <div class="setting-control-col">
+                  <span class="card-badge" style="background:rgba(167,139,250,0.15); color:#a78bfa; border:1px solid rgba(167,139,250,0.3);" id="ifaceIpv6State">Connected</span>
                 </div>
               </div>
 
@@ -1377,12 +1719,6 @@
                 <div class="setting-arrow-col">
                   <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
-              </div>
-
-              <!-- Action buttons -->
-              <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
-                <button type="button" class="mh-btn btn-ghost" onclick="loadWanInterfaceConfig()">RELOAD</button>
-                <button type="button" class="mh-btn" onclick="saveWanInterfaceConfig()" style="background:#0ea5e9; color:#fff; font-weight:700;">APPLY WAN CONFIG</button>
               </div>
             </div>
           </div>
@@ -1717,72 +2053,77 @@
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <!-- 2.4 GHz HIDDEN FORM STATE -->
+              <div style="display:none;">
+                <input type="text" id="wifi2gSsid" value="MAXNET">
+                <select id="wifi2gEnc">
+                  <option value="none">Open (No Security)</option>
+                  <option value="psk2">WPA2-PSK (AES)</option>
+                  <option value="sae">WPA3-SAE</option>
+                  <option value="sae-mixed" selected>WPA2/WPA3 Mixed</option>
+                </select>
+                <input type="password" id="wifi2gKey" value="">
+                <select id="wifi2gChannel">
+                  <option value="1">Channel 1 (2412 MHz)</option>
+                  <option value="6">Channel 6 (2437 MHz)</option>
+                  <option value="11">Channel 11 (2462 MHz)</option>
+                  <option value="auto" selected>Auto Select</option>
+                </select>
+                <select id="wifi2gHtmode">
+                  <option value="HE20" selected>HE20 (20 MHz)</option>
+                  <option value="HE40">HE40 (40 MHz)</option>
+                  <option value="HT20">HT20 (Legacy)</option>
+                </select>
+              </div>
+
+              <!-- 2.4 GHz CLICKABLE ROWS WITH POPUP MODAL -->
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi24_ssid')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Network Name (SSID)</span>
-                  <span class="setting-label-sub">Broadcast identifier for 2.4 GHz wireless clients</span>
+                  <span class="setting-label-sub" id="disp_wifi24_ssid">MAXNET</span>
                 </div>
-                <div class="setting-control-col">
-                  <input type="text" class="mh-input" id="wifi2gSsid" value="MAXNET" placeholder="MAXNET" style="min-width:180px; font-size:12px;">
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi24_enc')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Security Mode</span>
-                  <span class="setting-label-sub">Authentication and encryption protocol</span>
+                  <span class="setting-label-sub" id="disp_wifi24_enc">WPA2/WPA3 Mixed</span>
                 </div>
-                <div class="setting-control-col">
-                  <select class="mh-input" id="wifi2gEnc" style="min-width:180px; font-size:12px;">
-                    <option value="none">Open (No Security)</option>
-                    <option value="psk2">WPA2-PSK (AES)</option>
-                    <option value="sae">WPA3-SAE</option>
-                    <option value="sae-mixed">WPA2/WPA3 Mixed</option>
-                  </select>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi24_key')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Wi-Fi Password</span>
-                  <span class="setting-label-sub">Pre-shared key (leave blank for Open network)</span>
+                  <span class="setting-label-sub" id="disp_wifi24_key">••••••••</span>
                 </div>
-                <div class="setting-control-col">
-                  <div style="position:relative; display:flex; align-items:center;">
-                    <input type="password" class="mh-input" id="wifi2gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="min-width:180px; font-size:12px; padding-right:32px;">
-                    <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi2gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
-                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    </button>
-                  </div>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi24_channel')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Operating Channel</span>
-                  <span class="setting-label-sub">2.4 GHz radio frequency channel allocation</span>
+                  <span class="setting-label-sub" id="disp_wifi24_channel">Auto Select</span>
                 </div>
-                <div class="setting-control-col">
-                  <select class="mh-input" id="wifi2gChannel" style="min-width:180px; font-size:12px;">
-                    <option value="1">Channel 1 (2412 MHz)</option>
-                    <option value="6">Channel 6 (2437 MHz)</option>
-                    <option value="11">Channel 11 (2462 MHz)</option>
-                    <option value="auto">Auto Select</option>
-                  </select>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi24_bandwidth')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Channel Bandwidth</span>
-                  <span class="setting-label-sub">HE20 for optimal range and stability, HE40 for speed</span>
+                  <span class="setting-label-sub" id="disp_wifi24_bandwidth">HE20 (20 MHz)</span>
                 </div>
-                <div class="setting-control-col">
-                  <select class="mh-input" id="wifi2gHtmode" style="min-width:180px; font-size:12px;">
-                    <option value="HE20">HE20 (20 MHz)</option>
-                    <option value="HE40">HE40 (40 MHz)</option>
-                    <option value="HT20">HT20 (Legacy)</option>
-                  </select>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
@@ -1816,78 +2157,83 @@
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <!-- 5 GHz HIDDEN FORM STATE -->
+              <div style="display:none;">
+                <input type="text" id="wifi5gSsid" value="MAXNET-5G">
+                <select id="wifi5gEnc">
+                  <option value="none">Open (No Security)</option>
+                  <option value="psk2">WPA2-PSK (AES)</option>
+                  <option value="sae">WPA3-SAE</option>
+                  <option value="sae-mixed" selected>WPA2/WPA3 Mixed</option>
+                </select>
+                <input type="password" id="wifi5gKey" value="">
+                <select id="wifi5gChannel">
+                  <option value="36">Channel 36 (5180 MHz)</option>
+                  <option value="40">Channel 40 (5200 MHz)</option>
+                  <option value="44">Channel 44 (5220 MHz)</option>
+                  <option value="48">Channel 48 (5240 MHz)</option>
+                  <option value="149">Channel 149 (5745 MHz)</option>
+                  <option value="153">Channel 153 (5765 MHz)</option>
+                  <option value="157">Channel 157 (5785 MHz)</option>
+                  <option value="161">Channel 161 (5805 MHz)</option>
+                  <option value="auto" selected>Auto Select</option>
+                </select>
+                <select id="wifi5gHtmode">
+                  <option value="HE80">HE80 (80 MHz)</option>
+                  <option value="HE160" selected>HE160 (160 MHz)</option>
+                  <option value="HE40">HE40 (40 MHz)</option>
+                  <option value="HE20">HE20 (20 MHz)</option>
+                </select>
+              </div>
+
+              <!-- 5 GHz CLICKABLE ROWS WITH POPUP MODAL -->
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi5_ssid')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Network Name (SSID)</span>
-                  <span class="setting-label-sub">Broadcast identifier for 5 GHz wireless clients</span>
+                  <span class="setting-label-sub" id="disp_wifi5_ssid">MAXNET-5G</span>
                 </div>
-                <div class="setting-control-col">
-                  <input type="text" class="mh-input" id="wifi5gSsid" value="MAXNET-5G" placeholder="MAXNET-5G" style="min-width:180px; font-size:12px;">
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi5_enc')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Security Mode</span>
-                  <span class="setting-label-sub">Authentication and encryption protocol</span>
+                  <span class="setting-label-sub" id="disp_wifi5_enc">WPA2/WPA3 Mixed</span>
                 </div>
-                <div class="setting-control-col">
-                  <select class="mh-input" id="wifi5gEnc" style="min-width:180px; font-size:12px;">
-                    <option value="none">Open (No Security)</option>
-                    <option value="psk2">WPA2-PSK (AES)</option>
-                    <option value="sae">WPA3-SAE</option>
-                    <option value="sae-mixed">WPA2/WPA3 Mixed</option>
-                  </select>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi5_key')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Wi-Fi Password</span>
-                  <span class="setting-label-sub">Pre-shared key (leave blank for Open network)</span>
+                  <span class="setting-label-sub" id="disp_wifi5_key">••••••••</span>
                 </div>
-                <div class="setting-control-col">
-                  <div style="position:relative; display:flex; align-items:center;">
-                    <input type="password" class="mh-input" id="wifi5gKey" value="" placeholder="Min 8 characters (or blank for Open)" style="min-width:180px; font-size:12px; padding-right:32px;">
-                    <button type="button" class="btn-ghost" onclick="togglePasswordVisibility('wifi5gKey', this)" style="position:absolute; right:6px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; padding:4px;">
-                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    </button>
-                  </div>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi5_channel')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Operating Channel</span>
-                  <span class="setting-label-sub">5 GHz radio frequency channel allocation</span>
+                  <span class="setting-label-sub" id="disp_wifi5_channel">Auto Select</span>
                 </div>
-                <div class="setting-control-col">
-                  <select class="mh-input" id="wifi5gChannel" style="min-width:180px; font-size:12px;">
-                    <option value="36">Channel 36 (5180 MHz)</option>
-                    <option value="40">Channel 40 (5200 MHz)</option>
-                    <option value="44">Channel 44 (5220 MHz)</option>
-                    <option value="48">Channel 48 (5240 MHz)</option>
-                    <option value="149">Channel 149 (5745 MHz)</option>
-                    <option value="153">Channel 153 (5765 MHz)</option>
-                    <option value="157">Channel 157 (5785 MHz)</option>
-                    <option value="161">Channel 161 (5805 MHz)</option>
-                    <option value="auto">Auto Select</option>
-                  </select>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
-              <div class="setting-row-item">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('wifi5_bandwidth')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Channel Bandwidth</span>
-                  <span class="setting-label-sub">HE80 for wide compatibility, HE160 for gigabit speeds</span>
+                  <span class="setting-label-sub" id="disp_wifi5_bandwidth">HE160 (160 MHz)</span>
                 </div>
-                <div class="setting-control-col">
-                  <select class="mh-input" id="wifi5gHtmode" style="min-width:180px; font-size:12px;">
-                    <option value="HE80">HE80 (80 MHz)</option>
-                    <option value="HE160">HE160 (160 MHz)</option>
-                    <option value="HE40">HE40 (40 MHz)</option>
-                    <option value="HE20">HE20 (20 MHz)</option>
-                  </select>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
@@ -1902,36 +2248,6 @@
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
-              </div>
-
-              <!-- SECTION: WI-FI WAN / WIRELESS REPEATER UPLINK -->
-              <div class="setting-section-divider"></div>
-              <div class="setting-section-header">Wi-Fi WAN Uplink (Wireless Repeater)</div>
-
-              <div class="setting-row-item">
-                <div class="setting-label-col">
-                  <span class="setting-label-bold">Wireless WAN Client</span>
-                  <span class="setting-label-sub">Connect to nearby Wi-Fi network as internet uplink</span>
-                </div>
-                <div class="setting-control-col" style="display:flex; align-items:center; gap:8px;">
-                  <span class="setting-pill pill-cyan" id="wifiWanStatusBadge">OFFLINE</span>
-                  <button type="button" class="mh-btn btn-sm btn-outline" id="btnScanWifi" onclick="scanNearbyWifi()" style="font-size:11px; padding:5px 12px; border-radius:8px;">
-                    <svg viewBox="0 0 24 24" style="width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2; margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    Scan Wi-Fi
-                  </button>
-                </div>
-              </div>
-
-              <div id="wifiActiveWanInfo" style="display:none; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:8px; padding:10px 12px; margin:8px 0; align-items:center; justify-content:space-between;">
-                <div style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main);">
-                  Connected: <strong id="wifiActiveWanSsid" style="color:#10b981;">--</strong> &bull; IP: <span id="wifiActiveWanIp">--</span>
-                </div>
-                <button type="button" class="mh-btn btn-sm btn-ghost" onclick="disconnectWifiWan()" style="color:#ef4444; font-size:10.5px; padding:3px 8px;">Disconnect</button>
-              </div>
-
-              <!-- SCAN RESULTS CONTAINER -->
-              <div id="wifiScanResults" style="display:none; flex-direction:column; gap:6px; max-height:240px; overflow-y:auto; padding:4px 0;">
-                <div style="padding:10px; text-align:center; color:var(--text-dim); font-size:11px;">Scanning frequencies...</div>
               </div>
 
               <!-- CONNECTED WIRELESS CLIENTS -->
@@ -1955,6 +2271,64 @@
           </div>
         </div>
 
+        <!-- DEDICATED WIRELESS REPEATER SETTING PANEL (WISP / CLIENT WAN) -->
+        <div class="settings-card settings-detail-panel accordion-item" id="acc-repeater">
+          <div class="settings-card-header accordion-header" onclick="toggleAccordion('acc-repeater')">
+            <div class="acc-title-left">
+              <div class="acc-icon-box" style="color:#38bdf8;">
+                <svg class="svg-icon" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/><path d="M12 3v6M9 6l3-3 3 3"/></svg>
+              </div>
+              <span class="acc-main-title">Wireless Repeater</span>
+            </div>
+            <div class="acc-right-action">
+              <span class="card-badge sky" id="repeaterStatusBadge">DISCONNECTED</span>
+              <svg class="svg-icon acc-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div class="accordion-content">
+            <div class="settings-card-body">
+              <!-- TOP CONTROL ROW: BOLD LABEL, SUBTITLE BENEATH, ROUND SCAN BUTTON ON RIGHT -->
+              <div class="setting-row-item" style="padding: 12px 14px; margin-bottom: 8px;">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Wi-Fi Scan &amp; Connect</span>
+                  <span class="setting-label-sub" id="repeaterScanSub">Scan surrounding 2.4 GHz and 5 GHz networks to connect as uplink</span>
+                </div>
+                <div class="setting-control-col">
+                  <button type="button" class="round-action-btn" id="btnScanRepeater" onclick="scanRepeaterWifi()" title="Scan for nearby Wi-Fi networks" aria-label="Scan Wi-Fi">
+                    <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- ACTIVE CONNECTION STATUS ROW (IF CONNECTED) -->
+              <div id="repeaterActiveCard" style="display:none; margin-bottom:12px;">
+                <div class="setting-row-item" style="padding:12px 14px; background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2); border-radius:10px;">
+                  <div class="setting-label-col">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span class="card-badge emerald" style="font-size:9px; font-weight:800;">ACTIVE UPLINK</span>
+                      <span class="setting-label-bold" id="repeaterConnectedSsid">--</span>
+                    </div>
+                    <span class="setting-label-sub" id="repeaterConnectedInfo">IP: -- • Band: -- • Signal: --</span>
+                  </div>
+                  <div class="setting-control-col">
+                    <button type="button" class="round-action-btn btn-danger-action" onclick="disconnectRepeaterWifi()" title="Disconnect Wi-Fi Uplink">
+                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- SCAN RESULTS SECTION -->
+              <div class="setting-section-header" style="margin-top:10px;">Nearby Wi-Fi Networks</div>
+              <div id="repeaterScanResultsList" style="display:flex; flex-direction:column; gap:4px;">
+                <div style="font-size:12px; color:var(--text-dim); font-family:var(--font-mono); padding:20px; text-align:center;">
+                  Click the scan button above to discover surrounding 2.4 GHz and 5 GHz networks.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- DEDICATED NOTIFICATIONS & ALERTS PANEL (PAGE VIEW, NO POPUPS) -->
         <div class="settings-card settings-detail-panel accordion-item" id="acc-notifications">
           <div class="settings-card-header accordion-header" onclick="toggleAccordion('acc-notifications')">
@@ -1964,22 +2338,18 @@
               </div>
               <span class="acc-main-title">Notifications</span>
             </div>
-            <div class="acc-right-action">
+            <div class="acc-right-action" style="display:flex; align-items:center; gap:8px;">
+              <button type="button" class="round-action-btn" onclick="event.stopPropagation(); openNotificationSettingsModal();" title="Notification Settings" aria-label="Notification Settings">
+                <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </button>
               <span class="card-badge amber" id="notifActiveBadge">0 ALERTS</span>
               <svg class="svg-icon acc-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
           </div>
           <div class="accordion-content">
-            <div class="settings-card-body">
-              <!-- TOP CONTROL ROW -->
-              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <span style="font-size:12px; font-weight:700; color:var(--text-main); font-family:var(--font-mono);" id="notifStatusSummary">All systems normal</span>
-                </div>
-              </div>
-
-              <!-- NOTIFICATIONS LIST CONTAINER -->
-              <div id="notificationsListPageContainer" style="display:flex; flex-direction:column; gap:8px;">
+            <div class="settings-card-body" style="padding: 10px 14px;">
+              <!-- NOTIFICATIONS LIST (PURE NOTIFICATIONS ONLY) -->
+              <div id="notificationsListPageContainer" style="display:flex; flex-direction:column; gap:0; border:1px solid var(--border-sub); border-radius:10px; overflow:hidden;">
                 <!-- Rendered dynamically via loadNotificationsPage -->
               </div>
             </div>
@@ -2347,6 +2717,20 @@
           </div>
           <div class="accordion-content">
             <div class="settings-card-body">
+              <!-- AUTO / CUSTOM TOPOLOGY TOGGLE ROW -->
+              <div class="setting-row-item" style="padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Auto Topology Discovery</span>
+                  <span class="setting-label-sub" id="topoAutoModeSub">Automatically build and map network tree from live port telemetry, WAN uplink, and connected devices</span>
+                </div>
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="topoAutoDiscoveryToggle" checked onchange="toggleTopologyAutoMode(this.checked)">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+
               <!-- TOP ACTION BUTTONS ROW (SORTED IN A BALANCED ROW, NO TITLE, NO SAVE BUTTON) -->
               <div class="topo-header-row">
                 <div class="topo-round-actions">
@@ -2695,7 +3079,7 @@
                     <span class="setting-label-sub" style="font-size:10.5px; margin-top:2px;">Mahendra Mali (Max) &bull; Direct contribution to MAXNET development</span>
                   </div>
                   <div class="setting-control-col">
-                    <button type="button" class="round-action-btn" onclick="navigator.clipboard.writeText('9824584454@ybl'); if(typeof showNotificationToast === 'function') showNotificationToast('Copied UPI ID: 9824584454@ybl'); else if(typeof showToast === 'function') showToast('Copied UPI ID: 9824584454@ybl', 'success'); else alert('Copied UPI ID: 9824584454@ybl');" title="Copy UPI ID" aria-label="Copy UPI ID" style="width:34px; height:34px; min-width:34px;">
+                    <button type="button" class="round-action-btn" onclick="navigator.clipboard.writeText('9824584454@ybl'); if(typeof showNotificationToast === 'function') showNotificationToast('Copied UPI ID: 9824584454@ybl'); else if(typeof showToast === 'function') showToast('Copied UPI ID: 9824584454@ybl', 'success');" title="Copy UPI ID" aria-label="Copy UPI ID" style="width:34px; height:34px; min-width:34px;">
                       <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     </button>
                   </div>
@@ -2713,7 +3097,7 @@
                 <div class="setting-row-item">
                   <div class="setting-label-col">
                     <span class="setting-label-bold">Project Philosophy &amp; Community</span>
-                    <span class="setting-label-sub">Built for the open-source community with Linux &amp; OpenWrt foundations. Distributed under GPLv2 &amp; MIT licenses. Dedicated to transparent, high-performance, and resilient home &amp; enterprise networking.</span>
+                    <span class="setting-label-sub">Built for the open-source community with Linux &amp; MAXNET foundations. Distributed under GPLv2 &amp; MIT licenses. Dedicated to transparent, high-performance, and resilient home &amp; enterprise networking.</span>
                   </div>
                 </div>
 
@@ -2721,10 +3105,10 @@
                 <div class="setting-row-item">
                   <div class="setting-label-col">
                     <span class="setting-label-bold">Official Website</span>
-                    <a href="https://ohhmax.github.io/" target="_blank" rel="noopener noreferrer" class="setting-label-sub" style="color:var(--accent); text-decoration:none; font-family:var(--font-mono); font-size:12px; font-weight:600;">https://ohhmax.github.io/</a>
+                    <a href="https://ohhmax.github.io/maxnet" target="_blank" rel="noopener noreferrer" class="setting-label-sub" style="color:var(--accent); text-decoration:none; font-family:var(--font-mono); font-size:12px; font-weight:600;">https://ohhmax.github.io/maxnet</a>
                   </div>
                   <div class="setting-control-col">
-                    <a href="https://ohhmax.github.io/" target="_blank" rel="noopener noreferrer" class="round-action-btn" title="Open Website" aria-label="Open Website" style="text-decoration:none; width:34px; height:34px; min-width:34px;">
+                    <a href="https://ohhmax.github.io/maxnet" target="_blank" rel="noopener noreferrer" class="round-action-btn" title="Open Website" aria-label="Open Website" style="text-decoration:none; width:34px; height:34px; min-width:34px;">
                       <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                     </a>
                   </div>
@@ -3358,7 +3742,7 @@
               <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('smb_credentials')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Samba Credentials</span>
-                  <span class="setting-label-sub" id="disp_smb_user_desc">User: max &bull; Click to configure credentials</span>
+                  <span class="setting-label-sub" id="disp_smb_user_desc">Open Guest Access (No Password Required) &bull; Click to set credentials</span>
                 </div>
                 <div class="setting-arrow-col">
                   <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
@@ -3374,8 +3758,8 @@
                 <input type="text" id="dufsPathInput" value="/mnt/storage">
                 <input type="text" id="dufsAllowUpload" value="true">
                 <input type="text" id="dufsAllowDelete" value="true">
-                <input type="text" id="dufsUserInput" value="root">
-                <input type="password" id="dufsPassInput" value="admin">
+                <input type="text" id="dufsUserInput" value="">
+                <input type="password" id="dufsPassInput" value="">
               </div>
 
               <!-- SERVICE BANNER -->
@@ -3445,7 +3829,7 @@
               <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('dufs_auth')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">WebDAV Access Authentication</span>
-                  <span class="setting-label-sub" id="disp_dufs_auth">Authentication Enforced (Default: root / admin)</span>
+                  <span class="setting-label-sub" id="disp_dufs_auth">Open Access (No Password Required)</span>
                 </div>
                 <div class="setting-arrow-col">
                   <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
@@ -3621,7 +4005,7 @@
                   <span style="font-size:12px; font-weight:800; color:var(--text-main);">Diagnostic Suite</span>
                   <span style="font-size:11px; color:var(--text-dim);">Live packet probe, path tracing, port auditing, whois &amp; DNS inspection</span>
                 </div>
-                <button type="button" id="btnDiagStart" class="mh-btn" onclick="toggleDiagExecution()" style="padding:8px 22px; font-weight:800; font-size:12px; letter-spacing:0.5px; background:linear-gradient(135deg, #0284c7, #0369a1); border:none; color:#ffffff; border-radius:8px; box-shadow:0 2px 10px rgba(2,132,199,0.3); cursor:pointer;">
+                <button type="button" id="btnDiagStart" class="mh-btn" onclick="toggleDiagExecution()" style="padding:8px 22px; font-weight:800; font-size:12px; letter-spacing:0.5px; background:transparent; border:1px solid #0284c7; color:#38bdf8; border-radius:8px; box-shadow:0 0 10px rgba(2,132,199,0.25); cursor:pointer;">
                   START
                 </button>
               </div>
@@ -3897,24 +4281,172 @@
                 </div>
               </div>
 
-              <!-- RESULTS CONTAINER -->
-              <div id="diagResultsContainer" style="margin-top:14px; display:none;">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                  <span id="diagResultTitle" style="font-size:11px; font-weight:800; font-family:var(--font-mono); color:var(--text-main); text-transform:uppercase;">Results</span>
-                  <button type="button" class="mh-btn btn-sm btn-ghost" onclick="clearDiagResults()" style="font-size:9.5px; padding:2px 8px;">CLEAR</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- DEDICATED DIAGNOSTICS OUTPUT PANEL (NEW PAGE) -->
+        <div class="settings-card settings-detail-panel accordion-item" id="acc-diag-output">
+          <div class="settings-card-header accordion-header" onclick="openSettingPage('acc-diagnostics')">
+            <div class="acc-title-left">
+              <button type="button" class="round-action-btn" onclick="event.stopPropagation(); openSettingPage('acc-diagnostics');" title="Back to Diagnostic Suite" style="width:32px; height:32px; margin-right:4px;">
+                <svg viewBox="0 0 24 24" style="width:14px; height:14px;"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              </button>
+              <span class="acc-main-title" id="diagOutputPageTitle">Diagnostic Output</span>
+            </div>
+            <div class="acc-right-action">
+              <span class="card-badge sky" id="diagOutputStatusBadge">IDLE</span>
+            </div>
+          </div>
+          <div class="accordion-content">
+            <div class="settings-card-body">
+              <!-- Output Header & Controls -->
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; gap:8px; flex-wrap:wrap;">
+                <div>
+                  <span id="diagResultTitle" style="font-size:12px; font-weight:800; font-family:var(--font-mono); color:var(--text-main); text-transform:uppercase;">RESULTS</span>
+                  <span id="diagOutputTargetSubtitle" style="font-size:11px; color:var(--text-dim); display:block; margin-top:2px;">Target: --</span>
                 </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button type="button" id="btnDiagOutputStop" class="mh-btn btn-sm" onclick="toggleDiagExecution()" style="padding:5px 14px; font-size:11px; font-weight:800; background:transparent; color:#ef4444; border:1px solid #ef4444; border-radius:6px; cursor:pointer;">STOP</button>
+                  <button type="button" class="mh-btn btn-sm btn-ghost" onclick="clearDiagResults()" style="font-size:10px; padding:4px 10px;">CLEAR</button>
+                </div>
+              </div>
+
+              <!-- Formatted Results List -->
+              <div id="diagResultsContainer" style="display:block;">
                 <div id="diagResultsList" style="display:flex; flex-direction:column; gap:6px;"></div>
               </div>
 
-              <!-- RAW LOG TOGGLE -->
-              <div style="margin-top:12px; display:none;" id="diagRawToggleBox">
-                <button class="mh-btn btn-sm btn-ghost" onclick="toggleDiagRawLog()" id="btnToggleDiagRaw" style="font-size:10px; padding:4px 8px;">
+              <!-- Live Raw Console Box -->
+              <div style="margin-top:14px;" id="diagRawToggleBox">
+                <button class="mh-btn btn-sm btn-ghost" onclick="toggleDiagRawLog()" id="btnToggleDiagRaw" style="font-size:10px; padding:4px 10px; margin-bottom:8px;">
                   SHOW RAW CONSOLE
                 </button>
-                <div class="terminal-output-box" id="diagOutputBox" style="display:none; margin-top:8px;"></div>
+                <div class="terminal-output-box" id="diagOutputBox" style="display:none; max-height:340px; overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HARDWARE LED & RESET BUTTON GESTURES DETAIL PANEL -->
+        <div class="settings-card settings-detail-panel accordion-item" id="acc-led-hardware">
+          <div class="settings-card-header accordion-header" onclick="toggleAccordion('acc-led-hardware')">
+            <div class="acc-title-left">
+              <div class="acc-icon-box" style="color:#ec4899;">
+                <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              </div>
+              <span class="acc-main-title">LED &amp; Hardware</span>
+            </div>
+            <div class="acc-right-action">
+              <span class="card-badge pink" id="ledStatusBadge">AUTOMATIC</span>
+              <svg class="svg-icon acc-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div class="accordion-content">
+            <div class="settings-card-body">
+              <!-- SECTION 1: LED AUTOMATION -->
+              <div class="setting-section-header">Status LED Automation</div>
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Intelligent Status LED Policy</span>
+                  <span class="setting-label-sub">Red on boot, blinking blue awaiting internet, solid green when online</span>
+                </div>
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="hwLedAutoToggle" checked onchange="toggleHwLedAuto(this.checked)">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
               </div>
 
-            </div></div>
+              <!-- LED PROFILE SELECTOR ROW -->
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('led_profile')">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">LED Operating Profile</span>
+                  <span class="setting-label-sub" id="disp_led_profile">Auto Gateway Intelligence &bull; Dynamic network &amp; boot state</span>
+                </div>
+                <div class="setting-control-col">
+                  <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+              </div>
+
+              <!-- LED TRIGGER STATUS ROWS -->
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Internet Online Indicator</span>
+                  <span class="setting-label-sub" id="disp_led_online_sub">Green LED (Solid On when uplink verified)</span>
+                </div>
+                <div class="setting-control-col">
+                  <span class="card-badge emerald">SOLID GREEN</span>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Awaiting Uplink / Connecting</span>
+                  <span class="setting-label-sub" id="disp_led_waiting_sub">Blue LED (1Hz Blinking Timer)</span>
+                </div>
+                <div class="setting-control-col">
+                  <span class="card-badge sky">BLUE BLINK</span>
+                </div>
+              </div>
+
+              <div class="setting-row-item">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">System Booting / Error</span>
+                  <span class="setting-label-sub" id="disp_led_boot_sub">Red LED (Solid On during boot or gateway lost)</span>
+                </div>
+                <div class="setting-control-col">
+                  <span class="card-badge ruby">SOLID RED</span>
+                </div>
+              </div>
+
+              <!-- SECTION 2: RESET BUTTON GESTURES -->
+              <div class="setting-section-divider"></div>
+              <div class="setting-section-header">Reset Button Gestures</div>
+
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('reset_press_10s')">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Long Press (10 Seconds)</span>
+                  <span class="setting-label-sub" id="disp_reset_press_10s">Factory Reset (Wipe storage and restore factory defaults)</span>
+                </div>
+                <div class="setting-control-col">
+                  <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+              </div>
+
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('reset_single_click')">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Single Click (&lt; 2 Seconds)</span>
+                  <span class="setting-label-sub" id="disp_reset_single_click">Disabled</span>
+                </div>
+                <div class="setting-control-col">
+                  <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+              </div>
+
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('reset_double_click')">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Double Click (2x Push within 1.5s)</span>
+                  <span class="setting-label-sub" id="disp_reset_double_click">Disabled</span>
+                </div>
+                <div class="setting-control-col">
+                  <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+              </div>
+
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('reset_triple_click')">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Triple Click (3x Push within 2s)</span>
+                  <span class="setting-label-sub" id="disp_reset_triple_click">Disabled</span>
+                </div>
+                <div class="setting-control-col">
+                  <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>
+              </div>
+
+            </div>
+          </div>
         </div>
 
         <!-- DEDICATED FIRMWARE & OS UPDATES ACCORDION -->
@@ -3924,7 +4456,7 @@
               <div class="acc-icon-box" style="color:#38bdf8;">
                 <svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </div>
-              <span class="acc-main-title">Firmware &amp; OS Updates</span>
+              <span class="acc-main-title">Update</span>
             </div>
             <div class="acc-right-action">
               <span class="card-badge" style="background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">OS UPDATE</span>
@@ -3936,25 +4468,24 @@
               <!-- 1. FIRMWARE & RELEASE STATUS -->
               <div class="setting-row-item">
                 <div class="setting-label-col">
-                  <span class="setting-label-bold">Firmware &amp; OS Updates</span>
+                  <span class="setting-label-bold" id="fwStatusMainLabel" style="color:#10b981; font-weight:800; font-size:13.5px;">Router is Up to Date</span>
                   <span class="setting-label-sub" id="fwStatusSubtitle">
-                    Installed: <span id="fwCurrentVerBadge" style="font-weight:700;">v2.2.7-b7</span> &bull; Latest: <span id="fwLatestVerVal" style="font-weight:700;">v2.2.10-b10</span> &bull; <span id="fwModelVal">Jio JIDU6911</span>
+                    Installed: <span id="fwCurrentVerBadge" style="font-weight:700;">v3.2.0</span> &bull; <span id="fwModelVal">MAXNET-IPQ9574 AX6000</span> &bull; Channel: Stable
                   </span>
                 </div>
-                <div class="setting-control-col" style="display:flex; align-items:center; gap:8px;">
-                  <span id="fwUpdateStatusPill" class="setting-pill pill-green">UP TO DATE</span>
+                <div class="setting-control-col">
                   <button class="round-action-btn" id="btnCheckFwPage" title="Check for New Releases" onclick="checkLatestFirmwareUpdate()">
                     <svg id="iconCheckFwPage" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
                   </button>
                 </div>
               </div>
 
-              <!-- 2. INSTALL FIRMWARE UPDATE (NAND FLASH) -->
+              <!-- 2. INSTALL ONLINE FIRMWARE UPDATE (NAND FLASH) -->
               <div class="setting-row-item" id="rowFwUpgradeAction" style="display:none;">
                 <div class="setting-label-col">
-                  <span class="setting-label-bold">Install Firmware Update</span>
+                  <span class="setting-label-bold">Online Update Available</span>
                   <span class="setting-label-sub" id="fwSysupgradeSub">
-                    Download &amp; flash verified sysupgrade image (<span id="fwSizeVal">28.60 MB</span>) to NAND storage
+                    Download &amp; flash verified sysupgrade image (<span id="fwSizeVal">28.60 MB</span>)
                   </span>
                 </div>
                 <div class="setting-control-col">
@@ -3964,74 +4495,56 @@
                 </div>
               </div>
 
-              <!-- 3. SAFE RAM BOOT (.itb) TEST -->
-              <div class="setting-row-item" id="rowFwRamBootAction" style="display:none;">
+              <!-- 3. LOCAL FIRMWARE FILE UPGRADE -->
+              <input type="file" id="localFwFileInput" accept=".bin,.ubi,.itb" style="display:none;" onchange="onSelectLocalFirmwareFile(event)">
+              <div class="setting-row-item setting-clickable-row" onclick="document.getElementById('localFwFileInput').click()" style="border-top:1px solid var(--border-sub); padding-top:14px; margin-top:4px;">
                 <div class="setting-label-col">
-                  <span class="setting-label-bold">Safe RAM Boot (.itb)</span>
-                  <span class="setting-label-sub">
-                    Test firmware in DDR RAM without flashing NAND memory (Zero brick risk)
-                  </span>
+                  <span class="setting-label-bold">Select Firmware File</span>
+                  <span class="setting-label-sub" id="localFwFileInfoText">Click to select firmware image (.bin, .ubi, .itb)</span>
                 </div>
                 <div class="setting-control-col">
-                  <button type="button" class="mh-btn btn-ghost" id="btnFwRamBootTest" onclick="openRamBootModal()" style="min-width:110px; font-weight:700; padding:7px 18px; font-size:12px;">
-                    TEST IN RAM
+                  <button type="button" class="round-action-btn" title="Choose File" aria-label="Choose File">
+                    <svg viewBox="0 0 24 24" style="width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   </button>
                 </div>
               </div>
 
-              <!-- 4. MANUAL FIRMWARE FILE UPGRADE (.bin / .ubi) -->
-              <div class="setting-row-item" style="border-top:1px solid var(--border-sub, rgba(255,255,255,0.06)); padding-top:14px; margin-top:4px;">
-                <div class="setting-label-col">
-                  <span class="setting-label-bold">Manual Firmware Upgrade (.bin / .ubi)</span>
-                  <span class="setting-label-sub" id="localFwStatusSub">
-                    Select a local firmware image file (.bin or .ubi) to upload, verify integrity, and flash
-                  </span>
-                  <div id="localFwFileInfo" style="display:none; margin-top:6px; font-size:11px; font-family:var(--font-mono); color:#38bdf8;">
-                    Selected: <strong id="localFwFileName">--</strong> (<span id="localFwFileSize">--</span>)
+              <!-- Upload progress & Flash Actions -->
+              <div id="localFwActionsBox" style="display:none; padding:12px 14px; background:rgba(255,255,255,0.02); border:1px solid var(--border-sub); border-radius:8px; margin-top:6px;">
+                <div id="localFwProgressBox" style="display:none; margin-bottom:10px;">
+                  <div style="display:flex; justify-content:space-between; font-size:10.5px; font-family:var(--font-mono); color:var(--text-muted); margin-bottom:3px;">
+                    <span id="localFwProgressLabel">Uploading...</span>
+                    <span id="localFwProgressPct">0%</span>
                   </div>
-                  <!-- Upload progress bar -->
-                  <div id="localFwProgressBox" style="display:none; margin-top:8px;">
-                    <div style="display:flex; justify-content:space-between; font-size:10.5px; font-family:var(--font-mono); color:var(--text-muted); margin-bottom:3px;">
-                      <span id="localFwProgressLabel">Uploading...</span>
-                      <span id="localFwProgressPct">0%</span>
-                    </div>
-                    <div style="width:100%; height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
-                      <div id="localFwProgressBar" style="width:0%; height:100%; background:linear-gradient(90deg, #38bdf8, #10b981); transition:width 0.2s;"></div>
-                    </div>
+                  <div style="width:100%; height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
+                    <div id="localFwProgressBar" style="width:0%; height:100%; background:linear-gradient(90deg, #38bdf8, #10b981); transition:width 0.2s;"></div>
                   </div>
                 </div>
-                <div class="setting-control-col" style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
-                  <input type="file" id="localFwFileInput" accept=".bin,.ubi,.itb" style="display:none;" onchange="onSelectLocalFirmwareFile(event)">
-                  <div style="display:flex; gap:8px;">
-                    <button type="button" class="mh-btn btn-secondary" id="btnChooseLocalFw" onclick="document.getElementById('localFwFileInput').click()" style="padding:7px 14px; font-size:11.5px; font-weight:700;">
-                      SELECT FILE
-                    </button>
-                    <button type="button" class="mh-btn btn-primary" id="btnUploadLocalFw" onclick="uploadAndVerifyLocalFirmware()" style="display:none; padding:7px 16px; font-size:11.5px; font-weight:800;">
-                      UPLOAD &amp; VERIFY
-                    </button>
-                  </div>
-                  <!-- Post-verification flash controls -->
-                  <div id="localFwFlashActions" style="display:none; gap:6px;">
-                    <button type="button" class="mh-btn btn-ghost" onclick="executeLocalSysupgrade(false)" style="padding:6px 12px; font-size:11px; font-weight:700;">
-                      KEEP SETTINGS
-                    </button>
-                    <button type="button" class="mh-btn btn-danger" onclick="executeLocalSysupgrade(true)" style="padding:6px 14px; font-size:11px; font-weight:800;">
-                      FLASH CLEAN (FACTORY)
-                    </button>
-                  </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                  <button type="button" class="mh-btn btn-primary" id="btnUploadLocalFw" onclick="uploadAndVerifyLocalFirmware()" style="padding:7px 16px; font-size:11.5px; font-weight:800;">
+                    UPLOAD &amp; VERIFY
+                  </button>
+                  <button type="button" class="mh-btn btn-ghost" id="btnFlashKeep" onclick="executeLocalSysupgrade(false)" style="display:none; padding:6px 12px; font-size:11px; font-weight:700;">
+                    KEEP SETTINGS
+                  </button>
+                  <button type="button" class="mh-btn btn-danger" id="btnFlashClean" onclick="executeLocalSysupgrade(true)" style="display:none; padding:6px 14px; font-size:11px; font-weight:800;">
+                    CLEAN FLASH
+                  </button>
                 </div>
               </div>
 
-              <!-- 5. SYSTEM ARCHITECTURE & DETAILS -->
-              <div class="setting-row-item">
+              <!-- 4. SAFE RAM BOOT (.itb) TEST -->
+              <div class="setting-row-item" id="rowFwRamBootAction" style="margin-top:6px;">
                 <div class="setting-label-col">
-                  <span class="setting-label-bold">System Architecture</span>
+                  <span class="setting-label-bold">Safe RAM Boot (.itb)</span>
                   <span class="setting-label-sub">
-                    SoC: <span id="fwSocVal">Qualcomm IPQ9574 (AArch64)</span> &bull; Kernel: <span id="fwKernelVal">Linux 6.18.60</span> &bull; Flash: <span id="fwFlashVal">SPI-NAND UBI Dual-Slot</span>
+                    Test image in DDR RAM without flashing NAND memory (Zero brick risk)
                   </span>
                 </div>
                 <div class="setting-control-col">
-                  <span class="setting-pill pill-cyan">ACTIVE</span>
+                  <button type="button" class="mh-btn btn-ghost" id="btnFwRamBootTest" onclick="openRamBootModal()" style="font-weight:700; padding:6px 14px; font-size:11px;">
+                    TEST IN RAM
+                  </button>
                 </div>
               </div>
             </div>
@@ -4274,9 +4787,36 @@
             </div>
           </div>
           <div class="accordion-content">
-            <div class="settings-card-body" style="padding:0; background:transparent !important; border:none !important;">
+            <div class="terminal-mobile-header" id="termMobileHeader">
+              <button class="term-back-btn" onclick="closeSettingPage()" aria-label="Exit Terminal">
+                <svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                <span>Back</span>
+              </button>
+              <span class="term-header-title">ROOT SHELL // ttyd</span>
+              <div class="term-quick-keys">
+                <button class="term-key-btn" onclick="sendTerminalKey('ESC')">ESC</button>
+                <button class="term-key-btn" onclick="sendTerminalKey('TAB')">TAB</button>
+                <button class="term-key-btn" onclick="sendTerminalKey('CTRL_C')">^C</button>
+                <button class="term-key-btn" onclick="clearTerminalScreen()">CLS</button>
+              </div>
+            </div>
+            <div class="settings-card-body" style="padding:0; background:transparent !important; border:none !important; flex:1 1 auto; min-height:0; display:flex; flex-direction:column;">
               <div id="terminalContainer"></div>
             </div>
+            <!-- Bottom Mobile Command Bar -->
+            <form class="term-mobile-cmd-bar" id="termMobileCmdBar" onsubmit="submitMobileTermCmd(event)">
+              <div class="term-cmd-quick-row">
+                <button type="button" class="term-quick-pill" onclick="sendTerminalKey('UP')">&#9650;</button>
+                <button type="button" class="term-quick-pill" onclick="sendTerminalKey('DOWN')">&#9660;</button>
+                <button type="button" class="term-quick-pill" onclick="sendTerminalKey('TAB')">TAB</button>
+                <button type="button" class="term-quick-pill" onclick="sendTerminalKey('CTRL_C')">^C</button>
+                <button type="button" class="term-quick-pill" onclick="clearTerminalScreen()">CLS</button>
+              </div>
+              <div class="term-cmd-input-row">
+                <input type="text" id="termQuickInput" class="term-cmd-input" placeholder="Type shell command..." autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+                <button type="submit" class="term-cmd-send-btn">RUN</button>
+              </div>
+            </form>
           </div>
         </div>
 
@@ -4373,6 +4913,103 @@
                     </label>
                   </div>
                 </div>
+
+                <div class="setting-section-divider"></div>
+                <div class="setting-section-header">Notification &amp; Alert Preferences</div>
+
+                <!-- 1. Alert Storage Retention -->
+                <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('notif_retention')">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Alert Storage Retention</span>
+                    <span class="setting-label-sub" id="disp_webui_notif_retention">50 Alerts (Auto-prunes oldest)</span>
+                  </div>
+                  <div class="setting-arrow-col">
+                    <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                </div>
+
+                <!-- 2. Device Alerts -->
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Device Connect &amp; Disconnect Alerts</span>
+                    <span class="setting-label-sub">Notify when Wi-Fi and LAN clients associate or drop off</span>
+                  </div>
+                  <div class="toggle-wrap-cell">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="webuiNotifTriggerDevice" checked onchange="saveWebUiNotificationTriggers()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 3. WAN Alerts -->
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">WAN &amp; Failover Alerts</span>
+                    <span class="setting-label-sub">Notify on interface state changes, USB tethering, or uplink outage</span>
+                  </div>
+                  <div class="toggle-wrap-cell">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="webuiNotifTriggerWan" checked onchange="saveWebUiNotificationTriggers()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 4. Security Alerts -->
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Security &amp; Firewall Alerts</span>
+                    <span class="setting-label-sub">Notify on brute-force login attempts, SSH logins, and security blocks</span>
+                  </div>
+                  <div class="toggle-wrap-cell">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="webuiNotifTriggerSecurity" checked onchange="saveWebUiNotificationTriggers()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 5. Health Alerts -->
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">System Health &amp; Memory Spikes</span>
+                    <span class="setting-label-sub">Notify on high memory/CPU usage, zram spikes, or thermal limits</span>
+                  </div>
+                  <div class="toggle-wrap-cell">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="webuiNotifTriggerHealth" checked onchange="saveWebUiNotificationTriggers()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 6. Update Alerts -->
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Firmware &amp; OS Updates</span>
+                    <span class="setting-label-sub">Notify when new MAXNET releases are ready for installation</span>
+                  </div>
+                  <div class="toggle-wrap-cell">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="webuiNotifTriggerUpdate" checked onchange="saveWebUiNotificationTriggers()">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 7. Clear All Notifications -->
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Clear All Stored Notifications</span>
+                    <span class="setting-label-sub">Purge all local alerts from router storage</span>
+                  </div>
+                  <div class="setting-control-col">
+                    <button type="button" class="round-action-btn btn-danger-action" id="btnClearAllNotifsWebui" onclick="clearAllNotificationsWebui()" title="Clear All Notifications" aria-label="Clear All Notifications">
+                      <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -4405,7 +5042,7 @@
                 <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">Lead Developer Profile</div>
                 <div style="font-size:13px; font-weight:700; color:var(--text-main);">Mahendra Mali (Max)</div>
                 <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px; line-height:1.5;">
-                  Systems Architect &amp; Kernel Network Engineer specializing in multi-WAN high-speed aggregation, Qualcomm PPE hardware acceleration, embedded OpenWrt firmware optimizations, and low-latency gaming infrastructure.
+                  Systems Architect &amp; Kernel Network Engineer specializing in multi-WAN high-speed aggregation, Qualcomm PPE hardware acceleration, embedded MAXNET firmware optimizations, and low-latency gaming infrastructure.
                 </div>
               </div>
 

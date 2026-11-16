@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# MAXNET OPENWRT UI BUILD & LIVE HOT-SYNC PIPELINE
+# MAXNET OS UI BUILD & LIVE HOT-SYNC PIPELINE
 # Verified production builder & atomic sync to router root@10.0.0.1
 # ==============================================================================
 set -euo pipefail
@@ -120,7 +120,10 @@ tar -cf - -C "${FILES_WWW_DIR}" cgi-bin | run_ssh "tar -xf - -C /www/"
 # Synchronize index.html and index.htm
 run_ssh "cp -f /www/index.html /www/index.htm 2>/dev/null || true"
 
-# 5B. Deploy Terminal Interface & Certs if present
+# 5B. Deploy Terminal Interface, Dufs Assets & Certs if present
+if [ -d "${FILES_WWW_DIR}/dufs-assets" ]; then
+    tar -cf - -C "${FILES_WWW_DIR}" dufs-assets | run_ssh "tar -xf - -C /www/"
+fi
 if [ -f "${FILES_WWW_DIR}/ttyd.html" ]; then
     tar -cf - -C "${FILES_WWW_DIR}" ttyd.html | run_ssh "tar -xf - -C /www/"
 fi

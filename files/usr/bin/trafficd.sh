@@ -53,7 +53,16 @@ BEGIN {
   live_json = "/tmp/traffic_stats.json";
   tick = 0;
   has_saved_wan = 0;
-  RETENTION_30D = 30 * 86400; # 1,296,000 seconds
+  retention_days = 30;
+  hw_conf = "/etc/maxnet_hardware.json";
+  while ((getline hline < hw_conf) > 0) {
+    if (hline ~ /"retention_days":/) {
+      gsub(/[^0-9]/, "", hline);
+      if (hline + 0 > 0) retention_days = hline + 0;
+    }
+  }
+  close(hw_conf);
+  RETENTION_30D = retention_days * 86400;
 
   # Load Lifetime WAN accumulator
   lifetime_rx = 23359818489;
@@ -290,15 +299,15 @@ BEGIN {
       printf "  \"lifetime_rx_gb\": \"%.2f\",\n", (lifetime_rx / 1073741824) >> tmp_lt;
       printf "  \"lifetime_tx_gb\": \"%.2f\",\n", (lifetime_tx / 1073741824) >> tmp_lt;
       printf "  \"lifetime_total_gb\": \"%.2f\",\n", (lt_tot / 1073741824) >> tmp_lt;
-      printf "  \"retention_days\": 15,\n" >> tmp_lt;
+      printf "  \"retention_days\": %.0f,\n", retention_days >> tmp_lt;
       printf "  \"last_updated\": %.0f\n", now >> tmp_lt;
       printf "}\n" >> tmp_lt;
       close(tmp_lt);
       system("mv /tmp/traffic_lifetime.tmp /etc/traffic_lifetime.json");
 
-      # 2. 15-Day device history persistent update
+      # 2. 30-Day device history persistent update
       tmp_hist = "/tmp/device_history_30d.tmp";
-      printf "{\n  \"retention_days\": 15,\n  \"updated_at\": %.0f,\n  \"devices\": {\n", now > tmp_hist;
+      printf "{\n  \"retention_days\": %.0f,\n  \"updated_at\": %.0f,\n  \"devices\": {\n", retention_days, now > tmp_hist;
       hfirst = 1;
       for (m in dev_last_seen) {
         if (m == "WAN" || m == "" || length(m) < 10) continue;

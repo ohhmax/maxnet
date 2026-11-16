@@ -1,5 +1,5 @@
 #!/bin/sh
-# Real-evidence network topology auto-detection engine for OpenWrt Maxnet Gateway
+# Real-evidence network topology auto-detection engine for MAXNET Gateway
 
 NOW=$(date +%s)
 CONF_FILE="/etc/topology_layers.json"
@@ -283,16 +283,61 @@ done
 
 echo "]" >> "$DEV_LIST_TMP"
 
+# Repeater detection for topology uplink
+WWAN_STATUS=$(ubus call network.interface.wwan status 2>/dev/null)
+WWAN_UP=$(echo "$WWAN_STATUS" | jq -r '.up // false' 2>/dev/null)
+if [ "$WWAN_UP" = "true" ]; then
+    REP_DEV=$(echo "$WWAN_STATUS" | jq -r '.l3_device // .device // "phy1-sta0"' 2>/dev/null)
+    REP_IP=$(echo "$WWAN_STATUS" | jq -r '.["ipv4-address"][0].address // empty' 2>/dev/null)
+    REP_GW=$(echo "$WWAN_STATUS" | jq -r '.route[0].nexthop // empty' 2>/dev/null)
+    REP_SSID=$(uci get wireless.wwan.ssid 2>/dev/null)
+    [ -z "$REP_SSID" ] && REP_SSID=$(iwinfo "$REP_DEV" info 2>/dev/null | awk -F'"' '/ESSID/ {print $2}')
+    REP_BSSID=$(uci get wireless.wwan.bssid 2>/dev/null)
+    [ -z "$REP_BSSID" ] && REP_BSSID=$(iwinfo "$REP_DEV" info 2>/dev/null | awk '/Access Point:/ {print $3}')
+    REP_SPEED=$(iwinfo "$REP_DEV" info 2>/dev/null | awk '/Bit Rate:/ {print $3, $4}')
+    REP_SIGNAL=$(iwinfo "$REP_DEV" info 2>/dev/null | awk '/Signal:/ {print $2, $3}')
+    REPEATER_UPLINK_JSON=$(jq -n \
+      --argjson connected true \
+      --arg ssid "${REP_SSID:-Wi-Fi Uplink}" \
+      --arg bssid "${REP_BSSID:-}" \
+      --arg ip "${REP_IP:-}" \
+      --arg gw "${REP_GW:-}" \
+      --arg speed "${REP_SPEED:-1729 Mbps}" \
+      --arg signal "${REP_SIGNAL:--55 dBm}" \
+      '{connected: $connected, ssid: $ssid, bssid: $bssid, ip: $ip, gateway: $gw, speed: $speed, signal: $signal}')
+else
+    REPEATER_UPLINK_JSON='{"connected":false,"ssid":""}'
+fi
+
+# Prepare USB Devices detection for topology
+USB_DEVS_TMP="/tmp/usb_devs_topo.json"
+if [ -f /tmp/usb_devices.json ]; then
+    cp -f /tmp/usb_devices.json "$USB_DEVS_TMP" 2>/dev/null
+else
+    echo "[]" > "$USB_DEVS_TMP"
+fi
+
 # Assemble Topology Hierarchy Tree via jq
 FINAL_JSON=$(jq -n \
   --arg lan_ip "$LAN_IP" \
   --arg lan_mac "$LAN_MAC" \
   --arg host_name "$HOST_NAME" \
+  --argjson repeater_uplink "$REPEATER_UPLINK_JSON" \
   --slurpfile devs "$DEV_LIST_TMP" \
   --slurpfile conf "$CONF_FILE" \
+  --slurpfile usb_devs "$USB_DEVS_TMP" \
   '
   $devs[0] as $all_devs |
   ($conf[0].tree.ports // []) as $locked_ports |
+  ($usb_devs[0] // []) as $raw_usb |
+
+  [ $raw_usb[] | {
+      id: ("usb-" + (.port|tostring)),
+      label: ("USB " + (.port|tostring)),
+      role: (if .device_type == "storage" or .has_storage == true then "storage" elif .is_wan == true or .has_tethering == true then "phone" else "device" end),
+      name: (.raw_model // .model // "USB Device"),
+      speed: (if (.speed_mbps // 0) >= 1000 then "usb3" else "usb2" end)
+  } ] as $detected_usb |
 
   def get_locked_port(p_id):
     ($locked_ports | map(select(.id == p_id and (.is_locked == true or .child.is_locked == true))) | first);
@@ -341,19 +386,17 @@ FINAL_JSON=$(jq -n \
       confidence: "High",
       evidence: (make_evidence(null; true)),
       uplinkPort: null,
+      repeater_uplink: $repeater_uplink,
       numPorts: 4,
       wan_mode: "standard",
       wan_speed: "1000",
       usb_config: {
-        mode: "hub",
-        num_ports: 4,
+        mode: (if ($detected_usb | length) > 1 then "hub" else "direct" end),
+        num_ports: (if ($detected_usb | length) > 0 then ($detected_usb | length) else 1 end),
         speed_std: "usb3",
-        ports: [
-          { id: "usb-1", label: "USB 1", role: "empty", name: "", speed: "usb3" },
-          { id: "usb-2", label: "USB 2", role: "empty", name: "", speed: "usb3" },
-          { id: "usb-3", label: "USB 3", role: "empty", name: "", speed: "usb3" },
-          { id: "usb-4", label: "USB 4", role: "empty", name: "", speed: "usb3" }
-        ]
+        ports: (if ($detected_usb | length) > 0 then $detected_usb else [
+          { id: "usb-1", label: "USB 1", role: "empty", name: "", speed: "usb3" }
+        ] end)
       },
       ports: [
         (if get_locked_port("root-lan1") != null then get_locked_port("root-lan1") else {

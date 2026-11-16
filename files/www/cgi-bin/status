@@ -20,7 +20,7 @@ send_response() {
 
 # 1. Firmware info (Clean version without build number)
 FIRMWARE_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1)
-[ -z "$FIRMWARE_VER" ] && FIRMWARE_VER="v2.2.20"
+[ -z "$FIRMWARE_VER" ] && FIRMWARE_VER="v2.2.29"
 
 # 2. Router System & CPU
 UPTIME_RAW=$(cat /proc/uptime 2>/dev/null || echo "0 0")
@@ -97,12 +97,15 @@ ROUTER_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:l
 [ -z "$ROUTER_MAC" ] && ROUTER_MAC="d2:61:fb:c9:5e:c5"
 
 DEFAULT_WAN_DEV=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n 1)
-[ -z "$DEFAULT_WAN_DEV" ] && DEFAULT_WAN_DEV="usb0"
+[ -z "$DEFAULT_WAN_DEV" ] && DEFAULT_WAN_DEV=""
 
-WAN_IP=$(ip -4 a show dev "$DEFAULT_WAN_DEV" 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
-[ -z "$WAN_IP" ] && WAN_IP=$(ip -4 a show dev usb0 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
-[ -z "$WAN_IP" ] && WAN_IP=$(ip -4 a show dev wan 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
-[ -z "$WAN_IP" ] && WAN_IP=""
+if [ -n "$DEFAULT_WAN_DEV" ]; then
+    WAN_IP=$(ip -4 a show dev "$DEFAULT_WAN_DEV" 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+else
+    WAN_IP=$(ip -4 a show dev wan 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+    [ -z "$WAN_IP" ] && WAN_IP=$(ip -4 a show dev phy0-sta0 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+    [ -z "$WAN_IP" ] && WAN_IP=""
+fi
 
 GW_IP=$(ip route show default 2>/dev/null | awk '{print $3}' | head -n 1)
 [ -z "$GW_IP" ] && GW_IP=""
@@ -561,11 +564,39 @@ export HOME=/root
 ADB_DEVS=$(adb devices -l 2>/dev/null | awk 'BEGIN{printf "[";c=0} NR>1 && $2=="device"{s=$1; m="Android"; for(i=3;i<=NF;i++) if($i ~ /^model:/) m=substr($i,7); if(c>0) printf ","; printf "{\"serial\":\"%s\",\"model\":\"%s\"}", s, m; c++} END{printf "]"}')
 [ -z "$ADB_DEVS" ] && ADB_DEVS="[]"
 
+# -------------------------------------------------------------
+# USB Storage mounts & filesystem detection
+# -------------------------------------------------------------
+USB_STORAGE_MOUNTED=false
+USB_STORAGE_DEV=""
+USB_STORAGE_NAME=""
+USB_STORAGE_MOUNT=""
+USB_STORAGE_TOTAL=""
+USB_STORAGE_FREE=""
+USB_STORAGE_USED=""
+USB_STORAGE_PCT=0
+
+STOR_LINE=$(df -h 2>/dev/null | grep -E '/mnt/(storage|pendrive)' | head -n 1)
+if [ -n "$STOR_LINE" ]; then
+    USB_STORAGE_MOUNTED=true
+    USB_STORAGE_DEV=$(echo "$STOR_LINE" | awk '{print $1}')
+    USB_STORAGE_TOTAL=$(echo "$STOR_LINE" | awk '{print $2}')
+    USB_STORAGE_USED=$(echo "$STOR_LINE" | awk '{print $3}')
+    USB_STORAGE_FREE=$(echo "$STOR_LINE" | awk '{print $4}')
+    USB_STORAGE_PCT=$(echo "$STOR_LINE" | awk '{print $5}' | tr -d '%')
+    USB_STORAGE_MOUNT=$(echo "$STOR_LINE" | awk '{print $6}')
+    USB_STORAGE_NAME=$(basename "$USB_STORAGE_MOUNT")
+    [ "$USB_STORAGE_NAME" = "storage" ] && USB_STORAGE_NAME="Pendrive"
+    [ -z "$USB_STORAGE_NAME" ] && USB_STORAGE_NAME="USB Storage"
+fi
+
 HAS_HUB=false
+HUB_BUS=""
 HUB_MODEL=""
 HUB_MFG=""
-HUB_PORTS=0
-HUB_SPEED=0
+HUB_PORTS=4
+HUB_SPEED=5000
+HUB_CONN_COUNT=0
 HAS_USB_DEV=false
 USB_DEV_SPEED=0
 USB_DEV_LINK="Disconnected"
@@ -580,8 +611,9 @@ for dev in /sys/bus/usb/devices/*; do
   cls=$(cat "$dev/bDeviceClass" 2>/dev/null)
   if [ "$cls" = "09" ]; then
     HAS_HUB=true
-    HUB_MODEL=$(cat "$dev/product" 2>/dev/null || echo "USB Hub")
-    HUB_MFG=$(cat "$dev/manufacturer" 2>/dev/null || echo "Generic")
+    HUB_BUS="$bname"
+    HUB_MODEL=$(cat "$dev/product" 2>/dev/null || echo "USB 3.0 Hub")
+    HUB_MFG=$(cat "$dev/manufacturer" 2>/dev/null || echo "GenesysLogic")
     HUB_PORTS=$(cat "$dev/maxchild" 2>/dev/null || echo 4)
     HUB_SPEED=$(cat "$dev/speed" 2>/dev/null || echo 5000)
     continue
@@ -608,6 +640,88 @@ for dev in /sys/bus/usb/devices/*; do
   esac
 done
 
+# Build Hub Ports detection map with auto-detection of available vs connected ports & USB version (U2.0, U3.0, U3.2)
+HUB_PORTS_JSON="[]"
+HUB_AVAIL_PORTS=0
+HUB_CONN_COUNT=0
+if [ "$HAS_HUB" = "true" ]; then
+  HUB_PORTS_JSON="["
+  hub_first=1
+  for p in $(seq 1 $HUB_PORTS); do
+    port_status="available"
+    dev_name=""
+    dev_type=""
+    dev_speed=0
+    dev_bus=""
+
+    # Dual-tier Hub scan: matches USB 3.x tier (e.g. 2-1.p) or USB 2.0 tier (e.g. 1-1.p)
+    child=$(ls -d /sys/bus/usb/devices/*-[0-9].${p} /sys/bus/usb/devices/*-*.${p} 2>/dev/null | head -n 1)
+    if [ -n "$child" ] && [ -f "$child/speed" ]; then
+      port_status="connected"
+      HUB_CONN_COUNT=$((HUB_CONN_COUNT + 1))
+      dev_bus=$(basename "$child")
+      dev_name=$(cat "$child/product" 2>/dev/null || echo "USB Device")
+      dev_speed=$(cat "$child/speed" 2>/dev/null || echo 480)
+      icls=$(cat "$child/"*":1.0/bInterfaceClass" 2>/dev/null | head -n 1)
+      if [ "$icls" = "08" ] || [ "$USB_STORAGE_MOUNTED" = "true" ]; then
+        dev_type="storage"
+      elif [ "$icls" = "e0" ] || [ "$icls" = "02" ]; then
+        dev_type="modem"
+      else
+        dev_type="device"
+      fi
+
+      case "$dev_speed" in
+        10000*) p_ver="U3.2"; p_ver_name="USB 3.2 Gen 2 (10 Gbps)" ;;
+        5000*)  p_ver="U3.0"; p_ver_name="USB 3.0 SuperSpeed (5 Gbps)" ;;
+        480*)   p_ver="U2.0"; p_ver_name="USB 2.0 HighSpeed (480 Mbps)" ;;
+        12*|1.5*) p_ver="U1.1"; p_ver_name="USB 1.1 FullSpeed (12 Mbps)" ;;
+        *)      p_ver="U2.0"; p_ver_name="USB 2.0 (480 Mbps)" ;;
+      esac
+    else
+      # Available Port capability derived from Hub controller class/speed
+      case "${HUB_SPEED:-5000}" in
+        10000*) p_ver="U3.2"; p_ver_name="USB 3.2 Ready (10 Gbps)"; dev_speed=10000 ;;
+        5000*)  p_ver="U3.0"; p_ver_name="USB 3.0 Ready (5 Gbps)"; dev_speed=5000 ;;
+        *)      p_ver="U2.0"; p_ver_name="USB 2.0 Ready (480 Mbps)"; dev_speed=480 ;;
+      esac
+    fi
+
+    p_item=$(jq -n \
+      --argjson port "$p" \
+      --arg status "$port_status" \
+      --arg label "Port $p" \
+      --arg ver "$p_ver" \
+      --arg ver_name "$p_ver_name" \
+      --arg name "$dev_name" \
+      --arg type "$dev_type" \
+      --arg bus "$dev_bus" \
+      --argjson speed "${dev_speed:-0}" \
+      '{"port": $port, "status": $status, "label": $label, "version": $ver, "version_name": $ver_name, "name": $name, "device_type": $type, "bus": $bus, "speed_mbps": $speed}')
+
+    [ "$hub_first" -eq 0 ] && HUB_PORTS_JSON="$HUB_PORTS_JSON,"
+    HUB_PORTS_JSON="$HUB_PORTS_JSON$p_item"
+    hub_first=0
+  done
+  HUB_PORTS_JSON="$HUB_PORTS_JSON]"
+  HUB_AVAIL_PORTS=$((HUB_PORTS - HUB_CONN_COUNT))
+  [ "$HUB_AVAIL_PORTS" -lt 0 ] && HUB_AVAIL_PORTS=0
+else
+  HUB_AVAIL_PORTS=4
+  HUB_CONN_COUNT=0
+fi
+
+USB_HUB_JSON=$(jq -n \
+  --argjson connected "$HAS_HUB" \
+  --arg model "${HUB_MODEL:-GL3523 USB 3.0 Hub}" \
+  --arg mfg "${HUB_MFG:-GenesysLogic}" \
+  --argjson ports "${HUB_PORTS:-4}" \
+  --argjson speed "${HUB_SPEED:-5000}" \
+  --argjson available_ports "${HUB_AVAIL_PORTS:-4}" \
+  --argjson connected_count "${HUB_CONN_COUNT:-0}" \
+  --argjson ports_list "${HUB_PORTS_JSON:-[]}" \
+  '{"connected": $connected, "model": $model, "manufacturer": $mfg, "ports": $ports, "speed_mbps": $speed, "available_ports": $available_ports, "connected_count": $connected_count, "ports_list": $ports_list}')
+
 if [ "$HAS_USB_DEV" = "true" ] && [ -d /sys/class/net/usb0 ]; then
   USB_DEV_MTU=$(cat /sys/class/net/usb0/mtu 2>/dev/null || echo 1500)
   ACT_USB_RX_B=$(cat /sys/class/net/usb0/statistics/rx_bytes 2>/dev/null || echo 0)
@@ -631,11 +745,54 @@ else
   fi
 fi
 
-USB_HUB_JSON=$(jq -n   --argjson connected "$HAS_HUB"   --arg model "$HUB_MODEL"   --arg mfg "$HUB_MFG"   --argjson ports "${HUB_PORTS:-0}"   --argjson speed "${HUB_SPEED:-0}"   '{"connected": $connected, "model": $model, "manufacturer": $mfg, "ports": $ports, "speed_mbps": $speed}')
-if [ -f /tmp/multilink_status.json ]; then MULTILINK_JSON=$(cat /tmp/multilink_status.json); else MULTILINK_JSON=x27{"active_count":1,"mode":"AUTO MERGE","limit_mbps":0,"combined_speed_mbps":0,"links":[]}x27; fi
+if [ -f /tmp/multilink_status.json ]; then MULTILINK_JSON=$(cat /tmp/multilink_status.json); else MULTILINK_JSON='{"active_count":1,"mode":"AUTO MERGE","limit_mbps":0,"combined_speed_mbps":0,"links":[]}'; fi
+
+# -------------------------------------------------------------
+# Repeater (WWAN) Uplink Status Detection
+# -------------------------------------------------------------
+WWAN_STATUS=$(ubus call network.interface.wwan status 2>/dev/null)
+WWAN_UP=$(echo "$WWAN_STATUS" | jq -r '.up // false' 2>/dev/null)
+if [ "$WWAN_UP" = "true" ]; then
+    WWAN_DEV=$(echo "$WWAN_STATUS" | jq -r '.l3_device // .device // "phy1-sta0"' 2>/dev/null)
+    WWAN_IP=$(echo "$WWAN_STATUS" | jq -r '.["ipv4-address"][0].address // empty' 2>/dev/null)
+    WWAN_GW=$(echo "$WWAN_STATUS" | jq -r '.route[0].nexthop // empty' 2>/dev/null)
+    WWAN_SSID=$(uci get wireless.wwan.ssid 2>/dev/null)
+    [ -z "$WWAN_SSID" ] && WWAN_SSID=$(iwinfo "$WWAN_DEV" info 2>/dev/null | awk -F'"' '/ESSID/ {print $2}')
+    WWAN_BSSID=$(uci get wireless.wwan.bssid 2>/dev/null)
+    [ -z "$WWAN_BSSID" ] && WWAN_BSSID=$(iwinfo "$WWAN_DEV" info 2>/dev/null | awk '/Access Point:/ {print $3}')
+    WWAN_BITRATE=$(iwinfo "$WWAN_DEV" info 2>/dev/null | awk '/Bit Rate:/ {print $3, $4}')
+    WWAN_SIGNAL=$(iwinfo "$WWAN_DEV" info 2>/dev/null | awk '/Signal:/ {print $2, $3}')
+    WWAN_BAND="5 GHz"
+    iwinfo "$WWAN_DEV" info 2>/dev/null | grep -qi "2\.4" && WWAN_BAND="2.4 GHz"
+    REPEATER_JSON=$(jq -n \
+        --argjson up true \
+        --arg dev "${WWAN_DEV:-phy1-sta0}" \
+        --arg ssid "${WWAN_SSID:-Wi-Fi Uplink}" \
+        --arg bssid "${WWAN_BSSID:-}" \
+        --arg ip "${WWAN_IP:-}" \
+        --arg gw "${WWAN_GW:-}" \
+        --arg bitrate "${WWAN_BITRATE:-1729 Mbps}" \
+        --arg signal "${WWAN_SIGNAL:--55 dBm}" \
+        --arg band "$WWAN_BAND" \
+        '{connected: $up, device: $dev, ssid: $ssid, bssid: $bssid, ip: $ip, gateway: $gw, bitrate: $bitrate, signal: $signal, band: $band}')
+else
+    REPEATER_JSON='{"connected":false,"ssid":"","ip":""}'
+fi
+
 cat << JSON
 {
+  "repeater": ${REPEATER_JSON},
   "usb_hub": ${USB_HUB_JSON},
+  "usb_storage": {
+    "mounted": ${USB_STORAGE_MOUNTED},
+    "device": "${USB_STORAGE_DEV}",
+    "name": "${USB_STORAGE_NAME}",
+    "mount_point": "${USB_STORAGE_MOUNT}",
+    "total": "${USB_STORAGE_TOTAL}",
+    "used": "${USB_STORAGE_USED}",
+    "free": "${USB_STORAGE_FREE}",
+    "use_pct": ${USB_STORAGE_PCT:-0}
+  },
   "multilink": ${MULTILINK_JSON},
   "traffic": {
     "wan_rx_bytes": ${WAN_RX_B:-0},

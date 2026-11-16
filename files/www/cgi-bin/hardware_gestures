@@ -1,0 +1,199 @@
+#!/bin/sh
+printf "Content-Type: application/json\r\n\r\n"
+
+CONF_FILE="/etc/maxnet_hardware.json"
+DHCP_HIST_FILE="/etc/device_history_30d.json"
+
+init_config() {
+    if [ ! -f "$CONF_FILE" ]; then
+        cat << 'EOF' > "$CONF_FILE"
+{
+  "led_auto": true,
+  "led_profile": "auto",
+  "led_policy": {
+    "boot": "red_solid",
+    "waiting_internet": "blue_blink",
+    "online": "green_solid",
+    "error": "red_blink"
+  },
+  "led_manual": {
+    "red": "none",
+    "green": "default-on",
+    "blue": "none"
+  },
+  "reset_gestures": {
+    "press_10s": "factory_reset",
+    "single_click": "disabled",
+    "double_click": "disabled",
+    "triple_click": "disabled"
+  },
+  "dhcp_history": {
+    "retention_days": 30
+  }
+}
+EOF
+    fi
+}
+
+init_config
+
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
+
+ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
+[ -z "$ACTION" ] && ACTION="get"
+
+# Apply LED state helper
+apply_leds() {
+    PROFILE=$(jq -r '.led_profile // "auto"' "$CONF_FILE" 2>/dev/null)
+    case "$PROFILE" in
+        stealth)
+            echo none > /sys/class/leds/red:status/trigger 2>/dev/null
+            echo none > /sys/class/leds/green:status/trigger 2>/dev/null
+            echo none > /sys/class/leds/blue:status/trigger 2>/dev/null
+            echo 0 > /sys/class/leds/red:status/brightness 2>/dev/null
+            echo 0 > /sys/class/leds/green:status/brightness 2>/dev/null
+            echo 0 > /sys/class/leds/blue:status/brightness 2>/dev/null
+            ;;
+        traffic)
+            echo none > /sys/class/leds/red:status/trigger 2>/dev/null
+            echo none > /sys/class/leds/blue:status/trigger 2>/dev/null
+            echo 0 > /sys/class/leds/red:status/brightness 2>/dev/null
+            echo 0 > /sys/class/leds/blue:status/brightness 2>/dev/null
+            echo netdev > /sys/class/leds/green:status/trigger 2>/dev/null
+            echo wan > /sys/class/leds/green:status/device_name 2>/dev/null || echo eth0 > /sys/class/leds/green:status/device_name 2>/dev/null
+            echo 1 > /sys/class/leds/green:status/rx 2>/dev/null
+            echo 1 > /sys/class/leds/green:status/tx 2>/dev/null
+            ;;
+        heartbeat)
+            echo none > /sys/class/leds/red:status/trigger 2>/dev/null
+            echo none > /sys/class/leds/blue:status/trigger 2>/dev/null
+            echo 0 > /sys/class/leds/red:status/brightness 2>/dev/null
+            echo 0 > /sys/class/leds/blue:status/brightness 2>/dev/null
+            echo heartbeat > /sys/class/leds/green:status/trigger 2>/dev/null
+            ;;
+        thermal)
+            TEMP=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 45000)
+            if [ "$TEMP" -gt 75000 ]; then
+                echo timer > /sys/class/leds/red:status/trigger 2>/dev/null
+                echo 250 > /sys/class/leds/red:status/delay_on 2>/dev/null
+                echo 250 > /sys/class/leds/red:status/delay_off 2>/dev/null
+                echo 0 > /sys/class/leds/green:status/brightness 2>/dev/null
+            else
+                echo none > /sys/class/leds/red:status/trigger 2>/dev/null
+                echo 0 > /sys/class/leds/red:status/brightness 2>/dev/null
+                echo default-on > /sys/class/leds/green:status/trigger 2>/dev/null
+            fi
+            echo none > /sys/class/leds/blue:status/trigger 2>/dev/null
+            echo 0 > /sys/class/leds/blue:status/brightness 2>/dev/null
+            ;;
+        *)
+            LED_AUTO=$(jq -r '.led_auto // true' "$CONF_FILE" 2>/dev/null)
+            if [ "$LED_AUTO" = "true" ]; then
+                /usr/bin/maxnet-led-monitor --tick 2>/dev/null &
+            else
+                R_TRIG=$(jq -r '.led_manual.red // "none"' "$CONF_FILE" 2>/dev/null)
+                G_TRIG=$(jq -r '.led_manual.green // "none"' "$CONF_FILE" 2>/dev/null)
+                B_TRIG=$(jq -r '.led_manual.blue // "none"' "$CONF_FILE" 2>/dev/null)
+
+                [ -d /sys/class/leds/red:status ] && echo "$R_TRIG" > /sys/class/leds/red:status/trigger 2>/dev/null
+                [ -d /sys/class/leds/green:status ] && echo "$G_TRIG" > /sys/class/leds/green:status/trigger 2>/dev/null
+                [ -d /sys/class/leds/blue:status ] && echo "$B_TRIG" > /sys/class/leds/blue:status/trigger 2>/dev/null
+            fi
+            ;;
+    esac
+}
+
+if [ "$ACTION" = "get" ]; then
+    RED_TRIG=$(cat /sys/class/leds/red:status/trigger 2>/dev/null | grep -o '\[.*\]' | tr -d '[]')
+    GRN_TRIG=$(cat /sys/class/leds/green:status/trigger 2>/dev/null | grep -o '\[.*\]' | tr -d '[]')
+    BLU_TRIG=$(cat /sys/class/leds/blue:status/trigger 2>/dev/null | grep -o '\[.*\]' | tr -d '[]')
+    
+    DHCP_DEV_COUNT=$(jq '.devices | length' "$DHCP_HIST_FILE" 2>/dev/null || echo 0)
+    
+    jq \
+      --arg rt "${RED_TRIG:-none}" \
+      --arg gt "${GRN_TRIG:-none}" \
+      --arg bt "${BLU_TRIG:-none}" \
+      --argjson dc "${DHCP_DEV_COUNT:-0}" \
+      '. + {status: "ok", active_triggers: {red: $rt, green: $gt, blue: $bt}, dhcp_tracked_count: $dc}' \
+      "$CONF_FILE"
+    exit 0
+fi
+
+if [ "$ACTION" = "set_led" ]; then
+    AUTO=$(echo "$POST_DATA" | jq -r '.led_auto // empty' 2>/dev/null)
+    [ -z "$AUTO" ] && AUTO=$(echo "$QUERY_STRING" | sed -n 's/^.*led_auto=\([^&]*\).*$/\1/p')
+    
+    if [ -n "$AUTO" ]; then
+        if [ "$AUTO" = "true" ] || [ "$AUTO" = "1" ]; then
+            jq '.led_auto = true | .led_profile = "auto"' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+        else
+            jq '.led_auto = false' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+        fi
+    fi
+    
+    PROFILE=$(echo "$POST_DATA" | jq -r '.led_profile // empty' 2>/dev/null)
+    [ -n "$PROFILE" ] && jq --arg p "$PROFILE" '.led_profile = $p' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+
+    RED_M=$(echo "$POST_DATA" | jq -r '.led_manual.red // empty' 2>/dev/null)
+    GRN_M=$(echo "$POST_DATA" | jq -r '.led_manual.green // empty' 2>/dev/null)
+    BLU_M=$(echo "$POST_DATA" | jq -r '.led_manual.blue // empty' 2>/dev/null)
+    
+    [ -n "$RED_M" ] && jq --arg v "$RED_M" '.led_manual.red = $v' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+    [ -n "$GRN_M" ] && jq --arg v "$GRN_M" '.led_manual.green = $v' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+    [ -n "$BLU_M" ] && jq --arg v "$BLU_M" '.led_manual.blue = $v' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+    
+    apply_leds
+    echo '{"status":"ok","message":"LED configuration updated and applied."}'
+    exit 0
+fi
+
+if [ "$ACTION" = "set_gestures" ]; then
+    P10=$(echo "$POST_DATA" | jq -r '.reset_gestures.press_10s // empty' 2>/dev/null)
+    S1=$(echo "$POST_DATA" | jq -r '.reset_gestures.single_click // empty' 2>/dev/null)
+    D2=$(echo "$POST_DATA" | jq -r '.reset_gestures.double_click // empty' 2>/dev/null)
+    T3=$(echo "$POST_DATA" | jq -r '.reset_gestures.triple_click // empty' 2>/dev/null)
+    
+    [ -n "$P10" ] && jq --arg v "$P10" '.reset_gestures.press_10s = $v' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+    [ -n "$S1" ] && jq --arg v "$S1" '.reset_gestures.single_click = $v' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+    [ -n "$D2" ] && jq --arg v "$D2" '.reset_gestures.double_click = $v' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+    [ -n "$T3" ] && jq --arg v "$T3" '.reset_gestures.triple_click = $v' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+    
+    echo '{"status":"ok","message":"Reset button gestures updated."}'
+    exit 0
+fi
+
+if [ "$ACTION" = "set_dhcp_retention" ]; then
+    DAYS=$(echo "$POST_DATA" | jq -r '.retention_days // empty' 2>/dev/null)
+    [ -z "$DAYS" ] && DAYS=$(echo "$QUERY_STRING" | sed -n 's/^.*retention_days=\([^&]*\).*$/\1/p')
+    
+    if [ -n "$DAYS" ]; then
+        jq --argjson d "$DAYS" '.dhcp_history.retention_days = $d' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+        echo '{"status":"ok","message":"DHCP retention policy updated."}'
+    else
+        echo '{"status":"error","message":"Retention days required."}'
+    fi
+    exit 0
+fi
+
+if [ "$ACTION" = "get_dhcp_history" ]; then
+    SRC="$DHCP_HIST_FILE"
+    [ -f "/tmp/device_history_30d.json" ] && SRC="/tmp/device_history_30d.json"
+    if [ -f "$SRC" ]; then
+        cat "$SRC"
+    else
+        echo '{"status":"ok","retention_days":30,"devices":{}}'
+    fi
+    exit 0
+fi
+
+if [ "$ACTION" = "clear_dhcp_history" ]; then
+    echo '{"retention_days":30,"updated_at":'"$(date +%s)"',"devices":{}}' > "$DHCP_HIST_FILE"
+    echo '{"retention_days":30,"updated_at":'"$(date +%s)"',"devices":{}}' > "/tmp/device_history_30d.json"
+    echo '{"status":"ok","message":"DHCP client history reset."}'
+    exit 0
+fi
+
+echo '{"status":"error","message":"Unknown action."}'
+exit 0

@@ -128,7 +128,7 @@ fi
 if [ "$ACTION" = "dufs_get" ]; then
     CONF_FILE="/etc/dufs.json"
     if [ ! -f "$CONF_FILE" ]; then
-        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"root","has_auth":true}'
+        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"","pass":"","has_auth":false}'
     else
         cat "$CONF_FILE"
     fi
@@ -138,7 +138,7 @@ fi
 if [ "$ACTION" = "dufs_set" ]; then
     CONF_FILE="/etc/dufs.json"
     if [ ! -f "$CONF_FILE" ]; then
-        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"root","has_auth":true}' > "$CONF_FILE"
+        echo '{"status":"ok","enabled":false,"port":5000,"path":"/mnt/storage","allow_upload":true,"allow_delete":true,"user":"","pass":"","has_auth":false}' > "$CONF_FILE"
     fi
 
     # Merge incoming JSON over existing configuration
@@ -147,12 +147,14 @@ if [ "$ACTION" = "dufs_set" ]; then
         echo "$MERGED" > "$CONF_FILE"
     fi
 
-    # Enforce secure authentication
+    # Authentication: do NOT force default password; open/anonymous by default
     U_CHECK=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
     P_CHECK=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
-    [ -z "$U_CHECK" ] && U_CHECK="root"
-    [ -z "$P_CHECK" ] && P_CHECK="admin"
-    jq '. + {"user": $u, "pass": $p, "has_auth": true}' --arg u "$U_CHECK" --arg p "$P_CHECK" "$CONF_FILE" > "$CONF_FILE.tmp" && mv "$CONF_FILE.tmp" "$CONF_FILE"
+    HAS_AUTH=false
+    if [ -n "$U_CHECK" ] && [ -n "$P_CHECK" ]; then
+        HAS_AUTH=true
+    fi
+    jq '. + {"has_auth": $ha}' --argjson ha "$HAS_AUTH" "$CONF_FILE" > "$CONF_FILE.tmp" && mv "$CONF_FILE.tmp" "$CONF_FILE"
 
     ENABLED=$(jq -r '.enabled // false' "$CONF_FILE" 2>/dev/null)
     if [ "$ENABLED" = "true" ]; then

@@ -16,7 +16,15 @@ config zone
 
 config zone
 	option name 'wan'
-	option network 'wan wan6 wan_usb wan_usb1 wan_usb2 wan_usb3 wan_usb4 wan_usb5'
+	list network 'wan'
+	list network 'wan6'
+	list network 'wwan'
+	list network 'wan_usb'
+	list network 'wan_usb1'
+	list network 'wan_usb2'
+	list network 'wan_usb3'
+	list network 'wan_usb4'
+	list network 'wan_usb5'
 	option input 'REJECT'
 	option output 'ACCEPT'
 	option forward 'DROP'

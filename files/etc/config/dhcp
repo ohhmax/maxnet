@@ -42,10 +42,10 @@ config dhcp 'lan'
 	option ra_hoplimit '64'
 	option ra_reachable '30000'
 	list dns '10.0.0.1'
-	list dhcp_option '3,10.0.0.1'
-	list dhcp_option '6,10.0.0.1'
 	option ignore '0'
 	option force '1'
+	list dhcp_option '3,10.0.0.1'
+	list dhcp_option '6,10.0.0.1,1.1.1.1,8.8.8.8'
 
 config dhcp 'wan'
 	option interface 'wan'
@@ -98,6 +98,4 @@ config host
 	option name 'realme-6'
 	option mac '46:df:eb:aa:43:32'
 	option ip '10.0.0.197'
-
-
 

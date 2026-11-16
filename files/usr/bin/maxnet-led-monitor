@@ -1,0 +1,85 @@
+#!/bin/sh
+# MAXNET OS Intelligent Hardware Status LED Daemon
+# Red: Boot/Error | Blue Blink: Awaiting Uplink | Green: Internet Online
+
+CONF_FILE="/etc/maxnet_hardware.json"
+
+set_led() {
+    _color="$1"
+    _mode="$2"
+    _path="/sys/class/leds/${_color}:status"
+    [ ! -d "$_path" ] && return
+
+    case "$_mode" in
+        on|solid)
+            echo default-on > "$_path/trigger" 2>/dev/null
+            echo 1 > "$_path/brightness" 2>/dev/null
+            ;;
+        off|none)
+            echo none > "$_path/trigger" 2>/dev/null
+            echo 0 > "$_path/brightness" 2>/dev/null
+            ;;
+        blink|timer)
+            echo timer > "$_path/trigger" 2>/dev/null
+            echo 500 > "$_path/delay_on" 2>/dev/null
+            echo 500 > "$_path/delay_off" 2>/dev/null
+            ;;
+        heartbeat)
+            echo heartbeat > "$_path/trigger" 2>/dev/null
+            ;;
+    esac
+}
+
+check_internet() {
+    # 1. Quick check for active default gateway
+    if ! ip route show default 2>/dev/null | grep -q default; then
+        return 1
+    fi
+
+    # 2. Ping Cloudflare DNS or Google DNS (1 packet, 1s timeout)
+    if ping -c 1 -W 1 -q 1.1.1.1 >/dev/null 2>&1 || ping -c 1 -W 1 -q 8.8.8.8 >/dev/null 2>&1; then
+        return 0
+    fi
+
+    return 1
+}
+
+step_policy() {
+    LED_AUTO=true
+    [ -f "$CONF_FILE" ] && LED_AUTO=$(jq -r '.led_auto // true' "$CONF_FILE" 2>/dev/null)
+
+    if [ "$LED_AUTO" != "true" ]; then
+        return
+    fi
+
+    if check_internet; then
+        # Internet Online: Solid Green, turn off Red & Blue
+        set_led red off
+        set_led blue off
+        set_led green on
+    else
+        # Waiting for Internet / Uplink down: Blinking Blue, turn off Green & Red
+        set_led red off
+        set_led green off
+        set_led blue blink
+    fi
+}
+
+if [ "$1" = "--tick" ]; then
+    step_policy
+    exit 0
+fi
+
+if [ "$1" = "--boot" ]; then
+    # Booting state: Solid Red
+    set_led green off
+    set_led blue off
+    set_led red on
+    exit 0
+fi
+
+# Daemon loop
+while true; do
+    step_policy
+    sleep 6
+done

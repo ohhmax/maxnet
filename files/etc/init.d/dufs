@@ -25,6 +25,14 @@ start_service() {
     USER=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
     PASS=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
 
+    # Resolve real mounted external USB storage if active
+    EXT_MOUNT=$(grep -E '/mnt/(storage/[^ ]+|pendrive|sd[a-z][0-9]*)' /proc/mounts | awk '{print $2}' | head -n 1)
+    if [ -n "$EXT_MOUNT" ] && [ -d "$EXT_MOUNT" ]; then
+        PATH_DIR="$EXT_MOUNT"
+    fi
+
+    [ -z "$USER" ] && [ -n "$PASS" ] && USER="root"
+
     # No default password required - open/anonymous access unless user/pass configured
     if [ -n "$USER" ] && [ -n "$PASS" ]; then
         if [ "$ALLOW_UPLOAD" = "true" ] && [ "$ALLOW_DELETE" = "true" ]; then
@@ -48,12 +56,32 @@ start_service() {
         AUTH=""
     fi
 
-    ASSETS_FLAG=""
-    [ -d "/www/dufs-assets" ] && ASSETS_FLAG="--assets /www/dufs-assets"
-
     mkdir -p "$PATH_DIR"
+    if [ -z "$(ls -A "$PATH_DIR" 2>/dev/null)" ]; then
+        cat << 'INFO' > "$PATH_DIR/README_USB_STORAGE.txt"
+MAXNET ENTERPRISE ROUTER - USB STORAGE & WEBDAV
+================================================
+Status: No external USB flash drive or hard drive currently mounted.
+
+To use high-speed network storage:
+1. Plug any USB 3.0 Pendrive, Hard Disk, or SSD into the router USB port.
+2. The router will automatically mount it and display your files here and over SMB (\\10.0.0.1\Pendrive).
+INFO
+    fi
     procd_open_instance
-    procd_set_param command /usr/bin/dufs "$PATH_DIR" -p "$PORT" $FLAGS $AUTH $ASSETS_FLAG
+    procd_set_param command /usr/bin/dufs "$PATH_DIR"
+    procd_append_param command -p "$PORT"
+    for f in $FLAGS; do
+        procd_append_param command "$f"
+    done
+    if [ -n "$AUTH" ]; then
+        for a in $AUTH; do
+            procd_append_param command "$a"
+        done
+    fi
+    if [ -d "/www/dufs-assets" ]; then
+        procd_append_param command --assets /www/dufs-assets
+    fi
     procd_set_param respawn 3600 5 0
     procd_set_param stdout 1
     procd_set_param stderr 1

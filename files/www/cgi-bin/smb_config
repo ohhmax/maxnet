@@ -2,8 +2,12 @@
 printf "Content-Type: application/json\r\n\r\n"
 
 SMB_USER=$(uci -q get samba4.pendrive.users || echo "max")
-SMB_IP="10.0.0.203"
-SMB_HOST="usb3-Disk-2-0.lan"
+LAN_IP=$(uci -q get network.lan.ipaddr || echo "10.0.0.1")
+[ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+SMB_IP="$LAN_IP"
+SYS_HOST=$(uci -q get system.@system[0].hostname || echo "Maxnet-Gateway")
+[ -z "$SYS_HOST" ] && SYS_HOST="Maxnet-Gateway"
+SMB_HOST="$SYS_HOST"
 
 # Check if pendrive is mounted
 MOUNTED=false

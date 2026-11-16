@@ -38,6 +38,7 @@ import {
   closeTopoEvidenceModal,
   resetTopologyLayersConfig,
   autoMapNetworkTopology,
+  toggleTopologyAutoMode,
   syncRealClientsToTopology,
   toggleAnimFlow,
   switchAdbSubView,
@@ -128,7 +129,30 @@ import {
   connectToWifiNetwork,
   disconnectWifiWan,
   toggleWifiMasterPower,
-  togglePasswordVisibility
+  togglePasswordVisibility,
+  fetchRepeaterStatus,
+  scanRepeaterWifi,
+  openRepeaterConnectModal,
+  closeRepeaterConnectModal,
+  setRepeaterProto,
+  toggleRepeaterAdvanced,
+  submitRepeaterConnect,
+  disconnectRepeaterWifi,
+  fetchHwGesturesConfig,
+  toggleHwLedAuto,
+  openDhcpHistoryModal,
+  closeDhcpHistoryModal,
+  clearDhcpHistoryLedger,
+  clearAllNotifications,
+  deleteNotification,
+  loadNotificationsPage,
+  confirmOpenPortUrl,
+  sendTerminalKey,
+  initWebUiSettingsPage,
+  toggleNotificationTrigger,
+  loadNotificationTriggers,
+  openNotificationSettingsModal,
+  closeNotificationSettingsModal
 } from './maxnet-engine.js';
 
 // Helper aliases and inline handler adapters
@@ -195,6 +219,7 @@ if (typeof window !== 'undefined') {
   window.closeTopoEvidenceModal = closeTopoEvidenceModal;
   window.resetTopologyLayersConfig = resetTopologyLayersConfig;
   window.autoMapNetworkTopology = autoMapNetworkTopology;
+  window.toggleTopologyAutoMode = toggleTopologyAutoMode;
   window.toggleAnimFlow = toggleAnimFlow;
   window.switchAdbSubView = switchAdbSubView;
   window.fetchAdbSmsPage = fetchAdbSmsPage;
@@ -287,9 +312,51 @@ if (typeof window !== 'undefined') {
   window.disconnectWifiWan = disconnectWifiWan;
   window.toggleWifiMasterPower = toggleWifiMasterPower;
   window.togglePasswordVisibility = togglePasswordVisibility;
+  window.fetchRepeaterStatus = fetchRepeaterStatus;
+  window.scanRepeaterWifi = scanRepeaterWifi;
+  window.openRepeaterConnectModal = openRepeaterConnectModal;
+  window.closeRepeaterConnectModal = closeRepeaterConnectModal;
+  window.setRepeaterProto = setRepeaterProto;
+  window.toggleRepeaterAdvanced = toggleRepeaterAdvanced;
+  window.submitRepeaterConnect = submitRepeaterConnect;
+  window.disconnectRepeaterWifi = disconnectWifiWan;
+  window.fetchHwGesturesConfig = fetchHwGesturesConfig;
+  window.toggleHwLedAuto = toggleHwLedAuto;
+  window.openDhcpHistoryModal = openDhcpHistoryModal;
+  window.closeDhcpHistoryModal = closeDhcpHistoryModal;
+  window.clearDhcpHistoryLedger = clearDhcpHistoryLedger;
+  window.clearAllNotifications = clearAllNotifications;
+  window.deleteNotification = deleteNotification;
+  window.loadNotificationsPage = loadNotificationsPage;
+  window.confirmOpenPortUrl = confirmOpenPortUrl;
+  window.sendTerminalKey = sendTerminalKey;
+  window.initWebUiSettingsPage = initWebUiSettingsPage;
+  window.toggleNotificationTrigger = toggleNotificationTrigger;
+  window.loadNotificationTriggers = loadNotificationTriggers;
+  window.openNotificationSettingsModal = openNotificationSettingsModal;
+  window.closeNotificationSettingsModal = closeNotificationSettingsModal;
 
   // Mass object assign
   Object.assign(window, {
+    confirmOpenPortUrl,
+    sendTerminalKey,
+    initWebUiSettingsPage,
+    toggleNotificationTrigger,
+    loadNotificationTriggers,
+    fetchRepeaterStatus,
+    scanRepeaterWifi,
+    openRepeaterConnectModal,
+    closeRepeaterConnectModal,
+    submitRepeaterConnect,
+    disconnectRepeaterWifi,
+    fetchHwGesturesConfig,
+    toggleHwLedAuto,
+    openDhcpHistoryModal,
+    closeDhcpHistoryModal,
+    clearDhcpHistoryLedger,
+    clearAllNotifications,
+    deleteNotification,
+    loadNotificationsPage,
     fetchWifiConfig,
     renderWifiClients,
     saveWifiSettings,
@@ -333,6 +400,7 @@ if (typeof window !== 'undefined') {
     closeTopoEvidenceModal,
     resetTopologyLayersConfig,
     autoMapNetworkTopology,
+    toggleTopologyAutoMode,
     toggleAnimFlow,
     switchAdbSubView,
     fetchAdbSmsPage,
@@ -453,6 +521,7 @@ export {
   closeTopoEvidenceModal,
   resetTopologyLayersConfig,
   autoMapNetworkTopology,
+  toggleTopologyAutoMode,
   syncRealClientsToTopology,
   toggleAnimFlow,
   switchAdbSubView,
@@ -548,5 +617,28 @@ export {
   connectToWifiNetwork,
   disconnectWifiWan,
   toggleWifiMasterPower,
-  togglePasswordVisibility
+  togglePasswordVisibility,
+  fetchRepeaterStatus,
+  scanRepeaterWifi,
+  openRepeaterConnectModal,
+  closeRepeaterConnectModal,
+  setRepeaterProto,
+  toggleRepeaterAdvanced,
+  submitRepeaterConnect,
+  disconnectRepeaterWifi,
+  fetchHwGesturesConfig,
+  toggleHwLedAuto,
+  openDhcpHistoryModal,
+  closeDhcpHistoryModal,
+  clearDhcpHistoryLedger,
+  clearAllNotifications,
+  deleteNotification,
+  loadNotificationsPage,
+  confirmOpenPortUrl,
+  sendTerminalKey,
+  initWebUiSettingsPage,
+  toggleNotificationTrigger,
+  loadNotificationTriggers,
+  openNotificationSettingsModal,
+  closeNotificationSettingsModal
 };

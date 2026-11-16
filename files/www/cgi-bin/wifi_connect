@@ -1,21 +1,38 @@
 #!/bin/sh
 printf "Content-Type: application/json\r\n\r\n"
 
-# Read POST payload
-read -r POST_DATA
+# Read POST payload safely from standard input
+POST_DATA=""
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
+[ -z "$POST_DATA" ] && read -r POST_DATA 2>/dev/null
 
 ACTION=$(echo "$POST_DATA" | jq -r '.action // "connect"' 2>/dev/null)
 SSID=$(echo "$POST_DATA" | jq -r '.ssid // ""' 2>/dev/null)
 KEY=$(echo "$POST_DATA" | jq -r '.key // ""' 2>/dev/null)
 ENC=$(echo "$POST_DATA" | jq -r '.encryption // "psk2"' 2>/dev/null)
-DEVICE=$(echo "$POST_DATA" | jq -r '.device // "radio0"' 2>/dev/null)
+DEVICE=$(echo "$POST_DATA" | jq -r '.device // "auto"' 2>/dev/null)
+BAND=$(echo "$POST_DATA" | jq -r '.band // ""' 2>/dev/null)
+CHANNEL=$(echo "$POST_DATA" | jq -r '.channel // ""' 2>/dev/null)
+PROTO=$(echo "$POST_DATA" | jq -r '.proto // "dhcp"' 2>/dev/null)
+IPADDR=$(echo "$POST_DATA" | jq -r '.ipaddr // ""' 2>/dev/null)
+NETMASK=$(echo "$POST_DATA" | jq -r '.netmask // "255.255.255.0"' 2>/dev/null)
+GATEWAY=$(echo "$POST_DATA" | jq -r '.gateway // ""' 2>/dev/null)
+DNS=$(echo "$POST_DATA" | jq -r '.dns // ""' 2>/dev/null)
+MACADDR=$(echo "$POST_DATA" | jq -r '.macaddr // ""' 2>/dev/null)
+MTU=$(echo "$POST_DATA" | jq -r '.mtu // ""' 2>/dev/null)
+METRIC=$(echo "$POST_DATA" | jq -r '.metric // "20"' 2>/dev/null)
+BSSID=$(echo "$POST_DATA" | jq -r '.bssid // ""' 2>/dev/null)
 
 if [ "$ACTION" = "disconnect" ]; then
-    uci delete wireless.wwan 2>/dev/null
-    uci delete network.wwan 2>/dev/null
+    uci -q delete wireless.wwan
+    uci -q delete network.wwan
+    uci -q del_list firewall.@zone[1].network='wwan'
     uci commit wireless
     uci commit network
-    /sbin/wifi reload >/dev/null 2>&1 &
+    uci commit firewall
+    /etc/init.d/network reload >/dev/null 2>&1
+    /sbin/wifi reload >/dev/null 2>&1
+    ( sleep 2; /etc/init.d/firewall reload >/dev/null 2>&1 ) &
     cat << JSON_END
 {
   "status": "ok",
@@ -35,15 +52,56 @@ JSON_END
     exit 0
 fi
 
-# Configure network interface
+# Auto-resolve target radio device based on band or device parameter
+if [ "$DEVICE" = "auto" ] || [ -z "$DEVICE" ]; then
+    HAS_RADIO1=$( [ -d /sys/class/ieee80211/phy1 ] && echo "yes" || echo "no" )
+    if [ "$HAS_RADIO1" = "yes" ] && { [ "$BAND" = "5GHz" ] || [ "$BAND" = "5g" ]; }; then
+        DEVICE="radio1"
+    else
+        DEVICE="radio0"
+    fi
+fi
+
+# Configure network interface (DHCP vs Static)
 uci set network.wwan=interface
-uci set network.wwan.proto="dhcp"
+uci set network.wwan.proto="$PROTO"
+
+if [ "$PROTO" = "static" ]; then
+    if [ -z "$IPADDR" ] || [ -z "$GATEWAY" ]; then
+        cat << JSON_END
+{
+  "status": "error",
+  "message": "IP Address and Gateway are required for Static IP mode"
+}
+JSON_END
+        exit 0
+    fi
+    uci set network.wwan.ipaddr="$IPADDR"
+    uci set network.wwan.netmask="$NETMASK"
+    uci set network.wwan.gateway="$GATEWAY"
+    [ -n "$DNS" ] && uci set network.wwan.dns="$DNS"
+else
+    uci delete network.wwan.ipaddr 2>/dev/null
+    uci delete network.wwan.netmask 2>/dev/null
+    uci delete network.wwan.gateway 2>/dev/null
+    uci delete network.wwan.dns 2>/dev/null
+fi
+
+[ -n "$MACADDR" ] && uci set network.wwan.macaddr="$MACADDR" || uci delete network.wwan.macaddr 2>/dev/null
+[ -n "$MTU" ] && uci set network.wwan.mtu="$MTU" || uci delete network.wwan.mtu 2>/dev/null
+uci set network.wwan.metric="${METRIC:-20}"
 uci commit network
 
 # Ensure wwan is part of wan firewall zone
 if uci get firewall.@zone[1] >/dev/null 2>&1; then
-    uci add_list firewall.@zone[1].network="wwan" 2>/dev/null || true
+    uci -q del_list firewall.@zone[1].network='wwan'
+    uci -q add_list firewall.@zone[1].network='wwan'
     uci commit firewall
+fi
+
+# Tune radio device channel to match target if specified
+if [ -n "$CHANNEL" ] && [ "$CHANNEL" != "0" ] && [ "$CHANNEL" != "null" ]; then
+    uci set wireless."$DEVICE".channel="$CHANNEL"
 fi
 
 # Configure wireless sta
@@ -52,11 +110,12 @@ uci set wireless.wwan.device="$DEVICE"
 uci set wireless.wwan.network="wwan"
 uci set wireless.wwan.mode="sta"
 uci set wireless.wwan.ssid="$SSID"
+uci -q delete wireless.wwan.bssid
 
 if [ -n "$KEY" ]; then
     case "$ENC" in
         *sae*|*wpa3*)
-            uci set wireless.wwan.encryption="sae"
+            uci set wireless.wwan.encryption="sae-mixed"
             ;;
         *mixed*)
             uci set wireless.wwan.encryption="psk-mixed"
@@ -68,14 +127,30 @@ if [ -n "$KEY" ]; then
     uci set wireless.wwan.key="$KEY"
 else
     uci set wireless.wwan.encryption="none"
+    uci -q delete wireless.wwan.key
 fi
 
 uci commit wireless
-/sbin/wifi reload >/dev/null 2>&1 &
+
+/etc/init.d/network reload >/dev/null 2>&1
+/sbin/wifi reload >/dev/null 2>&1
+
+# Background probe: ensure STA link brings up fw4 rules automatically
+(
+    for i in $(seq 1 15); do
+        sleep 1
+        IFNAME=$(ubus call network.interface.wwan status 2>/dev/null | jq -r '.device // .l3_device // empty' 2>/dev/null)
+        if [ -n "$IFNAME" ] && ip link show "$IFNAME" 2>/dev/null | grep -q "UP"; then
+            /sbin/ifup wwan >/dev/null 2>&1
+            /etc/init.d/firewall reload >/dev/null 2>&1
+            break
+        fi
+    done
+) &
 
 cat << JSON_END
 {
   "status": "ok",
-  "message": "Connecting to ${SSID} as Wi-Fi WAN Uplink"
+  "message": "Connecting to ${SSID} as Wi-Fi WAN Uplink (${PROTO})"
 }
 JSON_END

@@ -8,6 +8,12 @@ FAIL_COUNT=0
 while true; do
     sleep 10
 
+    # If no USB tether interface (usb0) and no ADB device connected, skip recovery!
+    if ! ifconfig usb0 >/dev/null 2>&1 && ! adb devices 2>/dev/null | grep -q "device$"; then
+        FAIL_COUNT=0
+        continue
+    fi
+
     # 1. Check if external internet is alive
     if ping -c 2 -W 3 8.8.8.8 >/dev/null 2>&1; then
         FAIL_COUNT=0

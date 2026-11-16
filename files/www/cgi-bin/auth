@@ -156,10 +156,9 @@ if [ "$ACTION" = "login_encrypted" ]; then
     ROOT_SHADOW=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
     AUTH_OK=0
     if [ -z "$ROOT_SHADOW" ] || [ "$ROOT_SHADOW" = "*" ] || [ "$ROOT_SHADOW" = "!" ]; then
-        AUTH_OK=1
-    elif [ -z "$PASS" ]; then
-        AUTH_OK=1
-    elif /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+        # When root has no password set in /etc/shadow, empty pass is allowed
+        [ -z "$PASS" ] && AUTH_OK=1
+    elif [ -n "$PASS" ] && /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
         AUTH_OK=1
     fi
 
@@ -217,10 +216,9 @@ if [ "$ACTION" = "login" ]; then
     ROOT_SHADOW=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
     AUTH_OK=0
     if [ -z "$ROOT_SHADOW" ] || [ "$ROOT_SHADOW" = "*" ] || [ "$ROOT_SHADOW" = "!" ]; then
-        AUTH_OK=1
-    elif [ -z "$PASS" ]; then
-        AUTH_OK=1
-    elif /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+        # When root has no password set in /etc/shadow, empty pass is allowed
+        [ -z "$PASS" ] && AUTH_OK=1
+    elif [ -n "$PASS" ] && /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
         AUTH_OK=1
     fi
 
@@ -372,16 +370,42 @@ if [ "$ACTION" = "logout" ]; then
     exit 0
 fi
 
+# ==================== ACTION: CHECK_ROOT_PASS ====================
+if [ "$ACTION" = "check_root_pass" ] || [ "$ACTION" = "has_password" ]; then
+    CURRENT_HASH=$(awk -F: -v u="${USER:-root}" '$1==u {print $2}' /etc/shadow 2>/dev/null)
+    HAS_PASSWORD=false
+    if [ -n "$CURRENT_HASH" ] && [ "$CURRENT_HASH" != "*" ] && [ "$CURRENT_HASH" != "!" ] && [ ${#CURRENT_HASH} -gt 5 ]; then
+        HAS_PASSWORD=true
+    fi
+    send_json_str "{\"status\": \"ok\", \"has_password\": $HAS_PASSWORD}"
+    exit 0
+fi
+
 # ==================== ACTION: CHANGE_PASSWORD ====================
 if [ "$ACTION" = "change_password" ]; then
-    if [ -z "$OLD_PASS" ] || [ -z "$NEW_PASS" ]; then
-        send_json_str '{"status": "error", "message": "Both current and new password are required"}'
+    CURRENT_HASH=$(awk -F: -v u="${USER:-root}" '$1==u {print $2}' /etc/shadow 2>/dev/null)
+    HAS_PASSWORD=false
+    if [ -n "$CURRENT_HASH" ] && [ "$CURRENT_HASH" != "*" ] && [ "$CURRENT_HASH" != "!" ] && [ ${#CURRENT_HASH} -gt 5 ]; then
+        HAS_PASSWORD=true
+    fi
+
+    if [ -z "$NEW_PASS" ]; then
+        send_json_str '{"status": "error", "message": "New password is required"}'
         exit 0
     fi
-    if ! /usr/bin/checkpass "$USER" "$OLD_PASS" >/dev/null 2>&1; then
-        send_json_str '{"status": "error", "message": "Current password is incorrect"}'
-        exit 0
+
+    # Only verify existing password if a password was actually configured
+    if [ "$HAS_PASSWORD" = "true" ]; then
+        if [ -z "$OLD_PASS" ]; then
+            send_json_str '{"status": "error", "message": "Current password is required"}'
+            exit 0
+        fi
+        if ! /usr/bin/checkpass "$USER" "$OLD_PASS" >/dev/null 2>&1; then
+            send_json_str '{"status": "error", "message": "Current password is incorrect"}'
+            exit 0
+        fi
     fi
+
     printf "%s\n%s\n" "$NEW_PASS" "$NEW_PASS" | passwd "$USER" >/dev/null 2>&1
     if [ $? -eq 0 ]; then
         send_json_str '{"status": "ok", "message": "Password updated successfully for SSH and WebUI"}'

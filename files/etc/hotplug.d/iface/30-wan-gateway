@@ -1,0 +1,10 @@
+#!/bin/sh
+# MAXNET WAN Gateway Host Route & Subnet Overlap Resolver
+[ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || exit 0
+
+GATEWAY=$(ubus call network.interface."$INTERFACE" status 2>/dev/null | jq -r '.route[]? | select(.target == "0.0.0.0") | .nexthop' 2>/dev/null | head -n 1)
+L3_DEV=$(ubus call network.interface."$INTERFACE" status 2>/dev/null | jq -r '.l3_device // .device // empty' 2>/dev/null)
+
+if [ -n "$GATEWAY" ] && [ "$GATEWAY" != "null" ] && [ -n "$L3_DEV" ]; then
+    ip route replace "$GATEWAY/32" dev "$L3_DEV" scope link
+fi

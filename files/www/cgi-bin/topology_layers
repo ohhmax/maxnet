@@ -23,19 +23,15 @@ init_default() {
     "ip": "${LAN_IP}",
     "mac": "${LAN_MAC}",
     "uplinkPort": null,
+    "repeater_uplink": { "connected": false, "ssid": "" },
     "numPorts": 4,
     "wan_mode": "standard",
     "wan_speed": "1000",
     "usb_config": {
       "mode": "hub",
-      "num_ports": 4,
+      "num_ports": 0,
       "speed_std": "usb3",
-      "ports": [
-        { "id": "usb-1", "label": "USB 1", "role": "empty", "name": "", "speed": "usb3" },
-        { "id": "usb-2", "label": "USB 2", "role": "empty", "name": "", "speed": "usb3" },
-        { "id": "usb-3", "label": "USB 3", "role": "empty", "name": "", "speed": "usb3" },
-        { "id": "usb-4", "label": "USB 4", "role": "empty", "name": "", "speed": "usb3" }
-      ]
+      "ports": []
     },
     "ports": [
       { "id": "root-lan1", "label": "LAN 1", "role": "empty", "child": null },
@@ -96,18 +92,22 @@ case "$QS" in
             ip: ((.network.lan_ip // "10.0.0.1") | split(" ")[0] | split("/")[0]),
             mac: (.network.lan_mac // "52:5a:4e:e9:61:a0"),
             uplinkPort: null,
+            repeater_uplink: (.repeater // {connected: false, ssid: ""}),
             numPorts: 4,
             wan_mode: "standard",
             wan_speed: "1000",
             usb_config: {
               mode: "hub",
-              num_ports: 4,
+              num_ports: ((.usb_devices // []) | length),
               speed_std: "usb3",
               ports: [
-                { id: "usb-1", label: "USB 1", role: (if (.usb_devices | length) > 0 then "device" else "empty" end), name: (if (.usb_devices | length) > 0 then .usb_devices[0].product else "" end), speed: "usb3" },
-                { id: "usb-2", label: "USB 2", role: "empty", name: "", speed: "usb3" },
-                { id: "usb-3", label: "USB 3", role: "empty", name: "", speed: "usb3" },
-                { id: "usb-4", label: "USB 4", role: "empty", name: "", speed: "usb3" }
+                range(0; ((.usb_devices // []) | length)) as $i | {
+                  id: ("usb-" + ($i + 1 | tostring)),
+                  label: ("USB " + ($i + 1 | tostring)),
+                  role: "device",
+                  name: ((.usb_devices[$i].product) // "USB Device"),
+                  speed: (if ((.usb_devices[$i].speed_mbps // 5000) < 1000) then "usb2" else "usb3" end)
+                }
               ]
             },
             ports: [

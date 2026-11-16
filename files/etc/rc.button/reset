@@ -1,0 +1,131 @@
+#!/bin/sh
+# MAXNET OS Intelligent Button Gestures: Multi-Click & Long-Press Handler
+. /lib/functions.sh
+
+OVERLAY="$( grep ' /overlay ' /proc/mounts )"
+CONF_FILE="/etc/maxnet_hardware.json"
+
+case "$ACTION" in
+pressed)
+	[ -z "$OVERLAY" ] && return 0
+	return 5
+;;
+timeout)
+	. /etc/diag.sh
+	set_state failsafe
+;;
+released)
+	if [ "$SEEN" -ge 10 -a -n "$OVERLAY" ]; then
+		ACT=$(jq -r '.reset_gestures.press_10s // "factory_reset"' "$CONF_FILE" 2>/dev/null)
+		if [ "$ACT" = "factory_reset" ]; then
+			echo "FACTORY RESET (10s Long Press Triggered)" > /dev/console
+			( firstboot -y 2>/dev/null || factoryreset -y 2>/dev/null; sync; reboot ) &
+		elif [ "$ACT" = "reboot" ]; then
+			echo "REBOOT (10s Long Press Triggered)" > /dev/console
+			sync && reboot &
+		fi
+	elif [ "$SEEN" -lt 2 ]; then
+		# Track rapid multi-click taps
+		echo "$(date +%s%N)" >> /tmp/reset_clicks
+		(
+			sleep 1.2
+			[ ! -f /tmp/reset_clicks ] && exit 0
+			COUNT=$(wc -l < /tmp/reset_clicks 2>/dev/null || echo 0)
+			rm -f /tmp/reset_clicks
+			
+			if [ "$COUNT" -ge 3 ]; then
+				ACT=$(jq -r '.reset_gestures.triple_click // "disabled"' "$CONF_FILE" 2>/dev/null)
+				case "$ACT" in
+					wifi_toggle)
+						echo "GESTURE: Triple-Click Wi-Fi Toggle" > /dev/console
+						DIS=$(uci -q get wireless.default_radio0.disabled)
+						if [ "$DIS" = "1" ]; then
+							uci set wireless.default_radio0.disabled='0'
+							uci set wireless.default_radio1.disabled='0'
+						else
+							uci set wireless.default_radio0.disabled='1'
+							uci set wireless.default_radio1.disabled='1'
+						fi
+						uci commit wireless
+						wifi reload &
+						;;
+					led_stealth)
+						echo "GESTURE: Triple-Click Stealth Mode Toggle" > /dev/console
+						CUR_AUTO=$(jq -r '.led_auto // true' "$CONF_FILE" 2>/dev/null)
+						if [ "$CUR_AUTO" = "true" ]; then
+							jq '.led_auto = false | .led_profile = "stealth"' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+							echo 0 > /sys/class/leds/red:status/brightness 2>/dev/null
+							echo 0 > /sys/class/leds/green:status/brightness 2>/dev/null
+							echo 0 > /sys/class/leds/blue:status/brightness 2>/dev/null
+						else
+							jq '.led_auto = true | .led_profile = "auto"' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+							/usr/bin/maxnet-led-monitor --tick 2>/dev/null &
+						fi
+						;;
+					reboot)
+						echo "GESTURE: Triple-Click Reboot" > /dev/console
+						sync && reboot &
+						;;
+				esac
+			elif [ "$COUNT" -eq 2 ]; then
+				ACT=$(jq -r '.reset_gestures.double_click // "disabled"' "$CONF_FILE" 2>/dev/null)
+				case "$ACT" in
+					wifi_toggle)
+						echo "GESTURE: Double-Click Wi-Fi Toggle" > /dev/console
+						DIS=$(uci -q get wireless.default_radio0.disabled)
+						if [ "$DIS" = "1" ]; then
+							uci set wireless.default_radio0.disabled='0'
+							uci set wireless.default_radio1.disabled='0'
+						else
+							uci set wireless.default_radio0.disabled='1'
+							uci set wireless.default_radio1.disabled='1'
+						fi
+						uci commit wireless
+						wifi reload &
+						;;
+					led_stealth)
+						echo "GESTURE: Double-Click Stealth Mode Toggle" > /dev/console
+						CUR_AUTO=$(jq -r '.led_auto // true' "$CONF_FILE" 2>/dev/null)
+						if [ "$CUR_AUTO" = "true" ]; then
+							jq '.led_auto = false | .led_profile = "stealth"' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+							echo 0 > /sys/class/leds/red:status/brightness 2>/dev/null
+							echo 0 > /sys/class/leds/green:status/brightness 2>/dev/null
+							echo 0 > /sys/class/leds/blue:status/brightness 2>/dev/null
+						else
+							jq '.led_auto = true | .led_profile = "auto"' "$CONF_FILE" > "${CONF_FILE}.tmp" && mv -f "${CONF_FILE}.tmp" "$CONF_FILE"
+							/usr/bin/maxnet-led-monitor --tick 2>/dev/null &
+						fi
+						;;
+					reboot)
+						echo "GESTURE: Double-Click Reboot" > /dev/console
+						sync && reboot &
+						;;
+				esac
+			elif [ "$COUNT" -eq 1 ]; then
+				ACT=$(jq -r '.reset_gestures.single_click // "disabled"' "$CONF_FILE" 2>/dev/null)
+				case "$ACT" in
+					reboot)
+						echo "GESTURE: Single-Click Reboot" > /dev/console
+						sync && reboot &
+						;;
+					wifi_toggle)
+						echo "GESTURE: Single-Click Wi-Fi Toggle" > /dev/console
+						DIS=$(uci -q get wireless.default_radio0.disabled)
+						if [ "$DIS" = "1" ]; then
+							uci set wireless.default_radio0.disabled='0'
+							uci set wireless.default_radio1.disabled='0'
+						else
+							uci set wireless.default_radio0.disabled='1'
+							uci set wireless.default_radio1.disabled='1'
+						fi
+						uci commit wireless
+						wifi reload &
+						;;
+				esac
+			fi
+		) &
+	fi
+;;
+esac
+
+return 0

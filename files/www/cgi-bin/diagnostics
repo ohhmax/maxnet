@@ -111,12 +111,27 @@ JSON
     PORTS_ARG=$(echo "$PORTS_ARG" | tr -cd '0-9,')
     [ -z "$PORTS_ARG" ] && PORTS_ARG="21,22,23,25,53,80,110,123,143,443,445,993,995,1723,3306,3389,7681,8080,8443"
 
-    NC_BIN="ncat"
-    [ "$IPV6" = "true" ] && NC_BIN="ncat -6"
+    TMP_DIR=$(mktemp -d /tmp/pscan.XXXXXX)
+    PORT_LIST=$(echo "$PORTS_ARG" | tr ',' ' ')
+
+    for p in $PORT_LIST; do
+      [ -z "$p" ] && continue
+      (
+        if echo '' | timeout 1 nc "$TARGET" "$p" >/dev/null 2>&1; then
+          echo "open" > "$TMP_DIR/$p"
+        else
+          echo "closed" > "$TMP_DIR/$p"
+        fi
+      ) &
+    done
+    wait
 
     RESULTS=""
-    for p in $(echo "$PORTS_ARG" | tr ',' ' '); do
+    for p in $PORT_LIST; do
       [ -z "$p" ] && continue
+      st="closed"
+      [ -f "$TMP_DIR/$p" ] && st=$(cat "$TMP_DIR/$p")
+
       svc="Custom"
       case "$p" in
         20) svc="FTP-Data" ;;
@@ -185,13 +200,9 @@ JSON
         51820) svc="WireGuard" ;;
       esac
 
-      if $NC_BIN -z -w 1 "$TARGET" "$p" >/dev/null 2>&1; then
-        st="open"
-      else
-        st="closed"
-      fi
       RESULTS="${RESULTS}{\"port\": $p, \"service\": \"$svc\", \"status\": \"$st\"},"
     done
+    rm -rf "$TMP_DIR"
 
     RESULTS=$(echo "$RESULTS" | sed 's/,$//')
     echo "{\"status\": \"ok\", \"tool\": \"ports\", \"target\": \"$TARGET\", \"ports\": [${RESULTS}]}"

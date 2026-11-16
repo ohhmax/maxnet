@@ -1,6 +1,6 @@
 #!/bin/sh
 echo "========================================="
-echo "  MaxNet OpenWrt Permanent NAND Setup   "
+echo "  MaxNet Permanent NAND Setup   "
 echo "========================================="
 
 if [ ! -f /tmp/initramfs.itb ]; then
@@ -20,7 +20,7 @@ fw_setenv bootargs 'console=ttyMSM0,115200n8 earlycon'
 fw_setenv fdt_high ''
 fw_setenv initrd_high ''
 
-echo "[3/3] Done! OpenWrt is now permanently installed."
+echo "[3/3] Done! MAXNET is now permanently installed."
 echo "      Rebooting router into standalone mode..."
 sync
 reboot
