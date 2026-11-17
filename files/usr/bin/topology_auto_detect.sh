@@ -317,11 +317,17 @@ else
     echo "[]" > "$USB_DEVS_TMP"
 fi
 
+WAN_MODE="standard"
+if [ -d "/sys/class/net/wan/brport" ]; then
+    WAN_MODE="wan_as_lan"
+fi
+
 # Assemble Topology Hierarchy Tree via jq
 FINAL_JSON=$(jq -n \
   --arg lan_ip "$LAN_IP" \
   --arg lan_mac "$LAN_MAC" \
   --arg host_name "$HOST_NAME" \
+  --arg wan_mode "$WAN_MODE" \
   --argjson repeater_uplink "$REPEATER_UPLINK_JSON" \
   --slurpfile devs "$DEV_LIST_TMP" \
   --slurpfile conf "$CONF_FILE" \
@@ -388,7 +394,7 @@ FINAL_JSON=$(jq -n \
       uplinkPort: null,
       repeater_uplink: $repeater_uplink,
       numPorts: 4,
-      wan_mode: "standard",
+      wan_mode: $wan_mode,
       wan_speed: "1000",
       usb_config: {
         mode: (if ($detected_usb | length) > 1 then "hub" else "direct" end),

@@ -8,6 +8,17 @@
 AUDIT_LOG="/var/log/maxnet_health_audit.log"
 WEBHOOK_URL="http://127.0.0.1/cgi-bin/webhooks"
 CONF_FILE="/etc/maxnet_webhooks.json"
+PIDFILE="/var/run/maxnet_health_watchdog.pid"
+
+# Single Instance Protection
+if [ -f "$PIDFILE" ]; then
+    OLD_PID=$(cat "$PIDFILE" 2>/dev/null)
+    if [ -n "$OLD_PID" ] && [ -d "/proc/$OLD_PID" ] && [ "$OLD_PID" != "$$" ]; then
+        exit 0
+    fi
+fi
+echo "$$" > "$PIDFILE"
+trap 'rm -f "$PIDFILE"; exit' INT TERM EXIT
 
 mkdir -p /var/log
 
@@ -74,10 +85,30 @@ while [ "$CYCLE" -lt "$MAX_CYCLES" ]; do
     # 4. System Log Audit (logread)
     LOGREAD_ERRS=$(logread | tail -n 100 | grep -iE 'syntax error|crash|terminated abnormally|bad substitution' | tail -n 5)
 
-    # 5. Core Services Health Check
+    # 5. Core Services Health Check & Auto-Healing
     PROC_UHTTPD=$(pgrep uhttpd >/dev/null && echo "OK" || echo "DOWN")
     PROC_MONITOR=$(pgrep -f maxnet_alert_monitor.sh >/dev/null && echo "OK" || echo "DOWN")
     PROC_DNSMASQ=$(pgrep dnsmasq >/dev/null && echo "OK" || echo "DOWN")
+
+    # Enforce OOM Immunity Shielding on every cycle
+    for p in procd ubusd netifd dnsmasq hostapd uhttpd dropbear; do
+        for pid in $(pidof "$p" 2>/dev/null); do
+            echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+        done
+    done
+    for p in tailscaled smbd dufs; do
+        for pid in $(pidof "$p" 2>/dev/null); do
+            echo 250 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+        done
+    done
+
+    # Self-healing if any daemon was killed
+    if [ "$PROC_UHTTPD" = "DOWN" ]; then
+        /etc/init.d/uhttpd restart >/dev/null 2>&1
+    fi
+    if [ "$PROC_DNSMASQ" = "DOWN" ]; then
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1
+    fi
 
     # 6. Physical Port Carriers
     CARRIER_LAN=""
@@ -121,4 +152,3 @@ EOF
 done
 
 log_msg "=== 2-HOUR AUDIT COMPLETE: 24 CYCLES (100% SUCCESSFUL) ==="
-EOF

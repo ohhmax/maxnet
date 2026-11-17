@@ -138,6 +138,45 @@ if [ "$ACTION" = "set_wan" ]; then
     exit 0
 fi
 
+# ACTION: TOGGLE WAN AS LAN (BRIDGE WAN INTO BR-LAN OR RESTORE WAN UPLINK)
+if [ "$ACTION" = "set_wan_as_lan" ]; then
+    EN=$(echo "$POST_DATA" | jq -r '.enabled // empty' 2>/dev/null)
+    [ -z "$EN" ] && EN=$(echo "$QUERY_STRING" | sed -n 's/^.*enabled=\([^&]*\).*$/\1/p')
+
+    dev_sec=$(uci -q show network | grep "\.name='br-lan'" | cut -d'.' -f2 | cut -d'=' -f1 | head -n1)
+    [ -z "$dev_sec" ] && dev_sec="@device[0]"
+
+    if [ "$EN" = "1" ] || [ "$EN" = "true" ]; then
+        # ON: Bridge wan into br-lan and disable wan routing
+        if ! uci -q get "network.$dev_sec.ports" | grep -qw "wan"; then
+            uci -q add_list "network.$dev_sec.ports=wan"
+        fi
+        uci -q set network.wan.disabled='1'
+        uci -q set network.wan6.disabled='1'
+        uci commit network
+
+        brctl addif br-lan wan 2>/dev/null || true
+        ip link set dev wan up 2>/dev/null || true
+        (/sbin/ifdown wan >/dev/null 2>&1; /sbin/ifup lan >/dev/null 2>&1; ubus call network reload >/dev/null 2>&1) &
+
+        echo '{"status": "ok", "wan_as_lan": true, "message": "WAN port bridged into LAN (br-lan). WAN uplink disabled."}'
+    else
+        # OFF: Standard WAN uplink (Default)
+        uci -q del_list "network.$dev_sec.ports=wan"
+        uci -q delete network.wan.disabled
+        uci -q delete network.wan6.disabled
+        cur_proto=$(uci -q get network.wan.proto)
+        [ -z "$cur_proto" ] && uci -q set network.wan.proto='dhcp'
+        uci commit network
+
+        brctl delif br-lan wan 2>/dev/null || true
+        (/sbin/ifup wan >/dev/null 2>&1; /sbin/ifup lan >/dev/null 2>&1; ubus call network reload >/dev/null 2>&1) &
+
+        echo '{"status": "ok", "wan_as_lan": false, "message": "Standard WAN uplink restored. WAN port unbridged from LAN."}'
+    fi
+    exit 0
+fi
+
 # ACTION: SET NETWORK SETTINGS
 if [ "$ACTION" = "set" ]; then
     LAN_IP=$(echo "$POST_DATA" | jq -r '.lan_ip // empty' 2>/dev/null)
@@ -324,6 +363,16 @@ done | jq -s .)
 [ -z "$LEASES_JSON" ] || [ "$LEASES_JSON" = "null" ] && LEASES_JSON="[]"
 
 # WAN status & settings
+dev_sec=$(uci -q show network | grep "\.name='br-lan'" | cut -d'.' -f2 | cut -d'=' -f1 | head -n1)
+[ -z "$dev_sec" ] && dev_sec="@device[0]"
+br_ports=$(uci -q get "network.$dev_sec.ports")
+wan_dis=$(uci -q get network.wan.disabled || echo "0")
+
+WAN_AS_LAN=false
+if echo "$br_ports" | grep -qw "wan" || [ "$wan_dis" = "1" ]; then
+    WAN_AS_LAN=true
+fi
+
 WAN_PROTO=$(uci -q get network.wan.proto || echo "dhcp")
 WAN_USER=$(uci -q get network.wan.username || echo "")
 WAN_SRV_VAL=$(uci -q get network.wan.service || echo "")
@@ -371,8 +420,10 @@ cat << JSON
   "flow_offloading_hw": $FLOW_OFF_HW,
   "mss_clamping": $MSS_CLAMP,
   "dns_rebind": $DNS_REBIND,
+  "wan_as_lan": $WAN_AS_LAN,
   "static_leases": $LEASES_JSON,
   "wan": {
+    "as_lan": $WAN_AS_LAN,
     "proto": "$WAN_PROTO",
     "ip": "$WAN_IP",
     "up": $WAN_UP,

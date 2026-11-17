@@ -1,0 +1,19 @@
+#!/bin/sh
+# MAXNET WAN Port Auto-Detection & WAN-as-LAN Bridge Manager
+[ "$DEVICENAME" = "wan" -o "$INTERFACE" = "wan" ] || exit 0
+
+if [ "$ACTION" = "add" ] || [ "$ACTION" = "change" ]; then
+    carrier=$(cat /sys/class/net/wan/carrier 2>/dev/null || echo "0")
+    if [ "$carrier" = "1" ]; then
+        # Check if already bridged into br-lan
+        if [ ! -d "/sys/class/net/wan/brport" ]; then
+            wan_disabled=$(uci get network.wan.disabled 2>/dev/null)
+            if [ "$wan_disabled" = "1" ]; then
+                brctl addif br-lan wan 2>/dev/null || true
+                ip link set wan up 2>/dev/null || true
+                logger -t maxnet_wan "WAN port cable connected: auto-bridged into br-lan (WAN-as-LAN mode)"
+            fi
+        fi
+    fi
+fi
+exit 0

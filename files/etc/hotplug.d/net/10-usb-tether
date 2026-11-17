@@ -4,9 +4,24 @@
 
 if [ "$ACTION" = "add" ]; then
     sleep 1
-    ethtool -K usb0 gro off gso off tso off 2>/dev/null || true
-    ifconfig usb0 txqueuelen 5000 2>/dev/null || true
-    ifconfig usb0 mtu 1400 2>/dev/null || true
+    ethtool -K usb0 gro on 2>/dev/null || true
+    # Multi-Core RPS & RFS Steering (Cores 0-3)
+    echo f > /sys/class/net/usb0/queues/rx-0/rps_cpus 2>/dev/null || true
+    echo 4096 > /sys/class/net/usb0/queues/rx-0/rps_flow_cnt 2>/dev/null || true
+    echo f > /sys/class/net/usb0/queues/tx-0/xps_cpus 2>/dev/null || true
+
+    # Hardware IRQ Steering: Steer xHCI USB 3.0 interrupts to CPU 1
+    for irq_dir in /proc/irq/*; do
+        if [ -f "$irq_dir/xhci-hcd:usb1" ] || grep -qi "xhci" "$irq_dir/actions" 2>/dev/null; then
+            echo 2 > "$irq_dir/smp_affinity" 2>/dev/null || true
+        fi
+    done
+
+    # Maximum Throughput MTU (1500) & Ultra-Deep queue sizing (10000)
+    ip link set usb0 mtu 1500 qlen 10000 2>/dev/null || ifconfig usb0 mtu 1500 txqueuelen 10000 2>/dev/null || true
+
+    # Smart Queue Management (CAKE / FQ-CoDel)
+    tc qdisc replace dev usb0 root cake diffserv4 ack-filter 2>/dev/null || true
 
     # Disable USB autosuspend on controller and root hub
     for f in /sys/bus/usb/devices/*/power/control; do echo on > "$f" 2>/dev/null; done

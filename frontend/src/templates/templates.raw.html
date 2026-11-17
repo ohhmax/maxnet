@@ -784,14 +784,14 @@
           </div>
 
           <!-- Interfaces (Physical WAN, LAN Bridge, Custom MAC) -->
-          <div class="settings-nav-card" id="card-interfaces" onclick="openSettingPage('acc-interfaces')" data-search="interfaces wan lan dhcp static custom mac clone mtu link physical ethernet usb0 br-lan">
+          <div class="settings-nav-card" id="card-interfaces" onclick="openSettingPage('acc-interfaces')" data-search="interfaces wan lan dhcp static custom mac clone mtu link physical ethernet usb0 br-lan wan as lan use wan port as lan 5th lan">
             <div class="snc-left">
               <div class="snc-icon-box" style="color:#0ea5e9;">
                 <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
               </div>
               <div class="snc-info">
                 <span class="snc-title">Interfaces</span>
-                <span class="snc-desc">Physical WAN protocol (DHCP / Static), physical Ethernet links, and bridge status</span>
+                <span class="snc-desc">Physical WAN protocol (DHCP / Static), WAN-as-LAN mode, physical Ethernet links, and bridge status</span>
               </div>
             </div>
             <div class="snc-right">
@@ -1340,6 +1340,20 @@
                   </div>
                 </div>
 
+                <!-- USE WAN PORT AS LAN TOGGLE (SYNCED) -->
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Use WAN Port as LAN</span>
+                    <span class="setting-label-sub" id="disp_net_wan_as_lan_sub">Convert physical WAN port into 5th Gigabit LAN switch port</span>
+                  </div>
+                  <div class="toggle-wrap-cell">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="netWanAsLanToggle" onchange="toggleWanAsLan(this.checked)">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
                 <!-- LINK TO DEDICATED USB WAN PANEL -->
                 <div class="setting-section-divider"></div>
                 <div class="setting-section-header">USB WAN Gateway</div>
@@ -1637,6 +1651,27 @@
               </div>
 
               <div class="setting-section-divider"></div>
+              <div class="setting-section-header">Physical WAN Port Assignment</div>
+
+              <!-- USE WAN PORT AS LAN TOGGLE -->
+              <div class="setting-row-item" style="border-left: 3px solid #0ea5e9; padding-left: 14px; background: rgba(14, 165, 233, 0.03); margin-bottom: 8px; border-radius: 6px;">
+                <div class="setting-label-col">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="setting-label-bold">Use WAN Port as LAN</span>
+                    <span class="card-badge" id="badgeWanAsLan" style="font-size:9.5px; padding:2px 7px;">STANDALONE WAN</span>
+                  </div>
+                  <span class="setting-label-sub" id="disp_wan_as_lan_sub">Convert physical WAN port into a 5th Gigabit LAN switch port (bridged into br-lan). Default: Disabled (WAN Uplink).</span>
+                </div>
+                <div class="toggle-wrap-cell">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="wanAsLanToggle" onchange="toggleWanAsLan(this.checked)">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div id="wanProtocolSection">
+              <div class="setting-section-divider"></div>
               <div class="setting-section-header">WAN Uplink Protocol Configuration</div>
 
               <!-- HIDDEN FORM BINDINGS FOR WAN -->
@@ -1720,6 +1755,7 @@
                   <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
+              </div> <!-- #wanProtocolSection -->
             </div>
           </div>
         </div>

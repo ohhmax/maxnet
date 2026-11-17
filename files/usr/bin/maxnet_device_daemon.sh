@@ -59,6 +59,16 @@ sanitize_name() {
     echo "$1" | sed 's/[^a-zA-Z0-9_-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//'
 }
 
+ensure_nftables_dnat() {
+    if ! nft list map inet fw4 usb_virtual_dnat >/dev/null 2>&1; then
+        nft add map inet fw4 usb_virtual_dnat '{ type ipv4_addr : ipv4_addr; }' 2>/dev/null
+        nft add chain inet fw4 dstnat_usb_virtual '{ type nat hook prerouting priority dstnat - 1; policy accept; }' 2>/dev/null
+        nft add rule inet fw4 dstnat_usb_virtual dnat ip to ip daddr map @usb_virtual_dnat 2>/dev/null
+        nft add chain inet fw4 nat_output_usb_virtual '{ type nat hook output priority -100; policy accept; }' 2>/dev/null
+        nft add rule inet fw4 nat_output_usb_virtual dnat ip to ip daddr map @usb_virtual_dnat 2>/dev/null
+    fi
+}
+
 PREV_DNAT_ENTRIES=""
 
 while true; do
@@ -384,6 +394,7 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
 
     # Update nftables dynamic DNAT map only if changed
     if [ "$ACTIVE_DNAT_ENTRIES" != "$PREV_DNAT_ENTRIES" ]; then
+        ensure_nftables_dnat
         nft flush map inet fw4 usb_virtual_dnat 2>/dev/null
         for entry in $ACTIVE_DNAT_ENTRIES; do
             v_ip=$(echo "$entry" | cut -d: -f1)
@@ -404,10 +415,10 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
     echo "$DEVICE_LIST_JSON" > "$USB_JSON_FILE.tmp"
     mv "$USB_JSON_FILE.tmp" "$USB_JSON_FILE"
 
-    # Fetch Telemetry for Primary Active Cellular Phone
+    # Fetch Telemetry for Primary Active Cellular Phone (skip if phone_telemetry_poller.sh already wrote fresh data)
     [ -z "$PRIMARY_CELL_SERIAL" ] && PRIMARY_CELL_SERIAL=$(echo "$ATTACHED_ADB" | head -n 1)
 
-    if [ -n "$PRIMARY_CELL_SERIAL" ]; then
+    if [ -n "$PRIMARY_CELL_SERIAL" ] && [ ! -s "$TELEMETRY_FILE" ]; then
         # Query phone telemetry in single batched ADB shell call
         TEL_RAW=$(adb -s "$PRIMARY_CELL_SERIAL" shell '
 echo "===MODEL==="; getprop ro.product.model

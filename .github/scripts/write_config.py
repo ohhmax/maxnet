@@ -53,10 +53,20 @@ common_packages = [
     # Android Debug Bridge (ADB)
     "CONFIG_PACKAGE_adb=y",
 
+    # Tailscale WireGuard Mesh VPN
+    "CONFIG_PACKAGE_tailscale=y",
+    "CONFIG_PACKAGE_kmod-tun=y",
+
     # Networking, Firewall & Hardware Flow Offloading
     "CONFIG_PACKAGE_firewall4=y",
     "CONFIG_PACKAGE_nftables=y",
     "CONFIG_PACKAGE_kmod-nft-offload=y",
+    "CONFIG_PACKAGE_kmod-tcp-bbr=y",
+    "CONFIG_PACKAGE_kmod-sched-cake=y",
+    "CONFIG_PACKAGE_kmod-sched-core=y",
+    "CONFIG_PACKAGE_sqm-scripts=y",
+    "CONFIG_PACKAGE_tc-tiny=y",
+    "CONFIG_PACKAGE_ip-full=y",
 
     # Lightweight Web Monitor (Port 80 Dashboard) & Terminal
     "CONFIG_PACKAGE_uhttpd=y",

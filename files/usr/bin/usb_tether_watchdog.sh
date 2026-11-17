@@ -68,15 +68,15 @@ while true; do
                     adb shell input keyevent 224 >/dev/null 2>&1
                     adb shell am start -a android.settings.TETHER_SETTINGS >/dev/null 2>&1
                     sleep 2
-                    # Tap USB tethering switch toggle on Samsung One UI 8.0
-                    adb shell input tap 913 1323
+                    # Tap USB tethering switch toggle on Samsung One UI
+                    adb shell input tap 931 873
                     sleep 2
                     CHECK_STATE=$(adb shell getprop sys.usb.state 2>/dev/null)
                     case "$CHECK_STATE" in
                         *rndis*) ;;
                         *)
                             # Fallback: tap entire USB tethering row
-                            adb shell input tap 500 1057
+                            adb shell input tap 540 873
                             sleep 2
                             ;;
                     esac
@@ -85,9 +85,9 @@ while true; do
             esac
         fi
 
-        # If still down after soft recovery, perform USB bus rebind (resets xHCI endpoints & rings)
-        if ! ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
-            logger -t usb_watchdog "Interface still down, performing USB bus rebind..."
+        # If still down after soft recovery, perform USB bus rebind ONLY if usb0 does not exist and ADB is missing
+        if ! ifconfig usb0 >/dev/null 2>&1 && ! adb devices 2>/dev/null | grep -q "device$"; then
+            logger -t usb_watchdog "USB device hung, performing USB bus rebind..."
             for usbdev in /sys/bus/usb/drivers/usb/*-*; do
                 [ -d "$usbdev" ] || continue
                 dname=$(basename "$usbdev")

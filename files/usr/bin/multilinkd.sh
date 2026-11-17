@@ -8,6 +8,17 @@
 STATUS_FILE="/tmp/multilink_status.json"
 PREV_STATS="/tmp/multilink_prev.tmp"
 ACTIVE_SIG_FILE="/tmp/multilink_active_sig.tmp"
+PIDFILE="/var/run/multilinkd.pid"
+
+# Single Instance Protection
+if [ -f "$PIDFILE" ]; then
+    OLD_PID=$(cat "$PIDFILE" 2>/dev/null)
+    if [ -n "$OLD_PID" ] && [ -d "/proc/$OLD_PID" ] && [ "$OLD_PID" != "$$" ]; then
+        exit 0
+    fi
+fi
+echo "$$" > "$PIDFILE"
+trap 'rm -f "$PIDFILE"; exit' INT TERM EXIT
 
 # Configure Linux kernel FIB for Layer 4 Multipath (IP + Port hashing)
 sysctl -w net.ipv4.fib_multipath_hash_policy=1 >/dev/null 2>&1
@@ -99,8 +110,8 @@ while true; do
 
     CANDIDATE_DEVS=""
 
-    # Check Ethernet WAN
-    if [ -d "/sys/class/net/wan" ]; then
+    # Check Ethernet WAN (only if not bridged into LAN)
+    if [ -d "/sys/class/net/wan" ] && [ ! -d "/sys/class/net/wan/brport" ]; then
         wan_carrier=$(cat /sys/class/net/wan/carrier 2>/dev/null || echo "0")
         [ "$wan_carrier" = "1" ] && CANDIDATE_DEVS="wan"
     fi
@@ -269,5 +280,5 @@ while true; do
 JSON
     mv "$STATUS_FILE.tmp" "$STATUS_FILE"
 
-    sleep 2
+    sleep 3
 done

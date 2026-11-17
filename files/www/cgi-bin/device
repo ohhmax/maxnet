@@ -1,4 +1,5 @@
 #!/bin/sh
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
 echo "Access-Control-Allow-Origin: *"
@@ -459,9 +460,20 @@ if [ "$ACTION" = "screenshot" ]; then
     adb -s "$TARGET_SERIAL" pull /sdcard/screen_cap.png /tmp/screen_cap.png >/dev/null 2>&1
     adb -s "$TARGET_SERIAL" shell 'rm -f /sdcard/screen_cap.png' >/dev/null 2>&1
     if [ -f /tmp/screen_cap.png ]; then
-        B64=$(base64 -w 0 /tmp/screen_cap.png 2>/dev/null || base64 /tmp/screen_cap.png | tr -d '\r\n')
+        B64=""
+        if command -v ucode >/dev/null 2>&1; then
+            B64=$(ucode -e 'let fs = require("fs"); let d = fs.readfile("/tmp/screen_cap.png"); if (d) print(b64enc(d));')
+        elif command -v base64 >/dev/null 2>&1; then
+            B64=$(base64 -w 0 /tmp/screen_cap.png 2>/dev/null || base64 /tmp/screen_cap.png | tr -d '\r\n')
+        elif command -v openssl >/dev/null 2>&1; then
+            B64=$(openssl base64 -A -in /tmp/screen_cap.png 2>/dev/null)
+        fi
         rm -f /tmp/screen_cap.png
-        echo "{\"status\": \"ok\", \"serial\": \"$TARGET_SERIAL\", \"image_base64\": \"data:image/png;base64,$B64\"}"
+        if [ -n "$B64" ]; then
+            echo "{\"status\": \"ok\", \"serial\": \"$TARGET_SERIAL\", \"image_base64\": \"data:image/png;base64,$B64\"}"
+        else
+            echo '{"status": "error", "message": "Failed to encode screenshot"}'
+        fi
     else
         echo '{"status": "error", "message": "Failed to capture screenshot"}'
     fi

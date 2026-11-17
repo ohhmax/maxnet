@@ -44,10 +44,10 @@ if ! uci get network.wan_usb >/dev/null 2>&1; then
 	uci set network.wan_usb=interface
 	uci set network.wan_usb.proto="dhcp"
 	uci set network.wan_usb.device="usb0"
-	uci set network.wan_usb.mtu="1400"
+	uci set network.wan_usb.mtu="1420"
 	uci commit network
 else
-	uci set network.wan_usb.mtu="1400"
+	uci set network.wan_usb.mtu="1420"
 	uci commit network
 fi
 

@@ -1,0 +1,14 @@
+# /etc/nftables.d/10-carrier-ttl-mss.nft
+# Jio True5G Carrier TTL Normalization & TCP MSS PMTU Clamping
+
+chain mangle_carrier_ttl {
+	type filter hook postrouting priority mangle - 5; policy accept;
+	oifname "usb*" ip ttl set 65 comment "!fw4: Normalise IPv4 TTL for Phone NAT decrement"
+	oifname "usb*" ip6 hoplimit set 65 comment "!fw4: Normalise IPv6 Hop Limit for Phone NAT decrement"
+}
+
+chain mangle_cellular_mss {
+	type filter hook forward priority mangle - 5; policy accept;
+	oifname "usb*" tcp flags syn / syn,rst tcp option maxseg size set 1380 comment "!fw4: Clamp Egress IPv4 MSS to 1380 for 1420 MTU"
+	iifname "usb*" tcp flags syn / syn,rst tcp option maxseg size set 1380 comment "!fw4: Clamp Ingress IPv4 MSS to 1380 for 1420 MTU"
+}

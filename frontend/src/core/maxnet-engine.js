@@ -13977,10 +13977,86 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (dispMac) dispMac.textContent = mac ? `Custom: ${mac.toLowerCase()} • Hardware override active` : 'Default Hardware MAC in use';
     }
 
+    async function toggleWanAsLan(enabled) {
+      const toggle1 = document.getElementById('wanAsLanToggle');
+      const toggle2 = document.getElementById('netWanAsLanToggle');
+      if (toggle1) toggle1.checked = enabled;
+      if (toggle2) toggle2.checked = enabled;
+
+      updateWanAsLanUI(enabled);
+
+      try {
+        if (typeof showToast === 'function') {
+          showToast(enabled ? 'Bridging WAN port into LAN switch (br-lan)...' : 'Restoring WAN uplink port...', 'info');
+        }
+        const res = await fetch('/cgi-bin/network', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_wan_as_lan', enabled: enabled })
+        });
+        const resp = await res.json();
+        if (resp.status === 'ok') {
+          if (typeof showToast === 'function') {
+            showToast(enabled ? 'WAN port is now 5th LAN port (br-lan)!' : 'Standard WAN uplink restored!', 'success');
+          }
+          if (typeof loadWanInterfaceConfig === 'function') loadWanInterfaceConfig();
+          if (typeof fetchNetworkConfig === 'function') fetchNetworkConfig();
+        } else {
+          if (typeof showToast === 'function') {
+            showToast('Failed to switch WAN mode: ' + (resp.message || 'Error'), 'error');
+          }
+          if (toggle1) toggle1.checked = !enabled;
+          if (toggle2) toggle2.checked = !enabled;
+          updateWanAsLanUI(!enabled);
+        }
+      } catch (err) {
+        if (typeof showToast === 'function') showToast('Network error: ' + err.message, 'error');
+        if (toggle1) toggle1.checked = !enabled;
+        if (toggle2) toggle2.checked = !enabled;
+        updateWanAsLanUI(!enabled);
+      }
+    }
+
+    function updateWanAsLanUI(enabled) {
+      const badge = document.getElementById('badgeWanAsLan');
+      if (badge) {
+        badge.textContent = enabled ? 'BRIDGED TO LAN' : 'STANDALONE WAN';
+        badge.className = 'card-badge ' + (enabled ? 'sky' : 'gray');
+      }
+      const sub = document.getElementById('disp_wan_as_lan_sub');
+      if (sub) {
+        sub.textContent = enabled
+          ? 'WAN port is bridged into br-lan (10.0.0.1/24) as 5th switch port. WAN uplink routing disabled.'
+          : 'Convert physical WAN port into a 5th Gigabit LAN switch port (bridged into br-lan). Default: Disabled (WAN Uplink).';
+      }
+      const netSub = document.getElementById('disp_net_wan_as_lan_sub');
+      if (netSub) {
+        netSub.textContent = enabled
+          ? 'WAN port is currently bridged into LAN (br-lan) as 5th Gigabit LAN port.'
+          : 'Convert physical WAN port into 5th Gigabit LAN switch port';
+      }
+      const protoBox = document.getElementById('wanProtocolSection');
+      if (protoBox) {
+        protoBox.style.opacity = enabled ? '0.4' : '1';
+        protoBox.style.pointerEvents = enabled ? 'none' : 'auto';
+      }
+      const ethWanState = document.getElementById('ifaceEthWanState');
+      if (ethWanState && enabled) {
+        ethWanState.textContent = 'Bridged (LAN 5)';
+      }
+    }
+
     async function loadWanInterfaceConfig(preloadedData) {
       try {
         const data = preloadedData || await (await fetch('/cgi-bin/network')).json();
         const wan = data.wan || {};
+
+        const isWanAsLan = !!(data.wan_as_lan || (data.wan && data.wan.as_lan));
+        const toggle1 = document.getElementById('wanAsLanToggle');
+        const toggle2 = document.getElementById('netWanAsLanToggle');
+        if (toggle1) toggle1.checked = isWanAsLan;
+        if (toggle2) toggle2.checked = isWanAsLan;
+        updateWanAsLanUI(isWanAsLan);
 
         if (document.getElementById('wanProtoSelect')) {
           document.getElementById('wanProtoSelect').value = wan.proto || 'dhcp';
@@ -19139,6 +19215,8 @@ if (typeof window !== 'undefined') {
     saveNetworkSettings,
     onWanProtoChange,
     updateWanInterfaceDisplays,
+    toggleWanAsLan,
+    updateWanAsLanUI,
     loadWanInterfaceConfig,
     saveWanInterfaceConfig,
     cloneCurrentPcMac,
@@ -19591,6 +19669,8 @@ export {
   saveNetworkSettings,
   onWanProtoChange,
   updateWanInterfaceDisplays,
+  toggleWanAsLan,
+  updateWanAsLanUI,
   loadWanInterfaceConfig,
   saveWanInterfaceConfig,
   cloneCurrentPcMac,

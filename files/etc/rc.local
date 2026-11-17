@@ -16,6 +16,29 @@ for q in /sys/class/net/*/queues/rx-*; do
     [ -f "$q/rps_flow_cnt" ] && echo 4096 > "$q/rps_flow_cnt" 2>/dev/null
 done
 
+# Hardware IRQ Steering: Offload USB 3.0 xHCI controller to CPU 1 (Mask 0x2)
+for irq_dir in /proc/irq/*; do
+    if [ -f "$irq_dir/xhci-hcd:usb1" ] || grep -qi "xhci" "$irq_dir/actions" 2>/dev/null; then
+        echo 2 > "$irq_dir/smp_affinity" 2>/dev/null || true
+    fi
+done
+
+# OOM Immune Shield: Protect mission-critical system daemons from kernel OOM killer
+(
+    sleep 5
+    for p in procd ubusd netifd dnsmasq hostapd uhttpd dropbear; do
+        for pid in $(pidof "$p" 2>/dev/null); do
+            echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+        done
+    done
+    # Deprioritize heavy background daemons so core router survives if memory exhausts
+    for p in tailscaled smbd dufs; do
+        for pid in $(pidof "$p" 2>/dev/null); do
+            echo 250 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+        done
+    done
+) &
+
 # Storage drivers and pendrive auto-mount
 insmod /lib/modules/6.18.60/usb-storage.ko 2>/dev/null
 insmod /lib/modules/6.18.60/fuse.ko 2>/dev/null
