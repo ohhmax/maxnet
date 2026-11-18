@@ -9,8 +9,127 @@ echo "Access-Control-Allow-Origin: *"
 echo ""
 
 ACTION="$1"
-[ -z "$ACTION" ] && ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && ACTION=$(printf '%s' "$QUERY_STRING" | tr '&' '\n' | sed -n 's/^action=//p' | head -n 1)
 [ -z "$ACTION" ] && ACTION="get"
+
+json_error() {
+    jq -cn --arg message "$1" '{status:"error",message:$message}'
+}
+
+read_client_body() {
+    [ "${CONTENT_LENGTH:-0}" -gt 0 ] 2>/dev/null && [ "$CONTENT_LENGTH" -le 4096 ] 2>/dev/null || return 1
+    dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null
+}
+
+valid_client_mac() {
+    printf '%s' "$1" | grep -Eq '^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$' || return 1
+    [ "$1" != 00:00:00:00:00:00 ] || return 1
+    first=$(printf '%s' "$1" | cut -d: -f1)
+    first_value=$((0x$first))
+    [ $((first_value % 2)) -eq 0 ]
+}
+
+set_station_ban() {
+    mac=$1
+    ban_time=$2
+    [ -n "$mac" ] || return 1
+    command -v ubus >/dev/null 2>&1 || return 1
+    found=0
+    for object in $(ubus list 'hostapd.*' 2>/dev/null); do
+        if [ "$ban_time" -eq 0 ]; then
+            args="{\"addr\":\"$mac\",\"reason\":5,\"deauth\":false,\"ban_only\":true,\"ban_time\":0}"
+        else
+            args="{\"addr\":\"$mac\",\"reason\":5,\"deauth\":true,\"deauth_now\":true,\"ban_time\":$ban_time}"
+        fi
+        if ubus call "$object" del_client "$args" >/dev/null 2>&1; then
+            found=1
+        fi
+    done
+    [ "$found" -eq 1 ]
+}
+
+if [ "$REQUEST_METHOD" = OPTIONS ]; then
+    exit 0
+fi
+
+BODY=
+if [ "$REQUEST_METHOD" = POST ]; then
+    BODY=$(read_client_body) || {
+        json_error 'Missing or oversized JSON request body'
+        exit 0
+    }
+    printf '%s' "$BODY" | jq -e 'type == "object"' >/dev/null 2>&1 || {
+        json_error 'Invalid JSON request body'
+        exit 0
+    }
+    BODY_ACTION=$(printf '%s' "$BODY" | jq -r '.action // empty' 2>/dev/null)
+    [ -z "$BODY_ACTION" ] || ACTION=$BODY_ACTION
+fi
+
+if [ "$ACTION" = "client_block" ] || [ "$ACTION" = "client_kick" ]; then
+    MAC=$(printf '%s' "$BODY" | jq -r '.mac // empty' | tr '[:upper:]' '[:lower:]')
+    valid_client_mac "$MAC" || {
+        json_error 'Invalid unicast MAC address'
+        exit 0
+    }
+    if [ "$ACTION" = client_kick ]; then
+        KICKED=0
+        if command -v ubus >/dev/null 2>&1; then
+            for object in $(ubus list 'hostapd.*' 2>/dev/null); do
+                if ubus call "$object" del_client "{\"addr\":\"$MAC\",\"reason\":5,\"deauth\":true,\"ban_time\":0}" >/dev/null 2>&1; then
+                    KICKED=1
+                fi
+            done
+        fi
+        if [ "$KICKED" -eq 0 ] && command -v iw >/dev/null 2>&1; then
+            for wdev in $(iw dev 2>/dev/null | awk '/Interface/ {print $2}'); do
+                iw dev "$wdev" station del "$MAC" >/dev/null 2>&1 && KICKED=1
+            done
+        fi
+        [ "$KICKED" -eq 1 ] || {
+            json_error 'Station is not connected or hostapd could not disconnect it'
+            exit 0
+        }
+        jq -cn '{status:"ok",message:"Wi-Fi station disconnected"}'
+        exit 0
+    fi
+
+    BLOCKED=$(printf '%s' "$BODY" | jq -r 'if .blocked == true then "1" elif .blocked == false then "0" else "invalid" end')
+    [ "$BLOCKED" != invalid ] || {
+        json_error 'blocked must be a boolean'
+        exit 0
+    }
+    BLOCK_FILE=/etc/maxnet_wifi_blocked_macs
+    TMP_BLOCK=$(mktemp /etc/maxnet_wifi_blocked_macs.XXXXXX) || {
+        json_error 'Unable to prepare persistent Wi-Fi block list'
+        exit 0
+    }
+    if [ -f "$BLOCK_FILE" ]; then
+        grep -Eiv "^${MAC}$" "$BLOCK_FILE" > "$TMP_BLOCK" 2>/dev/null || :
+    fi
+    if [ "$BLOCKED" = 1 ]; then
+        printf '%s\n' "$MAC" >> "$TMP_BLOCK"
+    fi
+    sort -u "$TMP_BLOCK" -o "$TMP_BLOCK" || {
+        rm -f "$TMP_BLOCK"
+        json_error 'Unable to update persistent Wi-Fi block list'
+        exit 0
+    }
+    chmod 600 "$TMP_BLOCK"
+    mv "$TMP_BLOCK" "$BLOCK_FILE" || {
+        rm -f "$TMP_BLOCK"
+        json_error 'Unable to persist Wi-Fi block list'
+        exit 0
+    }
+    if [ "$BLOCKED" = 1 ]; then
+        set_station_ban "$MAC" 4294967295 || :
+    else
+        set_station_ban "$MAC" 0 || :
+    fi
+    jq -cn --argjson blocked "$BLOCKED" --arg mac "$MAC" \
+        '{status:"ok",message:(if $blocked then "Wi-Fi station blocked" else "Wi-Fi station unblocked" end),mac:$mac,blocked:($blocked == 1)}'
+    exit 0
+fi
 
 # Ensure wireless config file exists
 if [ ! -f /etc/config/wireless ]; then
@@ -20,11 +139,6 @@ fi
 
 # 1. HANDLE SETTINGS SAVE (POST / SET)
 if [ "$ACTION" = "set" ] || [ "$REQUEST_METHOD" = "POST" ]; then
-    BODY=""
-    if [ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ]; then
-        BODY=$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)
-    fi
-
     # Helper function to extract JSON or query param value
     get_val() {
         local key="$1"
@@ -144,31 +258,60 @@ STATIONS="[]"
 if command -v iw >/dev/null 2>&1; then
     TMP_STAS=$(iw dev 2>/dev/null | grep Interface | awk '{print $2}')
     STA_ITEMS=""
+    STA_TMP=$(mktemp /tmp/maxnet-wifi-stations.XXXXXX)
+    : > "$STA_TMP"
     for wdev in $TMP_STAS; do
         band="2.4 GHz"
-        case "$wdev" in *1*|*5g*) band="5 GHz" ;; esac
+        frequency=$(iw dev "$wdev" info 2>/dev/null | awk '/channel/ {for (i=1;i<=NF;i++) if ($i=="MHz") {value=$(i-1); gsub(/[^0-9]/, "", value); print value; exit}}')
+        case "$frequency" in ''|*[!0-9]*) frequency=0 ;; esac
+        [ "$frequency" -ge 5000 ] 2>/dev/null && band="5 GHz"
         iw dev "$wdev" station dump 2>/dev/null | awk -v band="$band" -v dev="$wdev" '
             /^Station/ {
                 if (mac != "") {
-                    printf "{\"mac\":\"%s\",\"band\":\"%s\",\"signal\":%d,\"rx_mbps\":%.1f,\"tx_mbps\":%.1f},\n", mac, b, sig, rx, tx
+                    printf "{\"mac\":\"%s\",\"band\":\"%s\",\"signal\":%d,\"rx_mbps\":%.1f,\"tx_mbps\":%.1f,\"connected\":true,\"blocked\":false},\n", mac, b, sig, rx, tx
                 }
                 mac = $2; b = band; sig = -65; rx = 0; tx = 0;
             }
             /signal:/ { sig = $2; }
             /rx bitrate:/ { rx = $3; }
             /tx bitrate:/ { tx = $3; }
+
             END {
                 if (mac != "") {
-                    printf "{\"mac\":\"%s\",\"band\":\"%s\",\"signal\":%d,\"rx_mbps\":%.1f,\"tx_mbps\":%.1f}\n", mac, b, sig, rx, tx
+                    printf "{\"mac\":\"%s\",\"band\":\"%s\",\"signal\":%d,\"rx_mbps\":%.1f,\"tx_mbps\":%.1f,\"connected\":true,\"blocked\":false}\n", mac, b, sig, rx, tx
                 }
             }
-        ' >> /tmp/wsta.tmp 2>/dev/null
+        ' >> "$STA_TMP" 2>/dev/null
     done
-    if [ -s /tmp/wsta.tmp ]; then
-        STATIONS="["$(sed '$!s/$/,/' /tmp/wsta.tmp | tr '\n' ' ' | sed 's/,[ ]*$/ /')"]"
-        rm -f /tmp/wsta.tmp
+    if [ -s "$STA_TMP" ]; then
+        STATIONS="["$(sed '$!s/$/,/' "$STA_TMP" | tr '\n' ' ' | sed 's/,[ ]*$/ /')"]"
     fi
+    rm -f "$STA_TMP"
 fi
+
+BLOCKED_MACS=$(if [ -f /etc/maxnet_wifi_blocked_macs ]; then
+    awk 'tolower($0) ~ /^[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]$/ {print tolower($0)}' /etc/maxnet_wifi_blocked_macs | sort -u | jq -Rsc 'split("\n") | map(select(length > 0))'
+else
+    printf '[]'
+fi)
+while IFS= read -r blocked_mac; do
+    [ -n "$blocked_mac" ] || continue
+    set_station_ban "$blocked_mac" 4294967295 >/dev/null 2>&1 || :
+done <<EOF_BLOCKED_MACS
+$(printf '%s' "$BLOCKED_MACS" | jq -r '.[]' 2>/dev/null)
+EOF_BLOCKED_MACS
+LEASES='[]'
+if [ -r /tmp/dhcp.leases ]; then
+    while read -r lease_expiry lease_mac lease_ip lease_name lease_clientid; do
+        [ -n "$lease_mac" ] && [ -n "$lease_ip" ] || continue
+        LEASES=$(printf '%s' "$LEASES" | jq -c --arg mac "$(printf '%s' "$lease_mac" | tr '[:upper:]' '[:lower:]')" --arg ip "$lease_ip" --arg name "${lease_name:-Wi-Fi station}" '. + [{mac:$mac,ip:$ip,name:$name}]' 2>/dev/null)
+    done < /tmp/dhcp.leases
+fi
+STATIONS=$(jq -cn --argjson stations "$STATIONS" --argjson blocked_macs "${BLOCKED_MACS:-[]}" --argjson leases "$LEASES" '
+    ($blocked_macs | map(ascii_downcase)) as $blocked
+    | ($stations | map(. as $station | ($leases | map(select(.mac == ($station.mac | ascii_downcase))) | first // {}) as $lease | . + {ip:($lease.ip // ""),name:($lease.name // "Wi-Fi station"),hostname:($lease.name // "Wi-Fi station")} | . + {blocked: ((.mac | ascii_downcase) as $mac | ($blocked | index($mac)) != null)})) as $connected
+    | $connected + [$blocked[] as $mac | select(([$connected[].mac | ascii_downcase] | index($mac)) == null) | ($leases | map(select(.mac == $mac)) | first // {}) as $lease | {mac:$mac,ip:($lease.ip // ""),name:($lease.name // "Blocked Wi-Fi station"),hostname:($lease.name // "Blocked Wi-Fi station"),connected:false,blocked:true}]
+' 2>/dev/null || printf '[]')
 
 cat <<EOF
 {

@@ -22,6 +22,7 @@ MACADDR=$(echo "$POST_DATA" | jq -r '.macaddr // ""' 2>/dev/null)
 MTU=$(echo "$POST_DATA" | jq -r '.mtu // ""' 2>/dev/null)
 METRIC=$(echo "$POST_DATA" | jq -r '.metric // "20"' 2>/dev/null)
 BSSID=$(echo "$POST_DATA" | jq -r '.bssid // ""' 2>/dev/null)
+HIDDEN=$(echo "$POST_DATA" | jq -r 'if .hidden == true then "1" else "0" end' 2>/dev/null)
 
 if [ "$ACTION" = "disconnect" ]; then
     uci -q delete wireless.wwan
@@ -110,7 +111,12 @@ uci set wireless.wwan.device="$DEVICE"
 uci set wireless.wwan.network="wwan"
 uci set wireless.wwan.mode="sta"
 uci set wireless.wwan.ssid="$SSID"
-uci -q delete wireless.wwan.bssid
+uci set wireless.wwan.scan_ssid="$HIDDEN"
+if [ -n "$BSSID" ]; then
+    uci set wireless.wwan.bssid="$BSSID"
+else
+    uci -q delete wireless.wwan.bssid
+fi
 
 if [ -n "$KEY" ]; then
     case "$ENC" in

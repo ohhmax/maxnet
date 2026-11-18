@@ -31,6 +31,7 @@
         <div class="mh-form-group" style="margin:0;">
           <label class="mh-label" style="font-size:10px; text-transform:uppercase; letter-spacing:0.8px;">Password</label>
           <input type="password" class="mh-input" id="loginPass" placeholder="Enter administrator password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()" style="width:100%; box-sizing:border-box;">
+          <div id="loginRootPassHint" style="display:none; color:#f59e0b; font-size:10.5px; line-height:1.45; font-family:var(--font-mono);">No router password is set. Leave this field blank and log in as root.</div>
         </div>
       </div>
 
@@ -119,7 +120,7 @@
         <!-- ==================== TAB 2: SETTINGS ==================== -->
     <div id="tabSettings" class="tab-page" style="display:none;">
       <!-- ==================== ANDROID SETTINGS EDIT POPUP MODAL (SCOPED) ==================== -->
-      
+
   <!-- ==================== CUSTOM FACTORY RESET CONFIRMATION MODAL WITH 10S COUNTDOWN ==================== -->
   <div id="factoryResetModalOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeFactoryResetModal()">
     <div class="android-modal-card" style="max-width:440px; border:1px solid rgba(239,68,68,0.3); box-shadow:0 10px 40px rgba(239,68,68,0.25);">
@@ -365,6 +366,7 @@
         <input type="hidden" id="repHiddenBand">
         <input type="hidden" id="repHiddenChannel">
         <input type="hidden" id="repHiddenEnc">
+        <input type="hidden" id="repHiddenNetwork">
 
         <div class="mh-form-group">
           <label class="mh-label">Target Network SSID</label>
@@ -412,6 +414,15 @@
         </div>
 
         <div id="repAdvancedPanel" style="display:none; flex-direction:column; gap:10px; margin-top:4px;">
+          <div class="mh-form-group" id="repManualEncryptionGroup" style="display:none; margin:0;">
+            <label class="mh-label" style="font-size:10px;">Hidden Network Security</label>
+            <select class="mh-input" id="repManualEncryption" onchange="updateRepeaterManualSecurity()">
+              <option value="psk2">WPA2 Personal</option>
+              <option value="sae-mixed">WPA2/WPA3 Personal</option>
+              <option value="sae">WPA3 Personal</option>
+              <option value="none">Open network</option>
+            </select>
+          </div>
           <div class="mh-form-group" style="margin:0;">
             <label class="mh-label" style="font-size:10px;">Target Radio Band</label>
             <select class="mh-input" id="repTargetRadio">
@@ -421,8 +432,12 @@
             </select>
           </div>
           <div class="mh-form-group" style="margin:0;">
+            <label class="mh-label" style="font-size:10px;">BSSID (Optional)</label>
+            <input type="text" class="mh-input" id="repCustomBssid" placeholder="Lock to a specific AP MAC">
+          </div>
+          <div class="mh-form-group" style="margin:0;">
             <label class="mh-label" style="font-size:10px;">Clone Custom MAC Address</label>
-            <input type="text" class="mh-input" id="repCustomMac" placeholder="e.g. 10:65:30:7a:9c:02 (Leave blank for default)">
+            <input type="text" class="mh-input" id="repCustomMac" placeholder="Leave blank to use the radio MAC">
           </div>
           <div class="mh-form-group" style="margin:0;">
             <label class="mh-label" style="font-size:10px;">Custom MTU</label>
@@ -586,19 +601,25 @@
   </div>
 
   <div id="settingEditModalOverlay" class="android-modal-overlay" onclick="onModalOverlayClick(event)">
-    <div class="android-modal-card" id="settingEditModalCard">
-      <div class="android-modal-header">
-        <span class="card-badge sky" style="font-size:9.5px; font-weight:700; align-self:flex-start; margin-bottom:4px; letter-spacing:0.5px;">CONFIGURATION</span>
-        <span class="android-modal-title" id="settingModalTitle">Edit Setting</span>
-        <span class="android-modal-desc" id="settingModalDesc">Adjust configuration parameters</span>
+    <div class="android-modal-card setting-edit-modal-card" id="settingEditModalCard">
+      <div class="android-modal-header setting-edit-modal-header">
+        <div class="setting-edit-modal-topline">
+          <span class="android-modal-title" id="settingModalTitle">Edit Setting</span>
+          <div class="setting-edit-modal-actions">
+            <button type="button" class="android-modal-close-round setting-edit-modal-save" id="btnModalSave" onclick="saveSettingModal()" aria-label="Save setting" title="Save">
+              <svg viewBox="0 0 24 24"><path d="M5 3h12l4 4v14H3V3z"/><path d="M7 3v6h10V3M7 21v-7h10v7"/></svg><span>SAVE</span>
+            </button>
+            <button type="button" class="android-modal-close-round setting-edit-modal-close" onclick="closeSettingModal()" aria-label="Close setting editor" title="Close">
+              <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+        <span class="android-modal-desc" id="settingModalDesc" hidden>Adjust configuration parameters</span>
       </div>
       <div class="android-modal-body" id="settingModalBody">
         <!-- Dynamically injected edit controls -->
       </div>
-      <div class="android-modal-footer">
-        <button type="button" class="mh-btn btn-ghost" onclick="closeSettingModal()" style="padding:8px 18px; font-size:12px; font-weight:700; border-radius:10px;">CANCEL</button>
-        <button type="button" class="mh-btn" id="btnModalSave" onclick="saveSettingModal()" style="padding:8px 24px; font-size:12px; font-weight:800; background:#38bdf8; color:#0b1120; border-radius:10px; box-shadow:0 2px 10px rgba(56,189,248,0.35);">SAVE</button>
-      </div>
+
     </div>
   </div>
 
@@ -636,14 +657,18 @@
               <div class="android-modal-desc" id="topoNodeDetailSub" style="font-size:11px; font-family:var(--font-mono); color:var(--text-dim); margin-top:2px;">--</div>
             </div>
           </div>
-          <span class="card-badge emerald" id="topoNodeDetailStatusBadge" style="flex-shrink:0; font-size:10px; font-weight:800;">ONLINE</span>
+          <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
+            <span class="card-badge emerald" id="topoNodeDetailStatusBadge" style="font-size:10px; font-weight:800;">ONLINE</span>
+            <button type="button" class="android-modal-close-round" onclick="closeTopoNodeDetail()" aria-label="Close device details" title="Close">
+              <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
         </div>
       </div>
       <div class="android-modal-body" id="topoNodeDetailBody" style="padding:14px 18px; max-height:75vh; overflow-y:auto; overflow-x:hidden; box-sizing:border-box;">
         <!-- Dynamically populated parameters grid -->
       </div>
-      <div class="android-modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 18px; border-top:1px solid rgba(255,255,255,0.06);">
-        <button type="button" class="mh-btn btn-ghost" onclick="closeTopoNodeDetail()" style="padding:6px 14px; font-size:11px;">CLOSE</button>
+      <div class="android-modal-footer" style="display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 18px; border-top:1px solid var(--border-sub, rgba(255,255,255,0.06));">
         <div style="display:flex; gap:8px;">
           <button type="button" class="mh-btn" id="btnTopoNodeUnblock" style="display:none; background:#ef4444; color:#fff; font-weight:700; padding:6px 14px; font-size:11px;">UNBLOCK DEVICE</button>
           <button type="button" class="mh-btn btn-ghost" id="btnTopoNodeViewClient" onclick="openTopoNodeClientPage()" style="display:none; padding:6px 14px; font-size:11px;">VIEW CLIENT</button>
@@ -847,6 +872,22 @@
             </div>
           </div>
 
+          <!-- Wi-Fi Clients -->
+          <div class="settings-nav-card" id="card-wifi-clients" onclick="openSettingPage('acc-wifi-clients')" data-search="wifi wireless clients connected stations devices kick disconnect block unblock mac address 2.4ghz 5ghz">
+            <div class="snc-left">
+              <div class="snc-icon-box" style="color:#06b6d4;">
+                <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+              </div>
+              <div class="snc-info">
+                <span class="snc-title">Wi-Fi Clients</span>
+                <span class="snc-desc">View connected 2.4 GHz and 5 GHz stations; kick or block Wi-Fi access</span>
+              </div>
+            </div>
+            <div class="snc-right">
+              <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+
           <!-- Wireless Repeater (Dedicated Uplink / Client WAN) -->
           <div class="settings-nav-card" id="card-repeater" onclick="openSettingPage('acc-repeater')" data-search="repeater wisp uplink wireless client bridge wifi scan dhcp static wan 2.4ghz 5ghz join connect">
             <div class="snc-left">
@@ -918,7 +959,7 @@
                 <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               </div>
               <div class="snc-info">
-                <span class="snc-title">Tailscale VPN</span>
+                <span class="snc-title">Tailscale</span>
                 <span class="snc-desc">Mesh VPN, exit node routing, and secure remote access</span>
               </div>
             </div>
@@ -1119,6 +1160,22 @@
             </div>
           </div>
 
+          <!-- Date & Time -->
+          <div class="settings-nav-card" id="card-system-time" onclick="openSettingPage('acc-system-time')" data-search="date time clock timezone ntp synchronize router">
+            <div class="snc-left">
+              <div class="snc-icon-box" style="color:#06b6d4;">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div class="snc-info">
+                <span class="snc-title">Date &amp; Time</span>
+                <span class="snc-desc">Router clock, timezone, and automatic time synchronization</span>
+              </div>
+            </div>
+            <div class="snc-right">
+              <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+
           <!-- 11. Maintenance -->
           <div class="settings-nav-card" id="card-maintenance" onclick="openSettingPage('acc-maintenance')" data-search="maintenance reboot restart shutdown backup restore factory reset logcat dmesg logs">
             <div class="snc-left">
@@ -1198,6 +1255,23 @@
             <span id="settingsDetailNavTitle" class="settings-subnav-title">Settings</span>
           </div>
           <div class="settings-subnav-right" id="settingsDetailNavRight" style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+            <div class="settings-page-actions" id="settingsPageActions" style="display:none;">
+              <button type="button" class="settings-page-action" id="settingsSaveAction" onclick="saveCurrentSettingPage()" style="display:none;" title="Save changes" aria-label="Save changes">
+                <svg viewBox="0 0 24 24"><path d="M5 3h12l4 4v14H3V3z"/><path d="M7 3v6h10V3M7 21v-7h10v7"/></svg>
+              </button>
+              <button type="button" class="settings-page-action" id="pppoeSubscriberAddAction" onclick="openSettingModal('pppoe_user_add')" style="display:none;" title="Add subscriber" aria-label="Add subscriber">
+                <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M19 8v8M15 12h8"/></svg>
+              </button>
+              <button type="button" class="settings-page-action" id="topoResetAction" onclick="resetTopologyLayersConfig()" style="display:none;" title="Reset topology" aria-label="Reset topology">
+                <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+              <button type="button" class="settings-page-action" id="topoExportAction" onclick="openExportTopologyModal()" style="display:none;" title="Export topology" aria-label="Export topology">
+                <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </button>
+              <button type="button" class="settings-page-action" id="topoImportAction" onclick="openImportTopologyModal()" style="display:none;" title="Restore topology JSON" aria-label="Restore topology JSON">
+                <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+            </div>
             <button type="button" class="round-action-btn" id="subnavNotifSettingsBtn" onclick="openNotificationSettingsModal()" style="display:none;" title="Notification Settings" aria-label="Notification Settings">
               <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </button>
@@ -2016,7 +2090,7 @@
               </div>
 
               <!-- SUBSCRIBER ACCOUNTS -->
-              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('pppoe_server_users')">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingPage('acc-pppoe-users')">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Subscriber Accounts &amp; CHAP Secrets</span>
                   <span class="setting-label-sub" id="disp_pppoe_users_count">0 accounts configured &bull; Tap to manage users</span>
@@ -2038,6 +2112,22 @@
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card settings-detail-panel" id="acc-pppoe-users" style="display:none;">
+          <div class="settings-card-header">
+            <div class="acc-title-left">
+              <div class="acc-icon-box" style="color:#06b6d4;">
+                <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M17 11h5M19.5 8.5v5"/></svg>
+              </div>
+              <span class="acc-main-title">PPPoE Subscriber Accounts</span>
+            </div>
+          </div>
+          <div class="settings-card-body">
+            <div id="pppoeSubscribersList" class="pppoe-subscribers-list">
+              <div class="setting-row-item"><div class="setting-label-col"><span class="setting-label-sub">Loading subscribers…</span></div></div>
             </div>
           </div>
         </div>
@@ -2286,25 +2376,39 @@
                 </div>
               </div>
 
-              <!-- CONNECTED WIRELESS CLIENTS -->
-              <div class="setting-section-divider"></div>
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:8px;">
-                <div class="setting-section-header" style="margin-bottom:0;">Connected Wireless Devices</div>
-                <button type="button" class="round-action-btn" onclick="fetchWifiConfig()" style="width:26px; height:26px; min-width:26px;" title="Refresh Devices">
-                  <svg viewBox="0 0 24 24" style="width:13px; height:13px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                </button>
-              </div>
-              <div id="wifiClientsContainer" style="display:flex; flex-direction:column; gap:8px;">
-                <div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11.5px;">No wireless devices currently connected.</div>
-              </div>
 
               <!-- ACTION BAR -->
-              <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
-                <button type="button" class="mh-btn btn-ghost" onclick="fetchWifiConfig()" style="padding:8px 18px; font-size:12px; font-weight:700;">RESET FORM</button>
-                <button type="button" class="mh-btn btn-primary" onclick="saveWifiSettings()" style="padding:8px 22px; font-size:12px; font-weight:800;">APPLY WI-FI SETTINGS</button>
-              </div>
+
             </div>
           </div>
+        </div>
+
+        <!-- DEDICATED WI-FI CLIENTS PAGE -->
+        <div class="settings-card settings-detail-panel accordion-item" id="acc-wifi-clients">
+          <div class="settings-card-header accordion-header" onclick="toggleAccordion('acc-wifi-clients')">
+            <div class="acc-title-left">
+              <div class="acc-icon-box" style="color:#06b6d4;">
+                <svg class="svg-icon" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+              </div>
+              <span class="acc-main-title">Wi-Fi Clients</span>
+            </div>
+            <div class="acc-right-action">
+              <svg class="svg-icon acc-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div class="accordion-content"><div class="settings-card-body">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 2px 8px;">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">Connected Wi-Fi Clients</span>
+                <span class="setting-label-sub">Stations on the 2.4 GHz and 5 GHz radios</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                <span class="card-badge sky" id="wifiClientCount">-- CLIENTS</span>
+                <button type="button" class="round-action-btn" onclick="fetchWifiClients()" title="Refresh Wi-Fi Clients" aria-label="Refresh Wi-Fi Clients"><svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><polyline points="21 3 21 8 16 8"/></svg></button>
+              </div>
+            </div>
+            <div id="wifiClientsContainer" style="display:flex; flex-direction:column; gap:6px;"><div style="text-align:center; color:var(--text-dim); padding:24px; font-size:12px;">Loading Wi-Fi stations...</div></div>
+          </div></div>
         </div>
 
         <!-- DEDICATED WIRELESS REPEATER SETTING PANEL (WISP / CLIENT WAN) -->
@@ -2323,19 +2427,13 @@
           </div>
           <div class="accordion-content">
             <div class="settings-card-body">
-              <!-- TOP CONTROL ROW: BOLD LABEL, SUBTITLE BENEATH, ROUND SCAN BUTTON ON RIGHT -->
-              <div class="setting-row-item" style="padding: 12px 14px; margin-bottom: 8px;">
+              <div class="setting-row-item" style="padding:12px 14px; margin-bottom:8px;">
                 <div class="setting-label-col">
-                  <span class="setting-label-bold">Wi-Fi Scan &amp; Connect</span>
-                  <span class="setting-label-sub" id="repeaterScanSub">Scan surrounding 2.4 GHz and 5 GHz networks to connect as uplink</span>
+                  <span class="setting-label-bold">Wireless Repeater Controls</span>
+                  <span class="setting-label-sub">Enable to show nearby network scan and refresh controls</span>
                 </div>
-                <div class="setting-control-col">
-                  <button type="button" class="round-action-btn" id="btnScanRepeater" onclick="scanRepeaterWifi()" title="Scan for nearby Wi-Fi networks" aria-label="Scan Wi-Fi">
-                    <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                  </button>
-                </div>
+                <div class="toggle-wrap-cell"><label class="toggle-switch"><input type="checkbox" id="repeaterEnabledToggle" onchange="toggleRepeaterEnabled(this.checked)"><span class="toggle-slider"></span></label></div>
               </div>
-
               <!-- ACTIVE CONNECTION STATUS ROW (IF CONNECTED) -->
               <div id="repeaterActiveCard" style="display:none; margin-bottom:12px;">
                 <div class="setting-row-item" style="padding:12px 14px; background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2); border-radius:10px;">
@@ -2353,13 +2451,27 @@
                   </div>
                 </div>
               </div>
+              <div id="repeaterScanControls" style="display:none;">
+              <!-- TOP CONTROL ROW: BOLD LABEL, SUBTITLE BENEATH, ROUND SCAN BUTTON ON RIGHT -->
+              <div class="setting-row-item" style="padding: 12px 14px; margin-bottom: 8px;">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Nearby Wi-Fi Access Points</span>
+                  <span class="setting-label-sub" id="repeaterScanSub">Scan starts when repeater is enabled; choose a hotspot to connect</span>
+                </div>
+                <div class="setting-control-col">
+                  <button type="button" class="round-action-btn" id="btnScanRepeater" onclick="scanRepeaterWifi()" title="Search nearby Wi-Fi access points" aria-label="Search Wi-Fi access points">
+                    <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                  </button>
+                </div>
+              </div>
 
               <!-- SCAN RESULTS SECTION -->
               <div class="setting-section-header" style="margin-top:10px;">Nearby Wi-Fi Networks</div>
               <div id="repeaterScanResultsList" style="display:flex; flex-direction:column; gap:4px;">
                 <div style="font-size:12px; color:var(--text-dim); font-family:var(--font-mono); padding:20px; text-align:center;">
-                  Click the scan button above to discover surrounding 2.4 GHz and 5 GHz networks.
+                  Enable the repeater to search nearby 2.4 GHz and 5 GHz access points.
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -2753,47 +2865,13 @@
           </div>
           <div class="accordion-content">
             <div class="settings-card-body">
-              <!-- AUTO / CUSTOM TOPOLOGY TOGGLE ROW -->
-              <div class="setting-row-item" style="padding-bottom:12px; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.06);">
+              <div class="setting-row-item setting-clickable-row" onclick="openSettingModal('topology_type')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSettingModal('topology_type');}">
                 <div class="setting-label-col">
-                  <span class="setting-label-bold">Auto Topology Discovery</span>
-                  <span class="setting-label-sub" id="topoAutoModeSub">Automatically build and map network tree from live port telemetry, WAN uplink, and connected devices</span>
+                  <span class="setting-label-bold">Topology Type</span>
+                  <span class="setting-label-sub" id="topologyDiscoveryModeSummary">Live bridge &amp; Wi-Fi discovery</span>
                 </div>
-                <div class="toggle-wrap-cell">
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="topoAutoDiscoveryToggle" checked onchange="toggleTopologyAutoMode(this.checked)">
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- TOP ACTION BUTTONS ROW (SORTED IN A BALANCED ROW, NO TITLE, NO SAVE BUTTON) -->
-              <div class="topo-header-row">
-                <div class="topo-round-actions">
-                  <div class="topo-action-item">
-                    <button type="button" class="topo-round-btn btn-auto" onclick="autoMapNetworkTopology()" id="btnAutoMapTopo" title="Auto-Map from Clients" aria-label="Auto-Map from Clients">
-                      <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                    </button>
-                    <span class="topo-action-label">Auto</span>
-                  </div>
-                  <div class="topo-action-item">
-                    <button type="button" class="topo-round-btn btn-reset" onclick="resetTopologyLayersConfig()" id="btnResetTopo" title="Reset Defaults" aria-label="Reset Defaults">
-                      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
-                    </button>
-                    <span class="topo-action-label">Reset</span>
-                  </div>
-                  <div class="topo-action-item">
-                    <button type="button" class="topo-round-btn btn-export" onclick="openExportTopologyModal()" id="btnExportTopo" title="Export Topology JSON" aria-label="Export JSON">
-                      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    </button>
-                    <span class="topo-action-label">Export</span>
-                  </div>
-                  <div class="topo-action-item">
-                    <button type="button" class="topo-round-btn btn-import" onclick="openImportTopologyModal()" id="btnImportTopo" title="Import Topology JSON" aria-label="Import JSON">
-                      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    </button>
-                    <span class="topo-action-label">Import</span>
-                  </div>
+                <div class="setting-arrow-col">
+                  <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
               </div>
 
@@ -3174,7 +3252,7 @@
               <div class="acc-icon-box">
                 <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><line x1="5.5" y1="7.5" x2="10" y2="10.5"/><line x1="18.5" y1="7.5" x2="14" y2="10.5"/><line x1="5.5" y1="16.5" x2="10" y2="13.5"/><line x1="18.5" y1="16.5" x2="14" y2="13.5"/></svg>
               </div>
-              <span class="acc-main-title">Tailscale VPN</span>
+              <span class="acc-main-title">Tailscale</span>
             </div>
             <div class="acc-right-action">
               <span class="card-badge emerald" id="tsStatusBadge">RUNNING</span>
@@ -4603,8 +4681,24 @@
           </div>
           <div class="accordion-content">
             <div class="settings-card-body">
-              <!-- MAINTENANCE OPERATIONS (CLEAN ROWS WITH COLOR-CODED ACTION ICONS) -->
               <div style="display:flex; flex-direction:column;">
+
+                <div class="setting-row-item">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Scheduled Auto Reboot</span>
+                    <span class="setting-label-sub">Restart the router daily at the selected time</span>
+                  </div>
+                  <div class="toggle-wrap-cell"><label class="toggle-switch"><input type="checkbox" id="autoRebootToggle" onchange="toggleScheduledAutoReboot(this.checked)"><span class="toggle-slider"></span></label></div>
+                </div>
+                <div class="setting-row-item" id="autoRebootTimeRow" style="display:none;">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">Reboot Time</span>
+                    <span class="setting-label-sub">Router local time (24-hour clock)</span>
+                  </div>
+                  <div class="setting-control-col"><input type="time" id="autoRebootTime" class="mh-input" onchange="saveScheduledAutoRebootTime(this.value)" style="width:118px; padding:6px 8px;"></div>
+                </div>
+                <div class="setting-section-divider"></div>
+                <!-- MAINTENANCE OPERATIONS (CLEAN ROWS WITH COLOR-CODED ACTION ICONS) -->
                 <div class="setting-row-item">
                   <div class="setting-label-col">
                     <span class="setting-label-bold">Reboot</span>
@@ -4702,6 +4796,67 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- ROUTER DATE, TIME, TIMEZONE, AND NTP SETTINGS -->
+        <div class="settings-card settings-detail-panel accordion-item" id="acc-system-time">
+          <div class="settings-card-header accordion-header" onclick="toggleAccordion('acc-system-time')">
+            <div class="acc-title-left">
+              <div class="acc-icon-box" style="color:#06b6d4;">
+                <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <span class="acc-main-title">Date &amp; Time</span>
+            </div>
+            <div class="acc-right-action">
+              <span class="card-badge sky">CLOCK</span>
+              <svg class="svg-icon acc-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div class="accordion-content"><div class="settings-card-body">
+            <div class="system-time-settings" style="display:flex; flex-direction:column; gap:0;">
+              <div class="setting-row-item system-time-field-row system-time-sync-row">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Automatic Time Sync</span>
+                  <span class="setting-label-sub">Synchronize the router clock using NTP</span>
+                </div>
+                <div class="toggle-wrap-cell"><label class="toggle-switch"><input type="checkbox" id="systemNtpEnabled" checked onchange="saveSystemSettingsPage()"><span class="toggle-slider"></span></label></div>
+              </div>
+              <div class="setting-row-item system-time-field-row setting-clickable-row" role="button" tabindex="0" onclick="openSystemDateTimeEditor()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSystemDateTimeEditor();}">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Date &amp; Time</span>
+                  <span class="setting-label-sub" id="systemDateTimeDisplay">Loading router time...</span>
+                </div>
+                <div class="setting-arrow-col" aria-hidden="true"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+              </div>
+              <input type="hidden" id="systemDateTimeInput" aria-label="Router date and time">
+              <div class="setting-row-item system-time-field-row setting-clickable-row" role="button" tabindex="0" onclick="openSystemTimezoneEditor()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSystemTimezoneEditor();}">
+                <div class="setting-label-col">
+                  <span class="setting-label-bold">Timezone</span>
+                  <span class="setting-label-sub" id="systemTimezoneDisplay">Loading timezone...</span>
+                </div>
+                <div class="setting-arrow-col" aria-hidden="true"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+              </div>
+              <input type="hidden" id="systemTimezoneInput" aria-label="Selected timezone">
+              <div class="system-ntp-section">
+                <div class="system-ntp-heading">
+                  <div class="setting-label-col">
+                    <span class="setting-label-bold">NTP Servers</span>
+                    <span class="setting-label-sub">Configured time servers</span>
+                  </div>
+                  <div class="system-ntp-actions">
+                    <button type="button" class="round-action-btn system-ntp-reset" onclick="resetSystemNtpServers()" title="Restore default NTP servers" aria-label="Restore default NTP servers">
+                      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/></svg>
+                    </button>
+                    <button type="button" class="round-action-btn" onclick="openSettingModal('ntp_server')" title="Add NTP server" aria-label="Add NTP server">
+                      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div id="systemNtpServersList" class="system-ntp-list"></div>
+              </div>
+
+            </div>
+          </div></div>
         </div>
 
         <!-- 7. DEDICATED SYSTEM LOGS VIEW (PLAIN UI, NO BACKGROUND, SAME-LINE TOGGLE & DOWNLOAD) -->
@@ -5073,7 +5228,7 @@
               <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">
                 Engineered for High-Throughput Linux 6.18 Qualcomm IPQ9574 Multipath Routing
               </div>
-              
+
               <div style="margin-top:14px; padding:12px 14px; background:var(--card-inner, #161822); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:8px;">
                 <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px;">Lead Developer Profile</div>
                 <div style="font-size:13px; font-weight:700; color:var(--text-main);">Mahendra Mali (Max)</div>
@@ -5103,6 +5258,7 @@
     </div> <!-- /tabSettings -->
   </div> <!-- /dashboardContainer -->
 
+
   <!-- LOGOUT CONFIRMATION WARNING MODAL -->
   <div id="logoutConfirmModal" class="logout-modal-backdrop" style="display:none;" onclick="if(event.target === this) hideLogoutConfirm()">
     <div class="logout-modal-card">
@@ -5119,4 +5275,3 @@
       </div>
     </div>
   </div>
-

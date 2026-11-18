@@ -1,5 +1,8 @@
 #!/bin/sh
 echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Pragma: no-cache"
+echo "Expires: 0"
 echo "Access-Control-Allow-Origin: *"
 echo "Access-Control-Allow-Methods: GET, POST, OPTIONS"
 echo "Access-Control-Allow-Headers: Content-Type"
@@ -23,10 +26,11 @@ init_default() {
     "ip": "${LAN_IP}",
     "mac": "${LAN_MAC}",
     "uplinkPort": null,
+    "active_uplink": { "device": "", "interface": "", "mode": "disconnected", "speed_mbps": 0, "connected": false, "gateway": "" },
     "repeater_uplink": { "connected": false, "ssid": "" },
     "numPorts": 4,
-    "wan_mode": "standard",
-    "wan_speed": "1000",
+    "wan_mode": "disconnected",
+    "wan_speed": "unknown",
     "usb_config": {
       "mode": "hub",
       "num_ports": 0,
@@ -69,12 +73,12 @@ case "$QS" in
   *action=reset*)
     init_default > "$CONF_FILE"
     sync
-    cat "$CONF_FILE"
-    exit 0
     ;;
   *action=auto_scan*|*action=auto*)
-    STATUS_JSON=$(QUERY_STRING="action=status" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
-    AUTO_TREE=$(echo "$STATUS_JSON" | jq '
+    SAVED_WAN_MODE=$(jq -r '.tree.wan_mode // "disconnected"' "$CONF_FILE" 2>/dev/null)
+    [ -n "$SAVED_WAN_MODE" ] || SAVED_WAN_MODE=disconnected
+    STATUS_JSON=$(HTTP_ACCEPT_ENCODING= QUERY_STRING="action=status" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
+    AUTO_TREE=$(echo "$STATUS_JSON" | jq --arg saved_wan_mode "$SAVED_WAN_MODE" '
       .clients as $all
       | ($all | map(select(.is_self != true and .connected == true))) as $active
       | ($active | map(select(.port == "LAN 1"))) as $lan1_devs
@@ -88,14 +92,15 @@ case "$QS" in
           tree: {
             id: "root",
             type: "router",
-            name: "MAXNET",
+            name: (.router.hostname // "MAXNET"),
             ip: ((.network.lan_ip // "10.0.0.1") | split(" ")[0] | split("/")[0]),
             mac: (.network.lan_mac // "52:5a:4e:e9:61:a0"),
-            uplinkPort: null,
-            repeater_uplink: (.repeater // {connected: false, ssid: ""}),
+            uplinkPort: (if (.network.uplink.connected // false) then .network.uplink.device else null end),
+            active_uplink: (.network.uplink // {device:"",interface:"",mode:"disconnected",speed_mbps:0,connected:false,gateway:""}),
+            repeater_uplink: (if .network.uplink.mode == "repeater" then (.repeater // {connected: false, ssid: ""}) else {connected: false, ssid: ""} end),
             numPorts: 4,
-            wan_mode: "standard",
-            wan_speed: "1000",
+            wan_mode: $saved_wan_mode,
+            wan_speed: (if ((.network.uplink.speed_mbps // 0) | tonumber) > 0 then ((.network.uplink.speed_mbps | tostring)) else "unknown" end),
             usb_config: {
               mode: "hub",
               num_ports: ((.usb_devices // []) | length),
@@ -207,8 +212,29 @@ case "$QS" in
 esac
 
 if [ -f "$CONF_FILE" ] && [ -s "$CONF_FILE" ]; then
-  cat "$CONF_FILE"
+  SAVED=$(cat "$CONF_FILE")
 else
-  init_default | tee "$CONF_FILE"
+  SAVED=$(init_default)
+  printf '%s\n' "$SAVED" > "$CONF_FILE"
   sync
+fi
+STATUS_JSON=$(HTTP_ACCEPT_ENCODING= QUERY_STRING="action=status" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
+DYNAMIC_TREE=
+if [ -n "$STATUS_JSON" ]; then
+  DYNAMIC_TREE=$(printf '%s' "$SAVED" | jq --argjson status "$STATUS_JSON" '
+    .tree.active_uplink = ($status.network.uplink // {device:"",interface:"",mode:"disconnected",speed_mbps:0,connected:false,gateway:""})
+    | .tree.wan_speed = (if (($status.network.uplink.speed_mbps // 0) | tonumber) > 0 then ($status.network.uplink.speed_mbps | tostring) else "unknown" end)
+    | .tree.uplinkPort = (if ($status.network.uplink.connected // false) then $status.network.uplink.device else null end)
+    | .tree.repeater_uplink = (if $status.network.uplink.mode == "repeater" then ($status.repeater // {connected:false,ssid:""}) else {connected:false,ssid:""} end)
+  ' 2>/dev/null)
+fi
+if [ -n "$DYNAMIC_TREE" ]; then
+  printf '%s\n' "$DYNAMIC_TREE"
+else
+  printf '%s' "$SAVED" | jq '
+    .tree.active_uplink = {device:"",interface:"",mode:"disconnected",speed_mbps:0,connected:false,gateway:""}
+    | .tree.wan_speed = "unknown"
+    | .tree.uplinkPort = null
+    | .tree.repeater_uplink = {connected:false,ssid:""}
+  ' 2>/dev/null || init_default
 fi

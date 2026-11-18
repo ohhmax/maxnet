@@ -23,6 +23,11 @@ on:
           - all
           - qualcommbe
           - mediatek
+      publish_release:
+        description: 'Publish a GitHub release after the build (requires explicit approval)'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -174,6 +179,7 @@ jobs:
 
   release:
     name: Generate Manifest & Publish Universal Release
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
     needs: [version, build]
     runs-on: ubuntu-22.04
     steps:
@@ -213,8 +219,15 @@ jobs:
           gh release create "$TAG_NAME" custom/release_files/* \
             --repo "${{ github.repository }}" \
             --title "$RELEASE_TITLE" \
-            --notes "### Universal MAXNET OpenWrt Firmware for JioRouter Gateway Series
-            
+            --notes "### MAXNET fixes included
+            - Blank root-password login guidance reflects the router's actual password state.
+            - Topology follows the active WAN route and shows measured traffic instead of link capacity as internet speed.
+            - Tailscale web login starts the daemon and ends with a retryable timeout if no login link arrives.
+            - Notifications use ISO timestamps, latest-first day groups, and 12-hour display times.
+            - DHCP blocks persist for the selected IP/MAC until explicitly unblocked; Wi-Fi client controls are separate from DHCP controls.
+            - Router date/time and timezone settings are editable; scheduled reboot remains disabled unless explicitly enabled.
+
+            ### Universal MAXNET OpenWrt Firmware for JioRouter Gateway Series
             Multi-Architecture Production Release supporting all Qualcomm and MediaTek Jio AirFiber IDU routers.
             
             #### Supported Hardware Models & Canonical Sysupgrade Files

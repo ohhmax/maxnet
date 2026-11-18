@@ -1,6 +1,6 @@
 # 5Gbps Multi-Core RPS & High-Performance Network Tuning
 sysctl -w net.core.rps_sock_flow_entries=4096
-sysctl -w net.core.netdev_max_backlog=16384
+sysctl -w net.core.netdev_max_backlog=4096
 sysctl -w net.core.rmem_max=16777216
 sysctl -w net.core.wmem_max=16777216
 sysctl -w net.ipv4.tcp_rmem="4096 1048576 16777216"
@@ -23,16 +23,17 @@ for irq_dir in /proc/irq/*; do
     fi
 done
 
-# OOM Immune Shield: Protect mission-critical system daemons from kernel OOM killer
+# Protect essential control-plane services, but keep request/session servers reclaimable:
+# uhttpd and dropbear children inherit oom_score_adj from their parent.
 (
     sleep 5
-    for p in procd ubusd netifd dnsmasq hostapd uhttpd dropbear; do
+    for p in procd ubusd netifd dnsmasq hostapd wpa_supplicant odhcpd; do
         for pid in $(pidof "$p" 2>/dev/null); do
             echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
         done
     done
-    # Deprioritize heavy background daemons so core router survives if memory exhausts
-    for p in tailscaled smbd dufs; do
+    # Prefer reclaiming optional/background services and their children under OOM.
+    for p in tailscaled smbd dufs uhttpd dropbear; do
         for pid in $(pidof "$p" 2>/dev/null); do
             echo 250 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
         done

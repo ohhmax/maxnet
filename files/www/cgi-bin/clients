@@ -1,97 +1,102 @@
 #!/bin/sh
-echo "Content-Type: application/json"
-echo "Cache-Control: no-cache, no-store, must-revalidate"
-echo "Access-Control-Allow-Origin: *"
-echo ""
+printf '%s\n' 'Content-Type: application/json' 'Cache-Control: no-cache, no-store, must-revalidate' 'Access-Control-Allow-Origin: *' 'Access-Control-Allow-Methods: GET, POST, OPTIONS' 'Access-Control-Allow-Headers: Content-Type' ''
 
-FILE="/etc/blocked_clients.json"
-[ -f "$FILE" ] || echo '[]' > "$FILE"
+BLOCK_FILE=/etc/blocked_clients.json
 
-[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+json_error() {
+    jq -cn --arg message "$1" '{status:"error",message:$message}'
+}
 
-ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
-[ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | sed -n 's/.*"action"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+read_body() {
+    [ "${CONTENT_LENGTH:-0}" -gt 0 ] 2>/dev/null || return 1
+    [ "${CONTENT_LENGTH:-0}" -le 8192 ] 2>/dev/null || return 1
+    dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null
+}
 
-if [ "$ACTION" = "check" ]; then
-    CLIENT_IP="$REMOTE_ADDR"
-    IS_BLOCKED=0
-    if [ -n "$CLIENT_IP" ] && grep -q "\"$CLIENT_IP\"" "$FILE" 2>/dev/null; then
-        IS_BLOCKED=1
-    fi
-    echo "{\"ip\": \"$CLIENT_IP\", \"blocked\": $([ $IS_BLOCKED -eq 1 ] && echo true || echo false)}"
+if [ "$REQUEST_METHOD" = OPTIONS ]; then
     exit 0
 fi
 
-if [ "$ACTION" = "list" ]; then
-    cat "$FILE"
-    exit 0
-fi
-
-if [ "$ACTION" = "block" ]; then
-    IP=$(echo "$POST_DATA" | sed -n 's/.*"ip"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
-    MAC=$(echo "$POST_DATA" | sed -n 's/.*"mac"[ ]*:[ ]*"\([^"]*\)".*/\1/p' | tr '[:upper:]' '[:lower:]')
-    NAME=$(echo "$POST_DATA" | sed -n 's/.*"name"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
-    [ -z "$NAME" ] && NAME="Device"
-
-    if [ -z "$IP" ] && [ -z "$MAC" ]; then
-        echo '{"status": "error", "message": "IP or MAC required"}'
+POST_DATA=
+if [ "$REQUEST_METHOD" = POST ]; then
+    POST_DATA=$(read_body) || {
+        json_error 'Missing or oversized JSON request body'
         exit 0
-    fi
-
-    LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
-    [ -z "$LAN_IP" ] && LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}' | head -n 1)
-    ROUTER_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
-
-    if [ -n "$IP" ] && { [ "$IP" = "$LAN_IP" ] || [ "$IP" = "10.0.0.1" ] || [ "$IP" = "127.0.0.1" ]; }; then
-        echo '{"status": "error", "message": "Cannot block router gateway host IP"}'
+    }
+    printf '%s' "$POST_DATA" | jq -e 'type == "object"' >/dev/null 2>&1 || {
+        json_error 'Invalid JSON request body'
         exit 0
-    fi
-    if [ -n "$MAC" ] && [ -n "$ROUTER_MAC" ] && [ "$MAC" = "$ROUTER_MAC" ]; then
-        echo '{"status": "error", "message": "Cannot block router gateway host MAC"}'
-        exit 0
-    fi
-
-    [ -n "$MAC" ] && nft add element inet fw4 blocked_macs "{ $MAC }" 2>/dev/null
-    [ -n "$IP" ] && nft add element inet fw4 blocked_ips "{ $IP }" 2>/dev/null
-
-    TMP=$(mktemp)
-    echo "[" > "$TMP"
-    # Keep existing non-matching items
-    if [ -f "$FILE" ]; then
-        FILTER_CMD="cat $FILE"
-        [ -n "$MAC" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$MAC\""
-        [ -n "$IP" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$IP\""
-        eval "$FILTER_CMD" | grep '"ip"' | sed 's/,$//' | while read -r line; do
-            echo "  $line," >> "$TMP"
-        done
-    fi
-    NOW=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-    echo "  {\"ip\": \"$IP\", \"mac\": \"$MAC\", \"name\": \"$NAME\", \"time\": \"$NOW\"}" >> "$TMP"
-    echo "]" >> "$TMP"
-    mv "$TMP" "$FILE"
-
-    echo '{"status": "ok", "message": "Device blocked successfully"}'
-    exit 0
+    }
 fi
 
-if [ "$ACTION" = "unblock" ]; then
-    IP=$(echo "$POST_DATA" | sed -n 's/.*"ip"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
-    MAC=$(echo "$POST_DATA" | sed -n 's/.*"mac"[ ]*:[ ]*"\([^"]*\)".*/\1/p' | tr '[:upper:]' '[:lower:]')
+ACTION=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | sed -n 's/^action=//p' | head -n 1)
+[ -z "$ACTION" ] && ACTION=$(printf '%s' "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
 
-    [ -n "$MAC" ] && nft delete element inet fw4 blocked_macs "{ $MAC }" 2>/dev/null
-    [ -n "$IP" ] && nft delete element inet fw4 blocked_ips "{ $IP }" 2>/dev/null
-
-    TMP=$(mktemp)
-    echo "[" > "$TMP"
-    FILTER_CMD="cat $FILE"
-    [ -n "$MAC" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$MAC\""
-    [ -n "$IP" ] && FILTER_CMD="$FILTER_CMD | grep -v \"$IP\""
-    eval "$FILTER_CMD" | grep '"ip"' | sed '$s/,$//' >> "$TMP"
-    echo "]" >> "$TMP"
-    mv "$TMP" "$FILE"
-
-    echo '{"status": "ok", "message": "Device unblocked"}'
-    exit 0
-fi
-
-echo '{"status": "error", "message": "Unknown action"}'
+case "$ACTION" in
+    check)
+        CLIENT_IP=${REMOTE_ADDR:-}
+        if printf '%s' "$CLIENT_IP" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+            BLOCKED=$(jq -r --arg ip "$CLIENT_IP" 'any(.[]?; .ip == $ip)' "$BLOCK_FILE" 2>/dev/null)
+        else
+            BLOCKED=false
+        fi
+        [ "$BLOCKED" = true ] || BLOCKED=false
+        jq -cn --arg ip "$CLIENT_IP" --argjson blocked "$BLOCKED" '{ip:$ip,blocked:$blocked}'
+        ;;
+    list)
+        if [ -s "$BLOCK_FILE" ] && jq -e 'type == "array"' "$BLOCK_FILE" >/dev/null 2>&1; then
+            cat "$BLOCK_FILE"
+        else
+            printf '[]\n'
+        fi
+        ;;
+    block|unblock)
+        IP=$(printf '%s' "$POST_DATA" | jq -r '.ip // ""' 2>/dev/null)
+        MAC=$(printf '%s' "$POST_DATA" | jq -r '.mac // ""' 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        NAME=$(printf '%s' "$POST_DATA" | jq -r '.name // "Device"' 2>/dev/null | tr -cd '[:alnum:] ._-')
+        NAME=$(printf '%s' "$NAME" | cut -c1-64)
+        [ -n "$NAME" ] || NAME=Device
+        if [ -z "$IP" ] && [ -z "$MAC" ]; then
+            json_error 'A client IP or MAC address is required'
+            exit 0
+        fi
+        if [ -n "$IP" ] && ! printf '%s' "$IP" | awk -F. 'NF == 4 { for (i=1;i<=4;i++) if ($i !~ /^[0-9]+$/ || $i+0 > 255 || ($i+0 == 0 && length($i)>1)) exit 1; if ($1+0 == 0 || $1+0 >= 224) exit 1; exit 0 } { exit 1 }'; then
+            json_error 'Invalid IPv4 address'
+            exit 0
+        fi
+        if [ -n "$MAC" ]; then
+            printf '%s' "$MAC" | grep -Eq '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || {
+                json_error 'Invalid MAC address'
+                exit 0
+            }
+            [ "$MAC" != 00:00:00:00:00:00 ] || {
+                json_error 'Invalid zero MAC address'
+                exit 0
+            }
+            FIRST_OCTET=$(printf '%s' "$MAC" | cut -d: -f1)
+            FIRST_VALUE=$((0x$FIRST_OCTET))
+            [ $((FIRST_VALUE % 2)) -eq 0 ] || {
+                json_error 'MAC address must be a unicast device address'
+                exit 0
+            }
+        fi
+        LAN_IP=$(uci -q get network.lan.ipaddr | cut -d/ -f1)
+        [ -n "$LAN_IP" ] || LAN_IP=$(ip -4 -o addr show dev br-lan 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
+        ROUTER_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        if [ "$ACTION" = block ] && { { [ -n "$IP" ] && { [ "$IP" = "$LAN_IP" ] || [ "$IP" = 127.0.0.1 ]; }; } || { [ -n "$MAC" ] && [ -n "$ROUTER_MAC" ] && [ "$MAC" = "$ROUTER_MAC" ]; }; }; then
+            json_error 'Cannot block the router management address'
+            exit 0
+        fi
+        RESULT=$(/usr/bin/maxnet-client-blocks "$ACTION" "$IP" "$MAC" "$NAME" 2>&1)
+        RC=$?
+        if [ "$RC" -ne 0 ]; then
+            [ -n "$RESULT" ] || RESULT='Client block policy could not be applied'
+            json_error "$RESULT"
+            exit 0
+        fi
+        printf '%s\n' "$RESULT"
+        ;;
+    *)
+        json_error 'Unknown action'
+        ;;
+esac

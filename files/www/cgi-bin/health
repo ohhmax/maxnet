@@ -62,11 +62,18 @@ fi
 
 TS=$(date '+%Y-%m-%d %H:%M:%S')
 R_HOSTNAME=$(uci get system.@system[0].hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo "Maxnet-Gateway")
+FIRMWARE_VER=$(sed -n 's/^VERSION=//p' /etc/maxnet_version 2>/dev/null | head -n 1)
+case "$FIRMWARE_VER" in
+    v[0-9]*|[0-9]*) ;;
+    *) FIRMWARE_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1) ;;
+esac
+[ -n "$FIRMWARE_VER" ] || FIRMWARE_VER="unknown"
 
 cat << JSON
 {
   "status": "ok",
   "hostname": "${R_HOSTNAME}",
+  "firmware": "${FIRMWARE_VER}",
   "overall_health": "${OVERALL_HEALTH}",
   "health_score": ${OVERALL_SCORE},
   "timestamp": "${TS}",

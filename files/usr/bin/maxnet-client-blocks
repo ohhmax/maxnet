@@ -1,0 +1,127 @@
+#!/bin/sh
+# Persist DHCP-client internet blocks and render their fw4 policy fragment.
+set -u
+
+STATE=/etc/blocked_clients.json
+FRAGMENT=/etc/nftables.d/30-maxnet-client-blocks.nft
+TMPDIR=/tmp/maxnet-client-blocks.$$
+STATE_TMP=
+FRAGMENT_TMP=
+mkdir "$TMPDIR" 2>/dev/null || exit 1
+mkdir /var/lock/maxnet-client-blocks.lock 2>/dev/null || { rm -rf "$TMPDIR"; echo 'Client block policy is busy'; exit 1; }
+trap 'rm -rf "$TMPDIR"; rm -f "$STATE_TMP" "$FRAGMENT_TMP"; rmdir /var/lock/maxnet-client-blocks.lock 2>/dev/null' EXIT HUP INT TERM
+ACTION=${1:-}
+IP=${2:-}
+MAC=${3:-}
+NAME=${4:-Device}
+[ -n "$ACTION" ] || { echo 'Missing action'; exit 1; }
+
+[ -s "$STATE" ] || printf '[]\n' > "$STATE"
+jq -e 'type == "array"' "$STATE" >/dev/null 2>&1 || { echo 'Stored block list is invalid JSON'; exit 1; }
+cp "$STATE" "$TMPDIR/old-state"
+[ -f "$FRAGMENT" ] && cp "$FRAGMENT" "$TMPDIR/old-fragment" || :
+
+case "$ACTION" in
+    block)
+        jq --arg ip "$IP" --arg mac "$MAC" --arg name "$NAME" --arg time "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" '
+          map(select((($ip == "") or .ip != $ip) and (($mac == "") or ((.mac // "") | ascii_downcase) != $mac)))
+          + [{ip:$ip,mac:$mac,name:$name,time:$time}]' "$STATE" > "$TMPDIR/new-state" || { echo 'Unable to update block list'; exit 1; }
+        ;;
+    unblock)
+        jq --arg ip "$IP" --arg mac "$MAC" '
+          map(select(((($ip != "") and .ip == $ip) or (($mac != "") and ((.mac // "") | ascii_downcase) == $mac)) | not))' "$STATE" > "$TMPDIR/new-state" || { echo 'Unable to update block list'; exit 1; }
+        ;;
+    *) echo 'Invalid action'; exit 1 ;;
+esac
+
+format_nft_elements() {
+    awk 'NF {if (count++) printf ", "; printf "%s", $0} END {if (count) print ""}'
+}
+
+valid_ipv4() {
+    printf '%s\n' "$1" | awk -F. 'NF == 4 { for (i=1;i<=4;i++) if ($i !~ /^[0-9]+$/ || $i+0 > 255 || ($i+0 == 0 && length($i)>1)) exit 1; exit 0 } { exit 1 }'
+}
+
+valid_mac() {
+    printf '%s\n' "$1" | grep -Eq '^([0-9a-f]{2}:){5}[0-9a-f]{2}$'
+}
+
+set_nft_elements() {
+    set_name=$1
+    elements=$2
+    nft flush set inet fw4 "$set_name" >/dev/null 2>&1 || return 1
+    [ -z "$elements" ] || nft add element inet fw4 "$set_name" "{ $elements }" >/dev/null 2>&1 || return 1
+}
+
+apply_nft_elements() {
+    set_nft_elements maxnet_blocked_ips "$1" && set_nft_elements maxnet_blocked_macs "$2"
+}
+
+IPS=$(jq -r '[.[] | select((.ip // "") != "") | .ip] | unique | .[]' "$TMPDIR/new-state") || { echo 'Unable to render IPv4 block set'; exit 1; }
+MACS=$(jq -r '[.[] | select((.mac // "") != "") | (.mac | ascii_downcase)] | unique | .[]' "$TMPDIR/new-state") || { echo 'Unable to render MAC block set'; exit 1; }
+for entry in $IPS; do valid_ipv4 "$entry" || { echo 'Stored block list contains an invalid IPv4 address'; exit 1; }; done
+for entry in $MACS; do valid_mac "$entry" || { echo 'Stored block list contains an invalid MAC address'; exit 1; }; done
+IPS_NFT=$(printf '%s\n' "$IPS" | format_nft_elements)
+MACS_NFT=$(printf '%s\n' "$MACS" | format_nft_elements)
+OLD_IPS=$(jq -r '[.[] | select((.ip // "") != "") | .ip] | unique | .[]' "$TMPDIR/old-state") || { echo 'Unable to read previous IPv4 block set'; exit 1; }
+OLD_MACS=$(jq -r '[.[] | select((.mac // "") != "") | (.mac | ascii_downcase)] | unique | .[]' "$TMPDIR/old-state") || { echo 'Unable to read previous MAC block set'; exit 1; }
+OLD_IPS_NFT=$(printf '%s\n' "$OLD_IPS" | format_nft_elements)
+OLD_MACS_NFT=$(printf '%s\n' "$OLD_MACS" | format_nft_elements)
+{
+    printf 'set maxnet_blocked_ips {\n    type ipv4_addr;\n'
+    [ -z "$IPS_NFT" ] || printf '    elements = { %s }\n' "$IPS_NFT"
+    printf '}\n\nset maxnet_blocked_macs {\n    type ether_addr;\n'
+    [ -z "$MACS_NFT" ] || printf '    elements = { %s }\n' "$MACS_NFT"
+    printf '}\n\nchain maxnet_client_block_forward {\n    type filter hook forward priority -5; policy accept;\n    iifname "br-lan" oifname != "br-lan" ip saddr @maxnet_blocked_ips drop comment "maxnet DHCP-client internet block"\n    iifname "br-lan" oifname != "br-lan" ether saddr @maxnet_blocked_macs drop comment "maxnet DHCP-client internet block"\n}\n'
+} > "$TMPDIR/new-fragment" || { echo 'Unable to render firewall policy'; exit 1; }
+
+STATE_TMP=$(mktemp /etc/.blocked_clients.json.XXXXXX) || { echo 'Unable to prepare persistent block list'; exit 1; }
+FRAGMENT_TMP=$(mktemp /etc/nftables.d/.30-maxnet-client-blocks.XXXXXX) || { echo 'Unable to prepare persistent firewall policy'; exit 1; }
+cp "$TMPDIR/new-state" "$STATE_TMP" && cp "$TMPDIR/new-fragment" "$FRAGMENT_TMP" || { echo 'Unable to stage block policy'; exit 1; }
+chmod 600 "$STATE_TMP" "$FRAGMENT_TMP"
+mv "$STATE_TMP" "$STATE" || { echo 'Unable to persist block list'; exit 1; }
+STATE_TMP=
+mv "$FRAGMENT_TMP" "$FRAGMENT" || {
+    cp "$TMPDIR/old-state" "$STATE"
+    echo 'Unable to persist firewall policy'
+    exit 1
+}
+FRAGMENT_TMP=
+
+if ! fw4 reload >/dev/null 2>&1 || \
+   ! nft list set inet fw4 maxnet_blocked_ips >/dev/null 2>&1 || \
+   ! nft list set inet fw4 maxnet_blocked_macs >/dev/null 2>&1 || \
+   ! nft list chain inet fw4 maxnet_client_block_forward 2>/dev/null | grep -F 'maxnet DHCP-client internet block' >/dev/null || \
+   ! apply_nft_elements "$IPS_NFT" "$MACS_NFT"; then
+    cp "$TMPDIR/old-state" "$STATE"
+    if [ -f "$TMPDIR/old-fragment" ]; then
+        cp "$TMPDIR/old-fragment" "$FRAGMENT"
+    else
+        rm -f "$FRAGMENT"
+    fi
+    fw4 reload >/dev/null 2>&1 || :
+    apply_nft_elements "$OLD_IPS_NFT" "$OLD_MACS_NFT" || :
+    echo 'Firewall rejected the client block policy; no change was reported'
+    exit 1
+fi
+
+VERIFY_FAILED=0
+for entry in $IPS; do
+    nft get element inet fw4 maxnet_blocked_ips "{ $entry }" >/dev/null 2>&1 || VERIFY_FAILED=1
+done
+for entry in $MACS; do
+    nft get element inet fw4 maxnet_blocked_macs "{ $entry }" >/dev/null 2>&1 || VERIFY_FAILED=1
+done
+if [ "$VERIFY_FAILED" -ne 0 ]; then
+    cp "$TMPDIR/old-state" "$STATE"
+    [ -f "$TMPDIR/old-fragment" ] && cp "$TMPDIR/old-fragment" "$FRAGMENT" || rm -f "$FRAGMENT"
+    fw4 reload >/dev/null 2>&1 || :
+    apply_nft_elements "$OLD_IPS_NFT" "$OLD_MACS_NFT" || :
+    echo 'Firewall did not install all requested set entries'
+    exit 1
+fi
+
+case "$ACTION" in
+    block) jq -cn '{status:"ok",message:"Device internet access blocked"}' ;;
+    unblock) jq -cn '{status:"ok",message:"Device internet block removed"}' ;;
+esac

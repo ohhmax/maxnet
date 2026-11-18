@@ -18,9 +18,13 @@ send_response() {
 
 (
 
-# 1. Firmware info (Clean version without build number)
-FIRMWARE_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1)
-[ -z "$FIRMWARE_VER" ] && FIRMWARE_VER="v2.2.29"
+# 1. Firmware version from the release metadata written during build/OTA.
+FIRMWARE_VER=$(sed -n 's/^VERSION=//p' /etc/maxnet_version 2>/dev/null | head -n 1)
+case "$FIRMWARE_VER" in
+    v[0-9]*|[0-9]*) ;;
+    *) FIRMWARE_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1) ;;
+esac
+[ -n "$FIRMWARE_VER" ] || FIRMWARE_VER="unknown"
 
 # 2. Router System & CPU
 UPTIME_RAW=$(cat /proc/uptime 2>/dev/null || echo "0 0")
@@ -82,8 +86,8 @@ MEM_PHYS_PCT=0
 [ "$MEM_PHYS_TOTAL" -gt 0 ] && MEM_PHYS_PCT=$(awk -v u="$MEM_PHYS_USED" -v t="$MEM_PHYS_TOTAL" 'BEGIN {printf "%.1f", (u*100)/t}')
 
 # Single-pass average of all thermal zones across the board
-R_TEMP_C=$(awk '{sum+=($1/1000); cnt++} END {if (cnt>0) printf "%.1f", sum/cnt; else print "38.9"}' /sys/class/thermal/thermal_zone*/temp 2>/dev/null)
-[ -z "$R_TEMP_C" ] && R_TEMP_C="38.9" 
+R_TEMP_C=$(awk '{sum+=($1/1000); cnt++} END {if (cnt>0) printf "%.1f", sum/cnt; else print "0"}' /sys/class/thermal/thermal_zone*/temp 2>/dev/null)
+[ -z "$R_TEMP_C" ] && R_TEMP_C=0
 
 OVERLAY_TOTAL=$(df -m /overlay 2>/dev/null | tail -n 1 | awk '{print $2}')
 OVERLAY_USED=$(df -m /overlay 2>/dev/null | tail -n 1 | awk '{print $3}')
@@ -96,7 +100,9 @@ LAN_IP=$(echo "$LAN_IP" | awk '{print $1}' | sed 's/\/.*//')
 ROUTER_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
 [ -z "$ROUTER_MAC" ] && ROUTER_MAC="d2:61:fb:c9:5e:c5"
 
-DEFAULT_WAN_DEV=$(ip route show default 2>/dev/null | awk '{print $5}' | head -n 1)
+DEFAULT_ROUTE=$(ip route show default 2>/dev/null | awk 'NR == 1 {print; exit}')
+DEFAULT_WAN_DEV=$(printf '%s\n' "$DEFAULT_ROUTE" | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
+DEFAULT_WAN_IF=$(ubus call network.interface dump 2>/dev/null | jq -r --arg dev "$DEFAULT_WAN_DEV" '.interface[]? | select(.l3_device == $dev or .device == $dev) | .interface // empty' 2>/dev/null | head -n 1)
 [ -z "$DEFAULT_WAN_DEV" ] && DEFAULT_WAN_DEV=""
 
 if [ -n "$DEFAULT_WAN_DEV" ]; then
@@ -107,8 +113,31 @@ else
     [ -z "$WAN_IP" ] && WAN_IP=""
 fi
 
-GW_IP=$(ip route show default 2>/dev/null | awk '{print $3}' | head -n 1)
+GW_IP=$(printf '%s\n' "$DEFAULT_ROUTE" | awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}')
 [ -z "$GW_IP" ] && GW_IP=""
+
+UPLINK_MODE=disconnected
+UPLINK_SPEED=0
+UPLINK_CONNECTED=false
+if [ -n "$DEFAULT_WAN_DEV" ]; then
+    UPLINK_CONNECTED=true
+    case "$DEFAULT_WAN_IF:$DEFAULT_WAN_DEV" in
+        wwan:*|*:phy*-sta*|*:wlan*|*:phy*) UPLINK_MODE=repeater ;;
+        *usb*:*|*:usb*) UPLINK_MODE=usb_tether ;;
+        pppoe*:*|*:ppp*) UPLINK_MODE=pppoe ;;
+        *) UPLINK_MODE=standard ;;
+    esac
+    UPLINK_SPEED=$(cat "/sys/class/net/$DEFAULT_WAN_DEV/speed" 2>/dev/null)
+    case "$UPLINK_SPEED" in ''|-1|*[!0-9]*) UPLINK_SPEED=0 ;; esac
+    if [ "$UPLINK_SPEED" -eq 0 ] && command -v iwinfo >/dev/null 2>&1; then
+        WIFI_RATE=$(iwinfo "$DEFAULT_WAN_DEV" info 2>/dev/null | awk '/Bit Rate:/ {print $3; exit}')
+        case "$WIFI_RATE" in *[!0-9.]*|'') WIFI_RATE=0 ;; esac
+        UPLINK_SPEED=$(awk -v rate="$WIFI_RATE" 'BEGIN {if (rate > 0) printf "%d", rate; else print 0}')
+    fi
+fi
+UPLINK_JSON=$(jq -cn --arg device "$DEFAULT_WAN_DEV" --arg interface "$DEFAULT_WAN_IF" --arg mode "$UPLINK_MODE" \
+    --arg gateway "$GW_IP" --argjson speed "$UPLINK_SPEED" --argjson connected "$UPLINK_CONNECTED" \
+    '{device:$device,interface:$interface,mode:$mode,speed_mbps:$speed,connected:$connected,gateway:$gateway}')
 
 DNS_IP=$(awk '/nameserver/ {print $2}' /tmp/resolv.conf.auto 2>/dev/null | head -n 1)
 [ -z "$DNS_IP" ] && DNS_IP=""
@@ -771,7 +800,7 @@ if [ "$WWAN_UP" = "true" ]; then
         --arg bssid "${WWAN_BSSID:-}" \
         --arg ip "${WWAN_IP:-}" \
         --arg gw "${WWAN_GW:-}" \
-        --arg bitrate "${WWAN_BITRATE:-1729 Mbps}" \
+        --arg bitrate "${WWAN_BITRATE:-Unknown}" \
         --arg signal "${WWAN_SIGNAL:--55 dBm}" \
         --arg band "$WWAN_BAND" \
         '{connected: $up, device: $dev, ssid: $ssid, bssid: $bssid, ip: $ip, gateway: $gw, bitrate: $bitrate, signal: $signal, band: $band}')
@@ -812,6 +841,7 @@ cat << JSON
     "wan_ip": "${WAN_IP}",
     "tether_ip": "${WAN_IP}",
     "gateway_ip": "${GW_IP}",
+    "uplink": ${UPLINK_JSON},
     "dns_ip": "${DNS_IP}",
     "cell_ip": "${P_CELL_IP}",
     "ports": [${PORTS}]

@@ -38,7 +38,6 @@ import {
   closeTopoEvidenceModal,
   resetTopologyLayersConfig,
   autoMapNetworkTopology,
-  toggleTopologyAutoMode,
   syncRealClientsToTopology,
   toggleAnimFlow,
   switchAdbSubView,
@@ -123,7 +122,17 @@ import {
   fetchTailscale,
   fetchAdbLiveTelemetry,
   fetchWifiConfig,
+  fetchWifiClients,
+  wifiClientAction,
   renderWifiClients,
+  loadSystemSettings,
+  toggleSystemTimezoneMenu,
+  filterSystemTimezoneOptions,
+  selectSystemTimezone,
+  applyCustomSystemTimezone,
+  saveSystemSettingsPage,
+  toggleScheduledAutoReboot,
+  saveScheduledAutoRebootTime,
   saveWifiSettings,
   scanNearbyWifi,
   connectToWifiNetwork,
@@ -131,6 +140,7 @@ import {
   toggleWifiMasterPower,
   togglePasswordVisibility,
   fetchRepeaterStatus,
+  toggleRepeaterEnabled,
   scanRepeaterWifi,
   openRepeaterConnectModal,
   closeRepeaterConnectModal,
@@ -219,7 +229,6 @@ if (typeof window !== 'undefined') {
   window.closeTopoEvidenceModal = closeTopoEvidenceModal;
   window.resetTopologyLayersConfig = resetTopologyLayersConfig;
   window.autoMapNetworkTopology = autoMapNetworkTopology;
-  window.toggleTopologyAutoMode = toggleTopologyAutoMode;
   window.toggleAnimFlow = toggleAnimFlow;
   window.switchAdbSubView = switchAdbSubView;
   window.fetchAdbSmsPage = fetchAdbSmsPage;
@@ -305,7 +314,17 @@ if (typeof window !== 'undefined') {
   window.saveSmbGuestSetting = saveSmbGuestSetting;
   window.powerCycleUsbHub = powerCycleUsbHub;
   window.fetchWifiConfig = fetchWifiConfig;
+  window.fetchWifiClients = fetchWifiClients;
+  window.wifiClientAction = wifiClientAction;
   window.renderWifiClients = renderWifiClients;
+  window.loadSystemSettings = loadSystemSettings;
+  window.toggleSystemTimezoneMenu = toggleSystemTimezoneMenu;
+  window.filterSystemTimezoneOptions = filterSystemTimezoneOptions;
+  window.selectSystemTimezone = selectSystemTimezone;
+  window.applyCustomSystemTimezone = applyCustomSystemTimezone;
+  window.saveSystemSettingsPage = saveSystemSettingsPage;
+  window.toggleScheduledAutoReboot = toggleScheduledAutoReboot;
+  window.saveScheduledAutoRebootTime = saveScheduledAutoRebootTime;
   window.saveWifiSettings = saveWifiSettings;
   window.scanNearbyWifi = scanNearbyWifi;
   window.connectToWifiNetwork = connectToWifiNetwork;
@@ -313,6 +332,7 @@ if (typeof window !== 'undefined') {
   window.toggleWifiMasterPower = toggleWifiMasterPower;
   window.togglePasswordVisibility = togglePasswordVisibility;
   window.fetchRepeaterStatus = fetchRepeaterStatus;
+  window.toggleRepeaterEnabled = toggleRepeaterEnabled;
   window.scanRepeaterWifi = scanRepeaterWifi;
   window.openRepeaterConnectModal = openRepeaterConnectModal;
   window.closeRepeaterConnectModal = closeRepeaterConnectModal;
@@ -344,6 +364,7 @@ if (typeof window !== 'undefined') {
     toggleNotificationTrigger,
     loadNotificationTriggers,
     fetchRepeaterStatus,
+    toggleRepeaterEnabled,
     scanRepeaterWifi,
     openRepeaterConnectModal,
     closeRepeaterConnectModal,
@@ -358,7 +379,17 @@ if (typeof window !== 'undefined') {
     deleteNotification,
     loadNotificationsPage,
     fetchWifiConfig,
+    fetchWifiClients,
+    wifiClientAction,
     renderWifiClients,
+    loadSystemSettings,
+    toggleSystemTimezoneMenu,
+    filterSystemTimezoneOptions,
+    selectSystemTimezone,
+    applyCustomSystemTimezone,
+    saveSystemSettingsPage,
+    toggleScheduledAutoReboot,
+    saveScheduledAutoRebootTime,
     saveWifiSettings,
     scanNearbyWifi,
     connectToWifiNetwork,
@@ -400,7 +431,6 @@ if (typeof window !== 'undefined') {
     closeTopoEvidenceModal,
     resetTopologyLayersConfig,
     autoMapNetworkTopology,
-    toggleTopologyAutoMode,
     toggleAnimFlow,
     switchAdbSubView,
     fetchAdbSmsPage,
@@ -521,7 +551,6 @@ export {
   closeTopoEvidenceModal,
   resetTopologyLayersConfig,
   autoMapNetworkTopology,
-  toggleTopologyAutoMode,
   syncRealClientsToTopology,
   toggleAnimFlow,
   switchAdbSubView,
@@ -611,7 +640,17 @@ export {
   saveSmbGuestSetting,
   powerCycleUsbHub,
   fetchWifiConfig,
+  fetchWifiClients,
+  wifiClientAction,
   renderWifiClients,
+  loadSystemSettings,
+  toggleSystemTimezoneMenu,
+  filterSystemTimezoneOptions,
+  selectSystemTimezone,
+  applyCustomSystemTimezone,
+  saveSystemSettingsPage,
+  toggleScheduledAutoReboot,
+  saveScheduledAutoRebootTime,
   saveWifiSettings,
   scanNearbyWifi,
   connectToWifiNetwork,
@@ -619,6 +658,7 @@ export {
   toggleWifiMasterPower,
   togglePasswordVisibility,
   fetchRepeaterStatus,
+  toggleRepeaterEnabled,
   scanRepeaterWifi,
   openRepeaterConnectModal,
   closeRepeaterConnectModal,

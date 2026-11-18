@@ -205,14 +205,11 @@ while true; do
 
         rx_b=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null || echo 0)
         tx_b=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null || echo 0)
-        tot_b=$((rx_b + tx_b))
+        tot_b=$(awk -v rx="$rx_b" -v tx="$tx_b" 'BEGIN {printf "%.0f", rx + tx}')
 
         prev_tot=0
         [ -f "$PREV_STATS" ] && prev_tot=$(awk -v dev="$iface" '$1==dev {print $2}' "$PREV_STATS" 2>/dev/null)
-        rate_bps=0
-        if [ "$prev_tot" -gt 0 ] && [ "$tot_b" -ge "$prev_tot" ]; then
-            rate_bps=$(( (tot_b - prev_tot) * 8 / TIME_DELTA ))
-        fi
+        rate_bps=$(awk -v current="$tot_b" -v previous="${prev_tot:-0}" -v delta="$TIME_DELTA" 'BEGIN {if (previous > 0 && current >= previous && delta > 0) printf "%.0f", (current - previous) * 8 / delta; else print 0}')
         rate_mbps=$(awk -v r="$rate_bps" 'BEGIN {printf "%.1f", r / 1000000}')
 
         slot_label="USB"
@@ -233,7 +230,8 @@ while true; do
     for iface in $CANDIDATE_DEVS; do
         rx_b=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null || echo 0)
         tx_b=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null || echo 0)
-        echo "$iface $((rx_b + tx_b))" >> "$PREV_STATS.new"
+        tot_b=$(awk -v rx="$rx_b" -v tx="$tx_b" 'BEGIN {printf "%.0f", rx + tx}')
+        echo "$iface $tot_b" >> "$PREV_STATS.new"
     done
     mv "$PREV_STATS.new" "$PREV_STATS"
 

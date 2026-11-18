@@ -8,6 +8,14 @@ let timer = null;
     let clientSortMode = 'ip';
     let cachedClients = [];
     let cachedTotWanBytes = 0;
+    let systemSettingsState = { epoch: null, timezone: '', zonename: '', ntp_enabled: true, ntp_servers: [], auto_reboot_enabled: false, auto_reboot_time: '' };
+    const DEFAULT_SYSTEM_NTP_SERVERS = ['0.pool.ntp.org', '1.pool.ntp.org', 'time.cloudflare.com', 'time.google.com'];
+    const SYSTEM_TIMEZONE_OPTIONS = [
+      ['Etc/UTC', 'UTC0'], ['America/Los_Angeles', 'PST8PDT,M3.2.0,M11.1.0'], ['America/Denver', 'MST7MDT,M3.2.0,M11.1.0'],
+      ['America/Chicago', 'CST6CDT,M3.2.0,M11.1.0'], ['America/New_York', 'EST5EDT,M3.2.0,M11.1.0'], ['Europe/London', 'GMT0BST,M3.5.0/1,M10.5.0'],
+      ['Europe/Berlin', 'CET-1CEST,M3.5.0,M10.5.0/3'], ['Asia/Dubai', 'GST-4'], ['Asia/Kolkata', 'IST-5:30'], ['Asia/Singapore', 'SGT-8'],
+      ['Asia/Tokyo', 'JST-9'], ['Australia/Sydney', 'AEST-10AEDT,M10.1.0,M4.1.0/3']
+    ];
 
     function applyThemeMode() {
       let resolvedTheme = 'dark';
@@ -116,12 +124,17 @@ let timer = null;
         const data = await res.json();
         if (data.status === 'ok') {
           const host = data.hostname || (data.router && data.router.hostname) || 'MAXNET-GATEWAY';
+          const firmware = String(data.firmware || '').trim();
+          if (firmware && firmware.toLowerCase() !== 'unknown') {
+            const version = firmware.toUpperCase().startsWith('V') ? firmware.toUpperCase() : `V${firmware}`;
+            document.title = `MAXNET | ${version}`;
+          }
           const titleEl = document.getElementById('loginDeviceHostTitle');
           if (titleEl) {
             titleEl.textContent = host.toUpperCase();
           }
-          if (!document.title || document.title.includes('Login')) {
-            document.title = host.toUpperCase() + ' - Login';
+          if (!firmware || firmware.toLowerCase() === 'unknown') {
+            document.title = 'MAXNET';
           }
         }
       } catch (e) {
@@ -134,17 +147,42 @@ let timer = null;
       document.getElementById('dashboardContainer').style.display = 'none';
       
       const passInp = document.getElementById('loginPass');
+      const passHint = document.getElementById('loginRootPassHint');
       if (passInp) {
         passInp.value = '';
-        passInp.placeholder = 'Enter administrator password';
+        passInp.placeholder = 'Checking router password status…';
       }
+      if (passHint) passHint.style.display = 'none';
       if (timer) clearInterval(timer);
       fetchPublicHealthSnapshot();
+      checkRootPasswordState();
+    }
+
+    async function checkRootPasswordState() {
+      try {
+        const res = await fetch('/cgi-bin/auth?action=check_root_pass', { cache: 'no-store' });
+        const data = await res.json();
+        const passwordState = [data.has_password, data.has_root_pass, data.has_root_password, data.root_password_set, data.root_pass_set, data.password_set, data.configured]
+          .find(value => typeof value === 'boolean' || value === 0 || value === 1 || ['true', 'false', '0', '1'].includes(String(value).toLowerCase()));
+        const isUnset = passwordState !== undefined
+          ? passwordState === false || passwordState === 0 || String(passwordState).toLowerCase() === 'false' || String(passwordState) === '0'
+          : data.password_empty === true || data.root_pass_empty === true || data.root_password_empty === true || data.status === 'empty' || data.status === 'unset';
+        const hint = document.getElementById('loginRootPassHint');
+        const input = document.getElementById('loginPass');
+        if (hint) hint.style.display = isUnset ? 'block' : 'none';
+        if (input) input.placeholder = isUnset ? 'No password set — leave blank' : 'Enter administrator password';
+      } catch (e) {
+        const hint = document.getElementById('loginRootPassHint');
+        const input = document.getElementById('loginPass');
+        if (hint) hint.style.display = 'none';
+        if (input) input.placeholder = 'Enter password if one is set; otherwise leave blank';
+      }
     }
 
     function showDashboard() {
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('dashboardContainer').style.display = 'block';
+      if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
       
       fetchData();
       fetchNetworkConfig();
@@ -318,6 +356,11 @@ let timer = null;
         badge: 'CLIENT & SERVER',
         badgeColor: '#06b6d4'
       },
+      'acc-pppoe-users': {
+        title: 'Subscriber Accounts',
+        badge: 'PPPoE CLIENTS',
+        badgeColor: '#06b6d4'
+      },
       'acc-notifications': {
         title: 'Notifications',
         badge: 'NOTIFICATIONS',
@@ -338,6 +381,16 @@ let timer = null;
         badge: 'CLIENT LEASES',
         badgeColor: '#10b981'
       },
+      'acc-wifi-clients': {
+        title: 'Wi-Fi Clients',
+        badge: 'WIRELESS STATIONS',
+        badgeColor: '#06b6d4'
+      },
+      'acc-system-time': {
+        title: 'Date & Time',
+        badge: 'CLOCK & TIMEZONE',
+        badgeColor: '#06b6d4'
+      },
       'acc-gaming': {
         title: 'Gaming Mode',
         badge: 'LOW LATENCY',
@@ -349,7 +402,7 @@ let timer = null;
         badgeColor: '#a78bfa'
       },
       'acc-tailscale': {
-        title: 'Tailscale VPN',
+        title: 'Tailscale',
         badge: 'ENCRYPTED MESH',
         badgeColor: '#06b6d4'
       },
@@ -437,6 +490,33 @@ let timer = null;
 
     window._currentSettingPage = null;
 
+    function updateSettingsPageActions(id) {
+      const actions = document.getElementById('settingsPageActions');
+      if (!actions) return;
+      const visibleActions = {
+        settingsSaveAction: id === 'acc-system-time',
+        pppoeSubscriberAddAction: id === 'acc-pppoe-users',
+        topoResetAction: id === 'acc-topo-layers',
+        topoExportAction: id === 'acc-topo-layers',
+        topoImportAction: id === 'acc-topo-layers'
+      };
+      Object.entries(visibleActions).forEach(([actionId, visible]) => {
+        const button = document.getElementById(actionId);
+        if (button) button.style.display = visible ? 'inline-flex' : 'none';
+      });
+      actions.style.display = Object.values(visibleActions).some(Boolean) ? 'flex' : 'none';
+    }
+
+    async function saveCurrentSettingPage() {
+      if (window._currentSettingPage === 'acc-wifi') return saveWifiSettings();
+      if (window._currentSettingPage === 'acc-system-time') return saveSystemSettingsPage();
+    }
+
+    async function resetCurrentSettingPage() {
+      if (window._currentSettingPage === 'acc-wifi') return fetchWifiConfig();
+      if (window._currentSettingPage === 'acc-system-time') return loadSystemSettings();
+    }
+
     function openSettingPage(id, pushHistory = true) {
       if (!id) return;
       if (id.includes('&')) id = id.split('&')[0];
@@ -462,6 +542,8 @@ let timer = null;
         if (iconBox) {
           navIcon.innerHTML = iconBox.innerHTML;
           navIcon.style.color = iconBox.style.color || '#38bdf8';
+        } else if (id === 'acc-pppoe-users') {
+          navIcon.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M17 11h5M19.5 8.5v5"/></svg>';
         } else {
           navIcon.innerHTML = '';
         }
@@ -500,6 +582,7 @@ let timer = null;
       }
 
       window._currentSettingPage = id;
+      updateSettingsPageActions(id);
 
       if (id === 'acc-packages') {
         document.body.classList.remove('terminal-active');
@@ -511,7 +594,7 @@ let timer = null;
       } else if (id === 'acc-interfaces') {
         document.body.classList.remove('terminal-active');
         if (typeof loadWanInterfaceConfig === 'function') loadWanInterfaceConfig();
-      } else if (id === 'acc-pppoe') {
+      } else if (id === 'acc-pppoe' || id === 'acc-pppoe-users') {
         document.body.classList.remove('terminal-active');
         if (typeof loadPppoeConfig === 'function') loadPppoeConfig();
       } else if (id === 'acc-notifications') {
@@ -529,6 +612,12 @@ let timer = null;
       } else if (id === 'acc-wifi') {
         document.body.classList.remove('terminal-active');
         if (typeof fetchWifiConfig === 'function') fetchWifiConfig();
+      } else if (id === 'acc-wifi-clients') {
+        document.body.classList.remove('terminal-active');
+        if (typeof fetchWifiClients === 'function') fetchWifiClients();
+      } else if (id === 'acc-system-time') {
+        document.body.classList.remove('terminal-active');
+        if (typeof loadSystemSettings === 'function') loadSystemSettings();
       } else if (id === 'acc-repeater') {
         document.body.classList.remove('terminal-active');
         if (typeof fetchRepeaterStatus === 'function') fetchRepeaterStatus();
@@ -540,6 +629,7 @@ let timer = null;
         if (typeof checkLatestFirmwareUpdate === 'function') checkLatestFirmwareUpdate();
       } else if (id === 'acc-maintenance') {
         document.body.classList.remove('terminal-active');
+        if (typeof loadSystemSettings === 'function') loadSystemSettings();
         if (typeof fetchLogs === 'function') fetchLogs();
       } else if (id === 'acc-network' || id === 'acc-static-leases') {
         document.body.classList.remove('terminal-active');
@@ -944,6 +1034,7 @@ function handleSettingsBack() {
       });
 
       window._currentSettingPage = null;
+      updateSettingsPageActions(null);
 
       if (window.location.hash.startsWith('#setting=')) {
         try {
@@ -1406,6 +1497,9 @@ function handleSettingsBack() {
 
       let sumActiveMbps = 0;
 
+      const activeLinks = links.filter(link => link.status === 'CONNECTED');
+      let firstActiveSeen = false;
+
       links.forEach((link, idx) => {
         if (idx >= linkIds.length) return;
         const baseId = linkIds[idx];
@@ -1416,13 +1510,23 @@ function handleSettingsBack() {
         const dotEl = document.getElementById('dev-dot-' + baseId);
 
         const isConnected = link.status === 'CONNECTED';
-        let mbpsVal = Number(link.speed_mbps || 0);
-
-        if (isConnected && idx === 0 && liveTotalMbps > mbpsVal) {
-          mbpsVal = liveTotalMbps;
+        let mbpsVal = 0;
+        const hasByteCounters = link.rx_bytes !== undefined || link.tx_bytes !== undefined;
+        if (isConnected && hasByteCounters) {
+          if (!window._topologyLinkRateStats) window._topologyLinkRateStats = {};
+          const key = link.id || String(idx);
+          const now = Date.now();
+          const bytes = (Number(link.rx_bytes) || 0) + (Number(link.tx_bytes) || 0);
+          const previous = window._topologyLinkRateStats[key];
+          if (previous && bytes >= previous.bytes && now > previous.time) {
+            mbpsVal = ((bytes - previous.bytes) * 8) / ((now - previous.time) * 1000);
+          }
+          window._topologyLinkRateStats[key] = { bytes, time: now };
+        } else if (isConnected && activeLinks.length === 1 && !firstActiveSeen) {
+          mbpsVal = Math.max(0, Number(liveTotalMbps) || 0);
         }
-
         if (isConnected) {
+          firstActiveSeen = true;
           sumActiveMbps += mbpsVal;
         }
 
@@ -1473,9 +1577,8 @@ function handleSettingsBack() {
 
       const combinedEl = document.getElementById('combined');
       if (combinedEl) {
-        let comb = Math.max(sumActiveMbps, Number(ml.combined_speed_mbps || 0));
-        // No artificial speed limit
-        combinedEl.textContent = comb.toFixed(1) + ' Mbps';
+        const combinedLiveMbps = Math.max(0, Number(liveTotalMbps) || 0, sumActiveMbps);
+        combinedEl.textContent = combinedLiveMbps.toFixed(1) + ' Mbps';
       }
 
       const activeSrcEl = document.getElementById('multilinkActiveSources');
@@ -1842,26 +1945,26 @@ function handleSettingsBack() {
       } else if (nodeType === 'wan') {
         const net = d.network || {};
         title = 'WAN';
-        sub = escapeHtml(net.wan_ip || '10.43.99.85');
+        sub = escapeHtml(net.wan_ip || '--');
         iconSvg = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"/></svg>';
 
         gridHtml = `
           <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; width:100%; box-sizing:border-box;">
             <div style="padding:7px 9px; background:var(--card-inner, #161822); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:6px; min-width:0; box-sizing:border-box; overflow:hidden;">
               <span style="font-size:9px; font-family:var(--font-mono); color:var(--text-dim); display:block;">IP</span>
-              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">${escapeHtml(net.wan_ip || '10.43.99.85')}</strong>
+              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">${escapeHtml(net.wan_ip || '--')}</strong>
             </div>
             <div style="padding:7px 9px; background:var(--card-inner, #161822); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:6px; min-width:0; box-sizing:border-box; overflow:hidden;">
               <span style="font-size:9px; font-family:var(--font-mono); color:var(--text-dim); display:block;">Gateway</span>
-              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">${escapeHtml(net.gateway_ip || '10.43.99.79')}</strong>
+              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">${escapeHtml(net.gateway_ip || '--')}</strong>
             </div>
             <div style="padding:7px 9px; background:var(--card-inner, #161822); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:6px; min-width:0; box-sizing:border-box; overflow:hidden;">
               <span style="font-size:9px; font-family:var(--font-mono); color:var(--text-dim); display:block;">DNS</span>
-              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">${escapeHtml(net.dns_ip || '10.43.99.79')}</strong>
+              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">${escapeHtml(net.dns_ip || '--')}</strong>
             </div>
             <div style="padding:7px 9px; background:var(--card-inner, #161822); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:6px; min-width:0; box-sizing:border-box; overflow:hidden;">
-              <span style="font-size:9px; font-family:var(--font-mono); color:var(--text-dim); display:block;">Speed</span>
-              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">1000 Mbps</strong>
+              <span style="font-size:9px; font-family:var(--font-mono); color:var(--text-dim); display:block;">Live Throughput</span>
+              <strong style="font-size:11.5px; font-family:var(--font-mono); color:var(--text-main); margin-top:2px; display:block;">${((Math.max(0, Number(window._currentRxMbps) || 0) + Math.max(0, Number(window._currentTxMbps) || 0)).toFixed(1))} Mbps</strong>
             </div>
           </div>
         `;
@@ -1869,17 +1972,17 @@ function handleSettingsBack() {
       } else if (nodeType === 'hub') {
         const hub = d.usb_hub || {};
         title = 'USB Hub';
-        sub = hub.model || 'GL3523 USB 3.1 Hub';
+        sub = hub.model || 'USB Hub';
         iconSvg = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2;"><rect x="2" y="7" width="20" height="10" rx="2"/><circle cx="6" cy="12" r="1.5"/><circle cx="10" cy="12" r="1.5"/><circle cx="14" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/></svg>';
 
-        const mfg = hub.manufacturer || 'GenesysLogic';
-        const model = hub.model || 'GL3523';
-        const cap = hub.capacity || '5 Gbps (SuperSpeed)';
+        const mfg = hub.manufacturer || '--';
+        const model = hub.model || '--';
+        const cap = hub.capacity || '--';
         const totPorts = hub.ports || 4;
         const u3Ports = hub.usb3_ports || 4;
         const u2Ports = hub.usb2_ports || 4;
-        const connCount = hub.connected_devices !== undefined ? hub.connected_devices : (d.usb_devices ? d.usb_devices.length : 2);
-        const uplinkSpd = hub.speed_mbps ? `${hub.speed_mbps} Mbps` : '5 Gbps';
+        const connCount = hub.connected_devices !== undefined ? hub.connected_devices : (Array.isArray(d.usb_devices) ? d.usb_devices.length : 0);
+        const uplinkSpd = hub.speed_mbps ? `${hub.speed_mbps} Mbps` : '--';
 
         gridHtml = `
           <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; width:100%; box-sizing:border-box;">
@@ -1922,14 +2025,14 @@ function handleSettingsBack() {
         const stor = d.usb_storage || {};
         const uDev = (d.usb_devices || []).find(u => u.device_type === 'storage' || u.has_storage) || {};
         title = 'USB Storage';
-        sub = uDev.raw_model || uDev.model || stor.name || 'Disk 2.0 (Pendrive)';
+        sub = uDev.raw_model || uDev.model || stor.name || 'USB storage';
         iconSvg = '<svg viewBox="0 0 24 24" style="width:16px; height:16px; stroke:#c084fc; fill:none; stroke-width:2;"><path d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><line x1="10" y1="6" x2="14" y2="6"/><line x1="10" y1="18" x2="14" y2="18"/></svg>';
 
-        const storDev = stor.device || uDev.mount_point || '/dev/sda';
-        const storMount = stor.mount_point || uDev.mount_point || '/mnt/storage/Pendrive';
-        const storTotal = stor.total || uDev.total_space || '57.4 GB';
-        const storFree = stor.free || uDev.free_space || '54.4 GB';
-        const storSpd = (uDev.speed_mbps && uDev.speed_mbps >= 1000) ? '5 Gbps (SuperSpeed)' : '480 Mbps (HighSpeed)';
+        const storDev = stor.device || uDev.device || '--';
+        const storMount = stor.mount_point || uDev.mount_point || '--';
+        const storTotal = stor.total || uDev.total_space || '--';
+        const storFree = stor.free || uDev.free_space || '--';
+        const storSpd = uDev.speed_mbps ? `${uDev.speed_mbps} Mbps` : '--';
         const storShare = stor.share_path || uDev.share_path || `\\\\${d.network?.lan_ip || '10.0.0.1'}\\Pendrive`;
 
         gridHtml = `
@@ -2015,7 +2118,7 @@ function handleSettingsBack() {
         const portId = 'lan' + portNum;
         const net = d.network || {};
         const ports = net.ports || [];
-        const port = ports.find(p => p.id === portId) || { id: portId, speed: (portNum === 2 || portNum === 3 ? 1000 : 0), status: (portNum === 2 || portNum === 3 ? 'up' : 'down') };
+        const port = ports.find(p => p.id === portId) || { id: portId, speed: 0, status: 'down' };
         const isUp = port.status === 'up';
 
         const clients = d.clients || [];
@@ -2793,6 +2896,7 @@ function handleSettingsBack() {
 
       const overlay = document.getElementById('topoNodeDetailOverlay');
       if (!overlay) return;
+      clearTimeout(window._topoNodeDetailCloseTimer);
       if (overlay.parentElement !== document.body) {
         document.body.appendChild(overlay);
       }
@@ -2806,13 +2910,6 @@ function handleSettingsBack() {
       const btnEditSettings = document.getElementById('btnTopoNodeEditSettings');
       const btnUnblock = document.getElementById('btnTopoNodeUnblock');
       if (btnUnblock) btnUnblock.style.display = 'none';
-
-      const isLight = document.documentElement.getAttribute("data-theme") === "light";
-      const cardBg = isLight ? "rgba(0, 0, 0, 0.025)" : "rgba(255, 255, 255, 0.03)";
-      const cardBorder = isLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.06)";
-      const textDim = isLight ? "#64748b" : "var(--text-dim, #94a3b8)";
-      const textMain = isLight ? "#0f172a" : "var(--text-main, #eef3f5)";
-      const textSub = isLight ? "#475569" : "rgba(255, 255, 255, 0.65)";
 
       const cache = window._lastDataCache || {};
       const clients = Array.isArray(cache.clients) ? cache.clients : [];
@@ -2833,14 +2930,19 @@ function handleSettingsBack() {
 
       function makeTile(label, val, subText, fullWidth) {
         return `
-          <div style="background:${cardBg}; padding:10px 12px; border-radius:8px; border:1px solid ${cardBorder}; ${fullWidth ? 'grid-column:1 / -1;' : ''} display:flex; flex-direction:column; justify-content:center; min-width:0; overflow:hidden; word-break:break-word;">
-            <div style="color:${textDim}; font-size:9.5px; font-weight:800; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(label)}</div>
-            <div style="color:${textMain}; font-weight:700; font-size:12px; font-family:var(--font-mono); display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0;">
-              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${val}</span>
+          <div class="topo-detail-row"${fullWidth ? ' style="grid-column:1 / -1;"' : ''}>
+            <svg class="topo-detail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5m0-8h.01"/></svg>
+            <div class="topo-detail-copy">
+              <span class="topo-detail-label">${esc(label)}</span>
+              <span class="topo-detail-value">${val}</span>
+              ${subText ? `<span class="topo-detail-sub">${subText}</span>` : ''}
             </div>
-            ${subText ? `<div style="font-size:10px; color:${textSub}; font-family:var(--font-mono); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${subText}</div>` : ''}
           </div>
         `;
+      }
+
+      function makeQuickInfo(icon, label, value) {
+        return `<div class="topo-quick-info-item"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><div class="topo-quick-info-copy"><span class="topo-quick-info-label">${esc(label)}</span><strong class="topo-quick-info-value">${esc(value)}</strong></div></div>`;
       }
 
       // 1. WAN Uplink Node (USB Phone / Modem / Storage / Wi-Fi Repeater)
@@ -2865,12 +2967,12 @@ function handleSettingsBack() {
           const tiles = [];
           tiles.push(makeTile('Repeater IP Address', `<span>${esc(repIp)}</span> ${copyBtn(repIp)}`, 'DHCP Wireless Lease'));
           tiles.push(makeTile('Target Wi-Fi SSID', `<span>${esc(repSsid)}</span>`, `BSSID: ${esc(repInfo.bssid || '--')}`));
-          tiles.push(makeTile('Physical Link Speed', `<span>${esc(repInfo.bitrate || target.speed || '1.7 Gbps')}</span>`, 'PHY Link Rate (802.11ax)'));
+          tiles.push(makeTile('Physical Link Speed', `<span>${esc(repInfo.bitrate || (Number(cache.topology_layers?.tree?.active_uplink?.speed_mbps) > 0 ? `${cache.topology_layers.tree.active_uplink.speed_mbps} Mbps` : 'Unknown'))}</span>`, 'Wireless link rate'));
           tiles.push(makeTile('Signal Strength', `<span>${esc(repInfo.signal || '-55 dBm')}</span>`, `Band: ${esc(repInfo.band || '5 GHz')}`));
           if (repInfo.gateway) {
             tiles.push(makeTile('Upstream Gateway', `<span>${esc(repInfo.gateway)}</span> ${copyBtn(repInfo.gateway)}`, 'Next-Hop Router'));
           }
-          const liveSpd = target.speed || `${(window._currentRxMbps + window._currentTxMbps).toFixed(3)} Mbps`;
+          const liveSpd = `${(Math.max(0, Number(window._currentRxMbps) || 0) + Math.max(0, Number(window._currentTxMbps) || 0)).toFixed(1)} Mbps`;
           tiles.push(makeTile('Live Throughput', `<span style="color:#10b981;">${esc(liveSpd)}</span>`, 'Active Traffic'));
           if (bodyEl) {
             bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
@@ -2886,7 +2988,8 @@ function handleSettingsBack() {
         }
 
         const isStorage = (usbDev.device_type === "storage" || usbDev.device_type === "ssd" || usbDev.device_type === "pendrive" || usbDev.has_storage);
-        const wanIp = target.ip || net.wan_ip || usbDev.dhcp_ip || '--';
+        const usbWanDevice = (window._cachedUsbWanData?.devices || []).find(device => (device.interface || device.id) === (usbDev.net_interface || 'usb0'));
+        const wanIp = mobile.usb_ip || usbWanDevice?.ip || net.wan_ip || usbDev.dhcp_ip || target.ip || '--';
         const phoneModel = usbDev.model || (mobile && mobile.model) || (isStorage ? 'USB Storage' : 'USB Modem');
         
         if (titleEl) titleEl.textContent = isStorage ? (usbDev.model || 'USB Storage Drive') : phoneModel;
@@ -2930,13 +3033,14 @@ function handleSettingsBack() {
           tiles.push(makeTile('File Sharing (SMB)', `${usbDev.smb_running ? 'SMB Active' : 'SMB Stopped'}`, `Share: ${esc(usbDev.share_path || '\\\\10.0.0.1\\Storage')}`));
         }
 
-        const liveSpd = target.speed || `${(window._currentRxMbps + window._currentTxMbps).toFixed(3)} Mbps`;
+        const liveSpd = target.speed || `${(Math.max(0, Number(window._currentRxMbps) || 0) + Math.max(0, Number(window._currentTxMbps) || 0)).toFixed(1)} Mbps`;
         const rxMb = router.usb?.rx_mb || 0;
         const txMb = router.usb?.tx_mb || 0;
         const rxStr = rxMb > 1024 ? (rxMb / 1024).toFixed(2) + ' GB' : rxMb.toFixed(1) + ' MB';
         const txStr = txMb > 1024 ? (txMb / 1024).toFixed(2) + ' GB' : txMb.toFixed(1) + ' MB';
         tiles.push(makeTile('Live Throughput', `<span style="color:#10b981;">${esc(liveSpd)}</span>`, `Session: Rx ${rxStr} • Tx ${txStr}`));
-        tiles.push(makeTile('Device Features', `<span class="card-badge emerald" style="font-size:9.5px; margin-right:4px;">Tethering Active</span> <span class="card-badge sky" style="font-size:9.5px;">ADB: ${usbDev.adb_enabled ? 'Enabled' : 'Disabled'}</span>`, 'USB High-Speed Connection'));
+        tiles.push(makeTile('Tethering Link', `${esc(usbDev.dhcp_ip || usbDev.tethering_ip || mobile.usb_ip || 'IP unavailable')}`, `Phone-side address • ${usbDev.net_interface || 'USB network'}`));
+        tiles.push(makeTile('Device Features', `<span class="card-badge ${usbDev.has_tethering ? 'emerald' : 'sky'}" style="font-size:9.5px; margin-right:4px;">${usbDev.has_tethering ? 'Tethering active' : 'Tethering off'}</span><span class="card-badge sky" style="font-size:9.5px;">ADB: ${usbDev.adb_enabled ? 'Enabled' : 'Disabled'}</span>`, 'USB High-Speed Connection'));
 
         if (bodyEl) {
           bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
@@ -2982,20 +3086,20 @@ function handleSettingsBack() {
         tiles.push(makeTile('CPU Processor Load', `${esc(cpuPct)} Active`, 'Qualcomm Quad-Core SoC'));
 
         const mem = router.memory || {};
-        const pTot = Number(mem.phys_total_mb) || 432;
+        const pTot = Number(mem.phys_total_mb) || 0;
         const pAvail = Number(mem.phys_avail_mb) || 0;
         const pUsed = Math.max(0, pTot - pAvail);
         const pPct = mem.phys_used_pct !== undefined ? Number(mem.phys_used_pct).toFixed(1) : (pTot > 0 ? ((pUsed * 100) / pTot).toFixed(1) : '0');
-        tiles.push(makeTile('Physical Hardware RAM', `${pPct}% Used (${pUsed} / ${pTot} MB)`, `${pAvail} MB Physical Available Free`));
+        tiles.push(makeTile('Physical Hardware RAM', pTot > 0 ? `${pPct}% Used (${pUsed} / ${pTot} MB)` : '--', pTot > 0 ? `${pAvail} MB Physical Available Free` : 'No live memory data'));
 
-        const zTot = Number(mem.zram_total_mb) || 215;
+        const zTot = Number(mem.zram_total_mb) || 0;
         const zUsed = Number(mem.zram_used_mb) || 0;
         const zPct = mem.zram_used_pct !== undefined ? Number(mem.zram_used_pct).toFixed(1) : (zTot > 0 ? ((zUsed * 100) / zTot).toFixed(1) : '0');
         tiles.push(makeTile('ZRAM Compressed Swap', `${zUsed} MB / ${zTot} MB Used (${zPct}%)`, 'Engine: LZO-RLE • Dynamic Swap Active'));
 
         const poolTot = Number(mem.total_mb) || (pTot + zTot);
         const poolUsed = Number(mem.used_mb) || (pUsed + zUsed);
-        const poolPct = mem.used_pct !== undefined ? mem.used_pct : Math.round((poolUsed * 100) / poolTot);
+        const poolPct = mem.used_pct !== undefined ? mem.used_pct : (poolTot > 0 ? Math.round((poolUsed * 100) / poolTot) : '--');
         tiles.push(makeTile('Total Working Memory Pool', `${poolPct}% Used (${poolUsed} / ${poolTot} MB)`, `${mem.available_mb || (poolTot - poolUsed)} MB Combined Available`));
 
         const tempC = router.temp_c !== undefined ? `${router.temp_c.toFixed(1)}°C` : '--';
@@ -3042,7 +3146,7 @@ function handleSettingsBack() {
         const tiles = [];
         tiles.push(makeTile('IP Address', `<span>${esc(apIp)}</span> ${copyBtn(apIp)}`, `Hostname: ${esc(apName)}.lan`));
         tiles.push(makeTile('MAC & Hardware', `${esc(apMac)}`, `Vendor: ${esc(vendor)}`));
-        tiles.push(makeTile('Gateway Uplink', `Port ${esc(uplink)}`, 'Link Speed: 1000 Mbps Full Duplex'));
+        tiles.push(makeTile('Gateway Uplink', `Port ${esc(uplink)}`, `Link Speed: ${target.link_speed || liveClient?.link_speed || 'unavailable'}`));
         tiles.push(makeTile('Sub-Clients Count', `${wClients.length} Wireless Clients`, 'Bridged Network Traffic'));
 
         if (wClients.length > 0) {
@@ -3084,14 +3188,14 @@ function handleSettingsBack() {
       if (target.type === 'storage') {
         const stor = cache.usb_storage || {};
         const uDev = (Array.isArray(cache.usb_devices) && cache.usb_devices.find(u => u.device_type === 'storage' || u.has_storage)) || {};
-        const devName = target.name || uDev.raw_model || uDev.model || stor.name || 'Disk 2.0 (Pendrive)';
-        const devSize = target.size || uDev.total_space || stor.total || '57.4 GB';
-        const devFree = target.free || uDev.free_space || stor.free || '54.4 GB';
-        const devMount = target.mount_point || uDev.mount_point || stor.mount_point || '/mnt/pendrive';
-        const devPath = stor.device || uDev.device || '/dev/sdc';
+        const devName = target.name || uDev.raw_model || uDev.model || stor.name || 'USB storage';
+        const devSize = target.size || uDev.total_space || stor.total || '--';
+        const devFree = target.free || uDev.free_space || stor.free || '--';
+        const devMount = target.mount_point || uDev.mount_point || stor.mount_point || '--';
+        const devPath = stor.device || uDev.device || '--';
         const lanIp = (net && net.lan_ip) || '10.0.0.1';
         const smbPath = target.share_path || uDev.share_path || `\\\\${lanIp}\\Pendrive`;
-        const linkSpd = (target.speed_mbps && target.speed_mbps >= 1000) ? '5 Gbps (USB 3.0 SuperSpeed)' : '480 Mbps (USB 2.0 HighSpeed)';
+        const linkSpd = Number(target.speed_mbps || uDev.speed_mbps) > 0 ? `${Number(target.speed_mbps || uDev.speed_mbps)} Mbps` : '--';
 
         if (titleEl) titleEl.textContent = `${devName}`;
         if (subEl) subEl.textContent = `External USB Storage • Local Network Share & Dufs WebDAV`;
@@ -3252,7 +3356,7 @@ function handleSettingsBack() {
         if (titleEl) titleEl.textContent = `Port ${portLabel}`;
         if (subEl) subEl.textContent = 'Physical Ethernet Bay • Qualcomm IPQ9574 Switch';
         if (badgeEl) {
-          badgeEl.textContent = isUp ? `LINK UP (${portObj.speed || 1000}M)` : 'DISCONNECTED';
+          badgeEl.textContent = isUp ? `LINK UP (${Number(portObj.speed) > 0 ? `${portObj.speed}M` : 'SPEED UNKNOWN'})` : 'DISCONNECTED';
           badgeEl.className = 'card-badge ' + (isUp ? 'emerald' : 'gray');
         }
         if (iconBox) {
@@ -3266,8 +3370,8 @@ function handleSettingsBack() {
         const childIp = child.ip || '--';
 
         const tiles = [];
-        tiles.push(makeTile('Port Link State', isUp ? `<span style="color:#10b981;">Up (${portObj.speed || 1000} Mbps ${portObj.duplex ? portObj.duplex.toUpperCase() : 'FULL DUPLEX'})</span>` : '<span style="color:#94a3b8;">Down • No Link</span>', `Port Identifier: ${esc(portId.toUpperCase())}`));
-        tiles.push(makeTile('Hardware Port Bay', 'Gigabit Ethernet (10/100/1000M)', 'Auto-Negotiation • Auto-MDI/MDIX'));
+        tiles.push(makeTile('Port Link State', isUp ? `<span style="color:#10b981;">Up (${Number(portObj.speed) > 0 ? `${portObj.speed} Mbps` : 'speed unknown'} ${portObj.duplex ? portObj.duplex.toUpperCase() : ''})</span>` : '<span style="color:#94a3b8;">Down • No Link</span>', `Port Identifier: ${esc(portId.toUpperCase())}`));
+        tiles.push(makeTile('Hardware Port Bay', 'Ethernet port', 'Negotiated link speed is shown when reported by the router'));
         tiles.push(makeTile('Attached Entity', `<span>${esc(childName)}</span>`, childIp !== '--' ? `IP: ${esc(childIp)}` : 'No attached device detected', true));
 
         if (bodyEl) {
@@ -3313,32 +3417,16 @@ function handleSettingsBack() {
           : '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
       }
 
-      const tiles = [];
-      if (isBlocked) {
-        tiles.push(makeTile('Firewall Access Policy', '<span style="color:#ef4444; font-weight:800;">BLOCKED FROM NETWORK</span>', 'All incoming & outgoing traffic dropped by firewall', true));
-      }
-      tiles.push(makeTile('IP Address', `<span>${esc(devIp)}</span> ${copyBtn(devIp)}`, liveClient?.ipv6 ? `IPv6: ${esc(liveClient.ipv6)}` : 'DHCP Assigned Address'));
-      tiles.push(makeTile('MAC & Hardware', `${esc(devMac)}`, `Vendor: ${esc(vendor)}`));
-
-      const connVal = isWifi ? `Wi-Fi (${node.linkSpeed || '72 Mbps'})` : (node.uplinkPort ? `Port ${node.uplinkPort.replace('root-', '').toUpperCase()}` : (liveClient?.port || 'LAN Ethernet'));
-      const connSub = isWifi ? 'Connected via maxnet-b AP' : 'Link: 1000 Mbps Full Duplex';
-      tiles.push(makeTile('Network Connection', esc(connVal), esc(connSub)));
-
-      const pingVal = node.metrics?.ping_avg_ms ? `${node.metrics.ping_avg_ms} ms` : (isOnline ? '< 1.5 ms' : '--');
-      const pingSub = node.metrics?.loss_pct !== undefined ? `${node.metrics.loss_pct}% Packet Loss` : 'Active Network Latency';
-      tiles.push(makeTile('Latency / Ping', pingVal, pingSub));
-
-      const rxVal = liveClient?.rx_mb ? `${liveClient.rx_mb} MB` : '--';
-      const txVal = liveClient?.tx_mb ? `${liveClient.tx_mb} MB` : '--';
-      const totVal = liveClient?.total_mb ? `${liveClient.total_mb} MB` : '--';
-      tiles.push(makeTile('Session Traffic (Data)', `Rx: ${rxVal} • Tx: ${txVal}`, `Total Lifetime: ${totVal}`));
-
-      const hostDns = liveClient?.dns_name || liveClient?.mdns || devName;
-      tiles.push(makeTile('Device Hostname', `${esc(hostDns)}`, `Filter: ${isBlocked ? 'BLOCKED' : 'Traffic Permitted'}`));
-
-      if (bodyEl) {
-        bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
-      }
+      const connVal = isWifi ? `Wi-Fi${node.linkSpeed ? ` · ${node.linkSpeed}` : ''}` : (node.uplinkPort ? `Port ${node.uplinkPort.replace('root-', '').toUpperCase()}` : (liveClient?.port || 'Ethernet'));
+      const liveRate = Number(window._clientLiveRateMap?.get(devIp) || 0);
+      const quickInfo = [
+        makeQuickInfo('<path d="M20 6 9 17l-5-5"/>', 'Status', isBlocked ? 'Blocked' : (isOnline ? 'Online' : 'Offline')),
+        makeQuickInfo('<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>', 'IP address', devIp),
+        makeQuickInfo('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h6"/>', 'Device / MAC', devMac),
+        makeQuickInfo(isWifi ? '<path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/>' : '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>', 'Connection', connVal),
+        makeQuickInfo('<path d="M4 18V6m0 12h16M8 14l3-3 3 2 5-6"/>', 'Live traffic', `${liveRate.toFixed(1)} Mbps`)
+      ];
+      if (bodyEl) bodyEl.innerHTML = `<div class="topo-quick-info-grid">${quickInfo.join('')}</div>`;
       if (btnUnblock) {
         if (isBlocked) {
           btnUnblock.style.display = 'inline-block';
@@ -3352,15 +3440,8 @@ function handleSettingsBack() {
           btnUnblock.style.display = 'none';
         }
       }
-      if (btnViewClient) {
-        btnViewClient.style.display = devIp !== '--' ? 'inline-block' : 'none';
-        btnViewClient.textContent = 'VIEW CLIENT DETAILS';
-        btnViewClient.onclick = () => { openTopoNodeClientPage(); };
-      }
-      if (btnEditSettings) {
-        btnEditSettings.textContent = 'DHCP LEASES';
-        btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-lan-clients'); };
-      }
+      if (btnViewClient) btnViewClient.style.display = 'none';
+      if (btnEditSettings) btnEditSettings.style.display = 'none';
 
       if (typeof highlightPathToRoot === 'function') {
         highlightPathToRoot(target);
@@ -3376,13 +3457,34 @@ function handleSettingsBack() {
       const overlay = document.getElementById('topoNodeDetailOverlay');
       if (overlay) {
         overlay.classList.remove('active');
-        overlay.style.display = 'none';
+        clearTimeout(window._topoNodeDetailCloseTimer);
+        window._topoNodeDetailCloseTimer = setTimeout(() => {
+          if (!overlay.classList.contains('active')) overlay.style.display = 'none';
+        }, 190);
       }
       _activeDetailTarget = null;
       if (typeof highlightPathToRoot === 'function') {
         highlightPathToRoot(null);
       }
     }
+
+    function syncMobileModalViewport() {
+      const viewport = window.visualViewport;
+      if (!viewport) return;
+      document.documentElement.style.setProperty('--maxnet-modal-vh', `${Math.round(viewport.height)}px`);
+      document.documentElement.style.setProperty('--maxnet-modal-top', `${Math.round(viewport.offsetTop)}px`);
+    }
+
+    syncMobileModalViewport();
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', syncMobileModalViewport);
+      window.visualViewport.addEventListener('scroll', syncMobileModalViewport);
+    }
+    document.addEventListener('focusin', event => {
+      const field = event.target;
+      if (!(field instanceof HTMLElement) || !field.closest('.android-modal-overlay')) return;
+      setTimeout(() => field.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }), 100);
+    });
 
     function showTopoEvidenceModal(node, e) {
       if (e && e.stopPropagation) e.stopPropagation();
@@ -4545,10 +4647,10 @@ function drawStorageIconSmall(x, y, color, parent) {
         const d = window._lastDataCache || {};
         const hasUsbHub = !!(d.usb_hub && d.usb_hub.connected);
         const usbDevs = Array.isArray(d.usb_devices) ? d.usb_devices : [];
-        const storageDev = usbDevs.find(u => u.device_type === 'storage' || u.has_storage) || (d.usb_storage?.mounted ? { model: d.usb_storage.name || 'Pendrive', device_type: 'storage' } : null);
+        const storageDev = usbDevs.find(u => (u.device_type === 'storage' || u.has_storage) && u.status === 'online') || (d.usb_storage?.mounted === true ? { model: d.usb_storage.name || 'USB storage', device_type: 'storage' } : null);
 
         if (hasUsbHub) {
-          const hubModel = d.usb_hub.model || 'GL3523 USB 3.0 Hub';
+          const hubModel = d.usb_hub.model || 'USB Hub';
           const hubNode = {
             id: 'root-usb-hub',
             name: hubModel,
@@ -4559,29 +4661,29 @@ function drawStorageIconSmall(x, y, color, parent) {
             available_ports: d.usb_hub.available_ports || 0,
             connected_count: d.usb_hub.connected_count || 0,
             ports_list: d.usb_hub.ports_list || [],
-            speed_mbps: d.usb_hub.speed_mbps || 5000,
+            speed_mbps: Number(d.usb_hub.speed_mbps) || 0,
             _parentRouter: node,
             children: []
           };
 
-          if (storageDev || d.usb_storage?.mounted) {
-            const storName = storageDev?.raw_model || storageDev?.model || d.usb_storage?.name || 'Disk 2.0 (Pendrive)';
-            const storSize = storageDev?.total_space || d.usb_storage?.total || '57.4 GB';
+          if (storageDev || d.usb_storage?.mounted === true) {
+            const storName = storageDev?.raw_model || storageDev?.model || d.usb_storage?.name || 'USB storage';
+            const storSize = storageDev?.total_space || d.usb_storage?.total || '--';
             const pItem = (d.usb_hub.ports_list || []).find(p => p.status === 'connected' && (p.device_type === 'storage' || p.name));
-            const pNum = pItem ? pItem.port : 3;
+            const pNum = pItem ? pItem.port : null;
             const storageNode = {
               id: 'hub-usb-storage',
               name: storName,
               type: 'storage',
               device_type: 'storage',
               status: 'online',
-              speed_mbps: storageDev?.speed_mbps || pItem?.speed_mbps || 480,
-              usb_version: pItem?.version || 'U2.0',
+              speed_mbps: Number(storageDev?.speed_mbps || pItem?.speed_mbps) || 0,
+              usb_version: pItem?.version || '--',
               port_num: pNum,
               size: storSize,
-              free: storageDev?.free_space || d.usb_storage?.free || '54.4 GB',
-              mount_point: storageDev?.mount_point || d.usb_storage?.mount_point || '/mnt/storage/Drive-sdc',
-              share_path: storageDev?.share_path || '\\\\10.0.0.1\\Drive-sdc',
+              free: storageDev?.free_space || d.usb_storage?.free || '--',
+              mount_point: storageDev?.mount_point || d.usb_storage?.mount_point || '',
+              share_path: storageDev?.share_path || '',
               _parentRouter: hubNode
             };
             hubNode.children = [{
@@ -4599,20 +4701,20 @@ function drawStorageIconSmall(x, y, color, parent) {
             subtreeW: hubNode._layout.subtreeW,
             subtreeH: hubNode._layout.subtreeH
           });
-        } else if (storageDev || d.usb_storage?.mounted) {
-          const storName = storageDev?.raw_model || storageDev?.model || d.usb_storage?.name || 'Disk 2.0 (Pendrive)';
-          const storSize = storageDev?.total_space || d.usb_storage?.total || '57.4 GB';
+        } else if (storageDev || d.usb_storage?.mounted === true) {
+          const storName = storageDev?.raw_model || storageDev?.model || d.usb_storage?.name || 'USB storage';
+          const storSize = storageDev?.total_space || d.usb_storage?.total || '--';
           const storageNode = {
             id: 'root-usb-storage',
             name: storName,
             type: 'storage',
             device_type: 'storage',
             status: 'online',
-            speed_mbps: storageDev?.speed_mbps || 480,
+            speed_mbps: Number(storageDev?.speed_mbps) || 0,
             size: storSize,
-            free: storageDev?.free_space || d.usb_storage?.free || '54.4 GB',
-            mount_point: storageDev?.mount_point || d.usb_storage?.mount_point || '/mnt/storage/Pendrive',
-            share_path: storageDev?.share_path || '\\\\10.0.0.1\\Pendrive',
+            free: storageDev?.free_space || d.usb_storage?.free || '--',
+            mount_point: storageDev?.mount_point || d.usb_storage?.mount_point || '',
+            share_path: storageDev?.share_path || '',
             _parentRouter: node
           };
           computeLayeredSubtreeBounds(storageNode, screenW);
@@ -4798,22 +4900,9 @@ function drawStorageIconSmall(x, y, color, parent) {
     // SVG DIAGRAM BUILDER (DAGRE/ELK LAYERED TREE, ORTHOGONAL STEP EDGES, ZERO OVERLAPS)
     // =========================================================================
     function getCombinedRouterSpeed() {
-      let speed = 0;
-      // 1. Live measured Rx + Tx on router gateway
-      if (typeof window._currentRxMbps === "number" && typeof window._currentTxMbps === "number") {
-        speed = window._currentRxMbps + window._currentTxMbps;
-      }
-      // 2. Multilink aggregated bandwidth
-      if (window._lastDataCache && window._lastDataCache.multilink && window._lastDataCache.multilink.combined_speed_mbps) {
-        const mlSpeed = parseFloat(window._lastDataCache.multilink.combined_speed_mbps) || 0;
-        if (mlSpeed > speed) speed = mlSpeed;
-      }
-      // 3. Multi-USB link array
-      if (typeof bwLinks !== "undefined" && Array.isArray(bwLinks) && bwLinks.length > 0) {
-        const usbSum = bwLinks.reduce((acc, l) => acc + (Number(l.v) || 0), 0);
-        if (usbSum > speed) speed = usbSum;
-      }
-      return `${speed.toFixed(3)} Mbps`;
+      const rx = Math.max(0, Number(window._currentRxMbps) || 0);
+      const tx = Math.max(0, Number(window._currentTxMbps) || 0);
+      return `${(rx + tx).toFixed(1)} Mbps`;
     }
 
     function calcSpeedFlowDuration(speedMbps) {
@@ -4839,36 +4928,16 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (window._clientLiveRateMap && window._clientLiveRateMap.has(ip)) {
         return window._clientLiveRateMap.get(ip) || 0;
       }
-      if (window._lastDataCache && Array.isArray(window._lastDataCache.clients)) {
-        const cl = window._lastDataCache.clients.find(c => c && c.ip === ip);
-        if (cl) {
-          const mb = (parseFloat(cl.rx_mb) || 0) + (parseFloat(cl.tx_mb) || 0);
-          if (mb > 1000) return 12.0;
-          if (mb > 200) return 4.0;
-          if (mb > 20) return 0.8;
-          return 0.1;
-        }
-      }
       return 0;
     }
 
     function getDeviceRxTxRates(ip) {
-      if (!ip) return { rx: 2.5, tx: 1.2 };
+      if (!ip) return { rx: 0, tx: 0 };
       if (window._clientLiveRxTxMap && window._clientLiveRxTxMap.has(ip)) {
         const r = window._clientLiveRxTxMap.get(ip);
         if (r && (r.rx > 0 || r.tx > 0)) return r;
       }
-      if (window._lastDataCache && Array.isArray(window._lastDataCache.clients)) {
-        const cl = window._lastDataCache.clients.find(c => c && c.ip === ip);
-        if (cl) {
-          const rxMb = parseFloat(cl.rx_mb) || 0;
-          const txMb = parseFloat(cl.tx_mb) || 0;
-          const rx = rxMb > 500 ? 12.0 : (rxMb > 50 ? 4.0 : (rxMb > 5 ? 1.5 : 0.6));
-          const tx = txMb > 500 ? 8.0 : (txMb > 50 ? 2.5 : (txMb > 5 ? 1.0 : 0.4));
-          return { rx, tx };
-        }
-      }
-      return { rx: 2.5, tx: 1.2 };
+      return { rx: 0, tx: 0 };
     }
 
     function getTxFlowColor(rxCol) {
@@ -4886,8 +4955,9 @@ function drawStorageIconSmall(x, y, color, parent) {
       const rxCol = rxColor || (isLightMode ? "#0284c7" : "#38bdf8");
       const txCol = txColor || getTxFlowColor(rxCol);
 
-      const rxSpd = (parseFloat(rxSpeedMbps) > 0) ? parseFloat(rxSpeedMbps) : 2.5;
-      const txSpd = (parseFloat(txSpeedMbps) > 0) ? parseFloat(txSpeedMbps) : 1.2;
+      const rxSpd = Math.max(0, parseFloat(rxSpeedMbps) || 0);
+      const txSpd = Math.max(0, parseFloat(txSpeedMbps) || 0);
+      if (rxSpd === 0 && txSpd === 0) return;
 
       const durRx = calcSpeedFlowDuration(rxSpd);
       const durTx = calcSpeedFlowDuration(txSpd);
@@ -4949,12 +5019,12 @@ function drawStorageIconSmall(x, y, color, parent) {
         cardBgAlt: isLight ? "#f8fafc" : "#181a26",
         cardBorder: isLight ? "#cbd5e1" : "rgba(255, 255, 255, 0.16)",
         cardBorderIdle: isLight ? "#e2e8f0" : "rgba(255, 255, 255, 0.08)",
-        borderActive: themeColors.accent,
-        borderLan: themeColors.accent,
-        borderSwitch: themeColors.l3,
-        borderAp: themeColors.l2,
-        borderDev: themeColors.l3,
-        borderWifi: themeColors.wifi,
+        borderActive: isLight ? "#64748b" : "rgba(255, 255, 255, 0.34)",
+        borderLan: isLight ? "#64748b" : "rgba(255, 255, 255, 0.34)",
+        borderSwitch: isLight ? "#64748b" : "rgba(255, 255, 255, 0.34)",
+        borderAp: isLight ? "#64748b" : "rgba(255, 255, 255, 0.34)",
+        borderDev: isLight ? "#64748b" : "rgba(255, 255, 255, 0.34)",
+        borderWifi: isLight ? "#64748b" : "rgba(255, 255, 255, 0.34)",
         textMain: isLight ? "#09090b" : "#f4f4f5",
         textDim: isLight ? "#475569" : "#a1a1aa",
         textMuted: isLight ? "#64748b" : "#71717a",
@@ -4997,8 +5067,11 @@ function drawStorageIconSmall(x, y, color, parent) {
       let globalMaxY = rootY + 100;
 
       const d = window._lastDataCache || {};
-      const wanPort = (d.ports || []).find(p => p.id === "wan" || p.id === "wan0" || p.name === "WAN");
-      const isWanUp = !!(wanPort && wanPort.status === "up") || !!(d.network && d.network.wan_ip && d.network.wan_ip !== "--" && d.network.wan_ip !== "");
+      const activeUplink = d.network?.uplink || d.topology_layers?.tree?.active_uplink || {};
+      const uplinkMode = String(activeUplink.mode || '').toLowerCase();
+      const uplinkConnected = activeUplink.connected === true || activeUplink.connected === 1 || activeUplink.connected === 'true';
+      const wanPort = (d.ports || []).find(p => p.id === "wan" || p.id === "wan0" || p.name === "WAN") || (d.network?.ports || []).find(p => p.id === 'wan');
+      const isWanUp = uplinkConnected && !['usb_tether', 'repeater', 'disconnected'].includes(uplinkMode);
       // Check if any connected USB device is genuinely a WAN/modem device (Strictly exclude mass storage / pendrives)
       const isUsbNetworkDevice = (uDev) => {
         if (!uDev) return false;
@@ -5027,9 +5100,9 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       // 1. WAN UPLINK CHIP ON TOP OF GATEWAY (Curve UI matching cards, Hotspot tethering + ADB icons, USB standard wire speed)
       // Only display WAN uplink card if USB is actively connected as a cellular/modem link, physical Ethernet WAN is plugged, or Wi-Fi Repeater is active
-      const isUsbActiveWan = isUsbWanConn;
-      const isEthActiveWan = isWanUp && !!(d.network && d.network.wan_ip && d.network.wan_ip !== "--" && d.network.wan_ip !== "");
-      const isRepeaterActiveWan = !!(d.repeater?.connected || d.topology_layers?.tree?.repeater_uplink?.connected || window._repeaterConnected);
+      const isUsbActiveWan = uplinkConnected ? uplinkMode === 'usb_tether' : isUsbWanConn;
+      const isRepeaterActiveWan = uplinkConnected ? uplinkMode === 'repeater' : !!(d.repeater?.connected || d.topology_layers?.tree?.repeater_uplink?.connected || window._repeaterConnected);
+      const isEthActiveWan = isWanUp;
       const hasAnyWan = isUsbActiveWan || isEthActiveWan || isRepeaterActiveWan;
       if (prefs.showWan && hasAnyWan) {
 
@@ -5068,13 +5141,11 @@ function drawStorageIconSmall(x, y, color, parent) {
           style: (isGlow || isAnim) ? `filter:drop-shadow(0 0 5px ${wanWireCol});` : ''
         }, edgesLayer);
 
-        const liveWanTotalSpeed = (window._currentRxMbps > 0 || window._currentTxMbps > 0) ?
-          (window._currentRxMbps + window._currentTxMbps) :
-          ((bwLinks && bwLinks[0] && bwLinks[0].v > 0) ? Number(bwLinks[0].v) : 0);
+        const liveWanTotalSpeed = Math.max(0, Number(window._currentRxMbps) || 0) + Math.max(0, Number(window._currentTxMbps) || 0);
 
-        if (isAnim) {
-          const wanRxSpd = (window._currentRxMbps > 0) ? window._currentRxMbps : (liveWanTotalSpeed > 0 ? liveWanTotalSpeed * 0.7 : 2.5);
-          const wanTxSpd = (window._currentTxMbps > 0) ? window._currentTxMbps : (liveWanTotalSpeed > 0 ? liveWanTotalSpeed * 0.3 : 1.2);
+        if (isAnim && liveWanTotalSpeed > 0) {
+          const wanRxSpd = Math.max(0, Number(window._currentRxMbps) || 0);
+          const wanTxSpd = Math.max(0, Number(window._currentTxMbps) || 0);
           addBidirectionalFlow(edgesLayer, wanFlowId, wanWireCol, null, wanRxSpd, wanTxSpd);
         }
 
@@ -5084,7 +5155,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           "";
 
         // Clean formatting for wire speed so text never overflows wire pill box
-        let formattedBitrate = repInfo.bitrate || "1.7Gbps";
+        let formattedBitrate = repInfo.bitrate || (Number(activeUplink.speed_mbps) > 0 ? `${activeUplink.speed_mbps} Mbps` : 'Unknown');
         const mbitMatch = String(formattedBitrate).match(/([\d.]+)\s*MBit\/s/i);
         if (mbitMatch) {
           const mbpsVal = parseFloat(mbitMatch[1]);
@@ -5094,7 +5165,9 @@ function drawStorageIconSmall(x, y, color, parent) {
             formattedBitrate = Math.round(mbpsVal) + " Mbps";
           }
         }
-        const effectiveWireSpeed = isUsbActiveWan ? usbWireSpeed : (isRepeaterActive ? formattedBitrate : (wanPort && wanPort.speed ? `${wanPort.speed}M` : "1Gbps"));
+        const measuredUplinkMbps = Number(activeUplink.speed_mbps) || 0;
+        const ethernetLinkMbps = Number(wanPort?.speed) || 0;
+        const effectiveWireSpeed = `${liveWanTotalSpeed.toFixed(1)} Mbps`;
 
         // WAN Wire Speed Pill on wire midpoint - dynamically sized to fit text with clean padding
         const wireMidY = (wanY + wanH + rootY) / 2;
@@ -5141,7 +5214,7 @@ function drawStorageIconSmall(x, y, color, parent) {
             name: wanTitleStr,
             type: isRepeaterActive ? "repeater" : "wan",
             ip: effectiveWanIp || "Online",
-            speed: `${liveWanTotalSpeed.toFixed(3)} Mbps`,
+            speed: `${liveWanTotalSpeed.toFixed(1)} Mbps`,
             status: "online",
             isRepeater: isRepeaterActive
           }, false, e);
@@ -5155,7 +5228,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           rx: 8,
           ry: 8,
           fill: topoTheme.cardBg,
-          stroke: usbStyle.cardBorder || "#0284c7",
+          stroke: topoTheme.cardBorder,
           "stroke-width": 1.3,
           style: `filter:${topoTheme.cardShadow};`
         }, wanG);
@@ -5216,7 +5289,7 @@ function drawStorageIconSmall(x, y, color, parent) {
         }
 
         // Live measured speed in 0.000 Mbps decimal with soft dark font color and guaranteed spacing
-        const liveSpeedStr = `${liveWanTotalSpeed.toFixed(3)} Mbps`;
+        const liveSpeedStr = `${liveWanTotalSpeed.toFixed(1)} Mbps`;
         const softDarkSpeedColor = isLight ? "#334155" : "#94a3b8";
 
         const tWanSpd = mk("text", {
@@ -5229,7 +5302,7 @@ function drawStorageIconSmall(x, y, color, parent) {
 
         // Soft pulse online dot at top-left (r: 1.8)
         mk("circle", {
-          cx: wanX + 7,
+          cx: wanX + wanW - 8,
           cy: wanY + 7,
           r: 1.8,
           class: "topo-pulse-dot",
@@ -5291,7 +5364,7 @@ function drawStorageIconSmall(x, y, color, parent) {
             rx: 6,
             ry: 6,
             fill: topoTheme.cardBg,
-            stroke: isNodeOnline ? devColor : topoTheme.cardBorderIdle,
+            stroke: isNodeOnline ? topoTheme.cardBorder : topoTheme.cardBorderIdle,
             "stroke-width": 1.2,
             style: `filter:${topoTheme.cardShadow};` + (isNodeOnline ? "" : "opacity:0.75;")
           }, devG);
@@ -5331,7 +5404,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           const isDevBlocked = (typeof blockedIps !== 'undefined' && blockedIps.has(dev.ip)) || !!dev.blocked;
           const devStatusCol = isDevBlocked ? "#ef4444" : (isNodeOnline ? "#10b981" : (isLight ? "#94a3b8" : "#52525b"));
           mk("circle", {
-            cx: devBoxX + 6,
+            cx: devBoxX + devW - 6,
             cy: l.y + 6,
             r: 2.0,
             class: (isNodeOnline && !isDevBlocked) ? "topo-pulse-dot" : "",
@@ -5386,7 +5459,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           drawPendriveIcon(iconBoxX + 13, iconBoxY + 13, "#c084fc", storG);
 
           const textX = storX + 38;
-          let storTitle = node.name || "Disk 2.0 (Pendrive)";
+          let storTitle = node.name || "USB storage";
           const maxChars = isPhone ? 12 : 16;
           if (storTitle.length > maxChars) storTitle = storTitle.substring(0, maxChars - 1) + "\u2026";
 
@@ -5396,7 +5469,7 @@ function drawStorageIconSmall(x, y, color, parent) {
             style: `font-size:9.5px; font-weight:800; font-family:var(--font-mono); fill:${topoTheme.textMain};`
           }, storG).textContent = storTitle;
 
-          const storSub = `${node.size || "57.4 GB"} • SMB Share`;
+          const storSub = `${node.size || "--"} • SMB Share`;
           mk("text", {
             x: textX,
             y: storY + 28,
@@ -5404,7 +5477,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           }, storG).textContent = storSub;
 
           mk("circle", {
-            cx: storX + 6,
+            cx: storX + storW - 6,
             cy: storY + 6,
             r: 2.0,
             class: "topo-pulse-dot",
@@ -5651,7 +5724,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           rx: 8,
           ry: 8,
           fill: topoTheme.cardBg,
-          stroke: isNodeOnline ? nodeLayerColor : topoTheme.cardBorderIdle,
+          stroke: isNodeOnline ? topoTheme.cardBorder : topoTheme.cardBorderIdle,
           "stroke-width": 1.4,
           style: `filter:${isLight ? 'drop-shadow(0 3px 8px rgba(0,0,0,0.06))' : 'drop-shadow(0 4px 12px rgba(0,0,0,0.45))'};`
         }, chassisG);
@@ -5716,7 +5789,7 @@ function drawStorageIconSmall(x, y, color, parent) {
 
         // Online soft pulse dot on chassis at top-left
         mk("circle", {
-          cx: rtrX + 6,
+          cx: rtrX + rtrW - 7,
           cy: l.y + 6,
           r: 2.0,
           class: isNodeOnline ? "topo-pulse-dot" : "",
@@ -5791,7 +5864,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           }
           const isSlotActive = isWan ? isWanPortUp : isConnected;
 
-          const sockStrokeCol = isWan ? (isWanPortUp ? (usbStyle.lineStroke || '#0284c7') : topoTheme.cardBorderIdle) : (isConnected ? (isLan ? nodeLayerColor : themeColors.wifi) : topoTheme.cardBorderIdle);
+          const sockStrokeCol = isConnected ? topoTheme.cardBorder : topoTheme.cardBorderIdle;
           const sockFillCol = isWan ? (isWanPortUp ? (isLight ? 'rgba(2,132,199,0.08)' : 'rgba(56,189,248,0.1)') : (isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)')) : (isConnected ? (isLight ? 'rgba(2,132,199,0.06)' : 'rgba(56,189,248,0.08)') : (isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)'));
 
           mk("rect", {
@@ -5974,7 +6047,8 @@ function drawStorageIconSmall(x, y, color, parent) {
             } else if (c.type === 'usb_storage') {
               tSpd.textContent = (c.child.speed_mbps && c.child.speed_mbps >= 1000) ? "5Gbps" : "480M";
             } else {
-              tSpd.textContent = "1Gbps";
+              const portSpeed = Number(c.child?.speed_mbps || c.speed_mbps || 0);
+              tSpd.textContent = portSpeed > 0 ? `${portSpeed}M` : '--';
             }
           }
 
@@ -6037,7 +6111,7 @@ function drawStorageIconSmall(x, y, color, parent) {
 
               const isWcBlocked = (typeof blockedIps !== "undefined" && blockedIps.has(wc.ip)) || !!wc.blocked;
               const wcStatusCol = isWcBlocked ? "#ef4444" : (isWcOnline ? "#10b981" : (isLight ? "#94a3b8" : "#52525b"));
-              const wcBorderCol = isWcBlocked ? "#ef4444" : (isWcOnline ? wifiCol : topoTheme.cardBorderIdle);
+              const wcBorderCol = isWcBlocked ? "#ef4444" : (isWcOnline ? topoTheme.cardBorder : topoTheme.cardBorderIdle);
 
               // Horizontal bracket branch to card in EDGES LAYER
               const branchPathD = `M ${trunkX} ${wcY + wcH / 2} L ${wcX} ${wcY + wcH / 2}`;
@@ -6209,10 +6283,8 @@ function drawStorageIconSmall(x, y, color, parent) {
       // Update WAN chip live speed dynamically in 0.000 Mbps format with soft dark color
       const wanSpdEl = document.querySelector('.topo-wan-chip text:last-of-type');
       if (wanSpdEl) {
-        const liveWanTotalSpeed = (window._currentRxMbps > 0 || window._currentTxMbps > 0) ?
-          (window._currentRxMbps + window._currentTxMbps) :
-          ((bwLinks && bwLinks[0] && bwLinks[0].v > 0) ? Number(bwLinks[0].v) : 0);
-        wanSpdEl.textContent = `${liveWanTotalSpeed.toFixed(3)} Mbps`;
+        const liveWanTotalSpeed = Math.max(0, Number(window._currentRxMbps) || 0) + Math.max(0, Number(window._currentTxMbps) || 0);
+        wanSpdEl.textContent = `${liveWanTotalSpeed.toFixed(1)} Mbps`;
         wanSpdEl.style.fill = (document.documentElement.getAttribute("data-theme") === "light") ? "#334155" : "#94a3b8";
       }
 
@@ -6251,7 +6323,9 @@ function drawStorageIconSmall(x, y, color, parent) {
       const links = (d.multilink && Array.isArray(d.multilink.links)) ? d.multilink.links : [];
       const ports = (d.network && d.network.ports) || [];
       const wanP = ports.find(p => p.id === "wan") || {};
-      const isWanUp = wanP.status === "up";
+      const activeUplink = d.network?.uplink || d.topology_layers?.tree?.active_uplink || {};
+      const activeUplinkMode = String(activeUplink.mode || '').toLowerCase();
+      const isWanUp = (activeUplink.connected === true || activeUplink.connected === 1 || activeUplink.connected === 'true') && !['usb_tether', 'repeater', 'disconnected'].includes(activeUplinkMode);
 
       const rxSpeed = parseFloat(rxMbps) || 0;
       const txSpeed = parseFloat(txMbps) || 0;
@@ -6335,8 +6409,8 @@ function drawStorageIconSmall(x, y, color, parent) {
             usbStd: "wan",
             connected: true,
             name: "Ethernet Uplink",
-            v: wanP.speed || 1000,
-            max: 1000,
+            v: Number(activeUplink.speed_mbps) || 0,
+            max: Number(activeUplink.speed_mbps) || 0,
             nodeKey: "wan",
             subIndex: 1
           });
@@ -6447,18 +6521,18 @@ function drawStorageIconSmall(x, y, color, parent) {
             type: "USB 3.0",
             usbStd: "usb3",
             connected: true,
-            name: mob.model || (links[0] && links[0].model) || "Samsung Galaxy S21 FE 5G",
-            hostname: (links[0] && links[0].hostname) || "usb0-Galaxy-S21-FE-5G",
+            name: mob.model || (links[0] && links[0].model) || "USB tether",
+            hostname: (links[0] && links[0].hostname) || "",
             virtual_ip: (links[0] && (links[0].virtual_ip || links[0].ip)) || mob.usb_ip || "",
             status: "online",
             status_color: "green",
             device_type: "phone",
             has_tethering: true,
-            has_adb: true,
+            has_adb: false,
             has_mtp: false,
             has_storage: false,
             has_internet: true,
-            internet_status: "Online (5G)",
+            internet_status: "Online",
             v: liveDev1Speed,
             max: 5000,
             nodeKey: "modem",
@@ -6473,7 +6547,7 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       const lanPortsData = [1, 2, 3, 4].map(idx => {
         const pId = "lan" + idx;
-        const pData = ports.find(p => p.id === pId) || { id: pId, speed: (idx === 2 || idx === 3 ? 1000 : 0), status: (idx === 2 || idx === 3 ? "up" : "down") };
+        const pData = ports.find(p => p.id === pId) || { id: pId, speed: 0, status: "down" };
         const isUp = pData.status === "up";
 
         const pCfg = getPortTopologyConfig(idx);
@@ -6567,15 +6641,16 @@ function drawStorageIconSmall(x, y, color, parent) {
         window._rtrUptimeBase = Number(d.router.uptime_seconds);
         window._rtrUptimeTs = Date.now();
       }
-      const verStr = d.firmware || (d.router && d.router.version) || 'v2.2.29';
-      const cleanVer = String(verStr).trim();
-      const lowerVer = cleanVer.toLowerCase().startsWith('v') ? cleanVer.toLowerCase() : ('v' + cleanVer);
-      const upperVer = cleanVer.toUpperCase().startsWith('V') ? cleanVer.toUpperCase() : ('V' + cleanVer);
+      const verStr = String(d.firmware || d.router?.version || '').trim();
       const hTitle = document.getElementById('dashBrandTitle');
       if (hTitle) hTitle.textContent = 'MAXNET';
-      const hVer = document.getElementById('headerVer');
-      if (hVer) hVer.textContent = lowerVer;
-      document.title = `MAXNET | ${upperVer}`;
+      if (verStr) {
+        const lowerVer = verStr.toLowerCase().startsWith('v') ? verStr.toLowerCase() : `v${verStr}`;
+        const upperVer = verStr.toUpperCase().startsWith('V') ? verStr.toUpperCase() : `V${verStr}`;
+        const hVer = document.getElementById('headerVer');
+        if (hVer) hVer.textContent = lowerVer;
+        document.title = `MAXNET | ${upperVer}`;
+      }
 
       // Update bottom telemetry dock (compact integer values to prevent mobile overlap)
       if (d.router) {
@@ -7460,18 +7535,6 @@ function drawStorageIconSmall(x, y, color, parent) {
         if (!map.has(c.ip)) map.set(c.ip, c);
       });
 
-      const fallback = [
-        { ip: '10.0.0.111', mac: '10:65:30:7a:9c:02', name: 'maxos [PC]', model: 'Workstation PC' },
-        { ip: '10.0.0.166', mac: 'a8:1b:5a:c3:01:13', name: 'OPPO A37 [PHONE]', model: 'Oppo A37 Smartphone' },
-        { ip: '10.0.0.5', mac: '00:11:32:92:02:1b', name: 'Synology NAS [STORAGE]', model: 'Synology DiskStation' },
-        { ip: '10.0.0.238', mac: 'f2:82:95:8f:db:29', name: 'Vivo V2153 [PHONE]', model: 'Vivo V2153 5G' },
-        { ip: '10.0.0.104', mac: '76:74:c6:67:5a:89', name: 'POCO-X6-5G [PHONE]', model: 'Xiaomi POCO X6 5G' },
-        { ip: '10.0.0.2', mac: '8c:a3:99:7b:81:2b', name: 'maxnet-b [ROUTER]', model: 'Secondary Router' }
-      ];
-      fallback.forEach(k => {
-        if (!map.has(k.ip)) map.set(k.ip, k);
-      });
-
       return Array.from(map.values());
     }
 
@@ -7481,37 +7544,66 @@ function drawStorageIconSmall(x, y, color, parent) {
     window._topoTree = null;
     window._topoCollapsed = new Set();
     window._topoActiveLayer = 'all'; // 'all' | 'L1' | 'L2' | 'L3'
-    window._topoAutoDiscovery = localStorage.getItem('maxnet_topo_auto_mode') !== 'false'; // default true
+    const TOPOLOGY_DISCOVERY_MODES = {
+      live: 'Live bridge & Wi-Fi discovery',
+      mac: 'MAC address map',
+      ip: 'IP / DHCP neighbor map',
+      wireless: 'Wi-Fi associations only',
+      manual: 'Manual topology'
+    };
 
-    function toggleTopologyAutoMode(enabled) {
-      window._topoAutoDiscovery = !!enabled;
-      localStorage.setItem('maxnet_topo_auto_mode', enabled ? 'true' : 'false');
-
-      const sub = document.getElementById('topoAutoModeSub');
-      const toggle = document.getElementById('topoAutoDiscoveryToggle');
-      if (toggle) toggle.checked = !!enabled;
-
-      if (enabled) {
-        if (sub) sub.textContent = 'Automatically build and map network tree from live port telemetry, WAN uplink, and connected devices';
-        if (window._topoTree) {
-          window._topoTree.isCustom = false;
-          if (window._topoTree.usb_config) window._topoTree.usb_config.locked = false;
-          syncRealClientsToTopology(window._topoTree, window._lastDataCache);
-          renderTopologyLayersUI(window._topoTree);
-          if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
-        }
-        if (typeof showToast === 'function') showToast('Auto Topology Discovery enabled: Real-time sync restored', 'info');
-      } else {
-        if (sub) sub.textContent = 'Custom Mode Active: Live tree preserved as editable base. Manual port & node customization enabled.';
-        if (window._topoTree) {
-          window._topoTree.isCustom = true;
-          if (window._topoTree.usb_config) window._topoTree.usb_config.locked = true;
-          renderTopologyLayersUI(window._topoTree);
-        }
-        if (typeof showToast === 'function') showToast('Custom Topology Mode: Discovered tree locked for editing', 'success');
-      }
+    function getTopologyDiscoveryMode(tree = window._topoTree) {
+      const legacyMode = localStorage.getItem('maxnet_topo_auto_mode') === 'false' ? 'manual' : 'live';
+      const mode = tree?.discovery_mode || localStorage.getItem('maxnet_topology_discovery_mode') || legacyMode;
+      return Object.prototype.hasOwnProperty.call(TOPOLOGY_DISCOVERY_MODES, mode) ? mode : 'live';
     }
-    window.toggleTopologyAutoMode = toggleTopologyAutoMode;
+
+    function updateTopologyDiscoveryModeSummary() {
+      const summary = document.getElementById('topologyDiscoveryModeSummary');
+      if (summary) summary.textContent = TOPOLOGY_DISCOVERY_MODES[getTopologyDiscoveryMode()] || TOPOLOGY_DISCOVERY_MODES.live;
+    }
+
+    function setTopologyDiscoveryMode(mode) {
+      if (!Object.prototype.hasOwnProperty.call(TOPOLOGY_DISCOVERY_MODES, mode)) return;
+      if (!window._topoTree) window._topoTree = createDefaultTopologyTree();
+      window._topoTree.discovery_mode = mode;
+      localStorage.setItem('maxnet_topology_discovery_mode', mode);
+      localStorage.removeItem('maxnet_topo_auto_mode');
+      updateTopologyDiscoveryModeSummary();
+      if (mode !== 'manual') syncRealClientsToTopology(window._topoTree, window._lastDataCache);
+      renderTopologyLayersUI(window._topoTree);
+      if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
+      triggerTopologyAutoSave();
+      if (typeof showToast === 'function') showToast(`Topology type: ${TOPOLOGY_DISCOVERY_MODES[mode]}`, 'success');
+    }
+    window.setTopologyDiscoveryMode = setTopologyDiscoveryMode;
+
+    function markTopologyPortManual(port) {
+      if (!port) return;
+      port.locked = true;
+      if (port.child) port.child.manual = true;
+    }
+
+    function lockTopologyNodeParent(nodeId) {
+      function walk(node) {
+        for (const port of (node?.ports || [])) {
+          if (port.child?.id === nodeId) {
+            markTopologyPortManual(port);
+            return true;
+          }
+          if (port.child && port.child.type !== 'device' && walk(port.child)) return true;
+        }
+        return false;
+      }
+      if (window._topoTree) walk(window._topoTree);
+    }
+
+    function excludeTopologyClient(node, client) {
+      const identity = String(client?.mac || client?.ip || '').trim().toLowerCase();
+      if (!identity) return;
+      if (!Array.isArray(node.discovery_exclusions)) node.discovery_exclusions = [];
+      if (!node.discovery_exclusions.includes(identity)) node.discovery_exclusions.push(identity);
+    }
 
     function createDefaultTopologyTree(lanIp, routerMac) {
       const ip = lanIp || '10.0.0.1';
@@ -7545,11 +7637,6 @@ function drawStorageIconSmall(x, y, color, parent) {
     function syncRealClientsToTopology(tree, d) {
       if (!tree || !d) return;
 
-      // In Custom Mode, preserve user-customized topology structure
-      if (window._topoAutoDiscovery === false) {
-        return;
-      }
-
       const clients = Array.isArray(d.clients) ? d.clients.filter(c => !c.is_self) : [];
       const wifiClients = Array.isArray(d.wifi_clients) ? d.wifi_clients : [];
       const usbDevices = Array.isArray(d.usb_devices) ? d.usb_devices : [];
@@ -7563,17 +7650,20 @@ function drawStorageIconSmall(x, y, color, parent) {
         }
       }
 
-      // 1. Sync Physical LAN Ports (LAN 1 to LAN 4)
-      if (Array.isArray(tree.ports)) {
+      const discoveryMode = getTopologyDiscoveryMode(tree);
+      if (discoveryMode === 'manual') return;
+
+      // 1. Sync Physical LAN Ports using the router's live bridge-port telemetry.
+      if (discoveryMode !== 'wireless' && Array.isArray(tree.ports)) {
         tree.ports.forEach((port, pIdx) => {
-          // If port was manually locked or has custom child, leave it alone
-          if (port.locked || (port.child && port.child.isCustom)) return;
+          if (port.locked || (port.child && (port.child.manual || port.child.isCustom))) return;
 
           const portNum = pIdx + 1;
           const portTag = `LAN ${portNum}`;
-
-          // Find active connected client on this specific physical LAN port
-          const matchedClient = clients.find(c => c.connected && (c.port === portTag || c.port === `lan${portNum}`));
+          const attachedClients = clients.filter(c => c.connected && (c.port === portTag || c.port === `lan${portNum}`));
+          const candidates = discoveryMode === 'mac' ? attachedClients.filter(c => c.mac) : attachedClients;
+          const stableValue = port.child ? (discoveryMode === 'ip' ? port.child.ip : port.child.mac) : '';
+          const matchedClient = candidates.find(c => stableValue && String(discoveryMode === 'ip' ? c.ip : (c.mac || '')).toLowerCase() === String(stableValue).toLowerCase()) || candidates[0];
 
           if (matchedClient) {
             const isNetworkNode = matchedClient.device_type === 'router' || matchedClient.device_type === 'switch' || matchedClient.device_type === 'ap' ||
@@ -7647,13 +7737,20 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       // Update or add active wireless clients
       activeWifi.forEach(wc => {
-        const existing = tree.wireless_clients.find(item => item.mac && item.mac.toLowerCase() === (wc.mac || '').toLowerCase());
+        const identity = String(wc.mac || wc.ip || '').toLowerCase();
+        if (Array.isArray(tree.discovery_exclusions) && tree.discovery_exclusions.includes(identity)) return;
+        const existing = tree.wireless_clients.find(item =>
+          (wc.mac && item.mac && item.mac.toLowerCase() === wc.mac.toLowerCase()) ||
+          (!wc.mac && wc.ip && item.ip === wc.ip)
+        );
         if (existing) {
-          existing.name = wc.name || existing.name || 'Wi-Fi Device';
-          existing.ip = wc.ip || existing.ip;
           existing.status = 'online';
-          existing.band = wc.band || existing.band || '2.4G';
-          existing.linkSpeed = wc.link_speed || existing.linkSpeed || '144 Mbps';
+          if (!existing.manual) {
+            existing.name = wc.name || existing.name || 'Wi-Fi Device';
+            existing.ip = wc.ip || existing.ip;
+            existing.band = wc.band || existing.band || '2.4G';
+            existing.linkSpeed = wc.link_speed || existing.linkSpeed || '144 Mbps';
+          }
         } else {
           tree.wireless_clients.push({
             id: `wdev-${(wc.mac || '').replace(/[:]/g, '')}`,
@@ -7662,7 +7759,8 @@ function drawStorageIconSmall(x, y, color, parent) {
             mac: wc.mac || '',
             status: 'online',
             band: wc.band || '2.4G',
-            linkSpeed: wc.link_speed || '144 Mbps'
+            linkSpeed: wc.link_speed || '144 Mbps',
+            discovered: true
           });
         }
       });
@@ -7670,7 +7768,10 @@ function drawStorageIconSmall(x, y, color, parent) {
       // Remove auto-discovered clients that disconnected (preserve any manual ones)
       tree.wireless_clients = tree.wireless_clients.filter(item => {
         if (item.manual) return true;
-        return activeWifi.some(wc => wc.mac && wc.mac.toLowerCase() === (item.mac || '').toLowerCase());
+        return activeWifi.some(wc =>
+          (wc.mac && item.mac && wc.mac.toLowerCase() === item.mac.toLowerCase()) ||
+          (!wc.mac && wc.ip && item.ip === wc.ip)
+        );
       });
 
       // 3. Sync USB Ports dynamically from real hardware detection (No 4 empty USB ports pre-filled)
@@ -7825,17 +7926,7 @@ function drawStorageIconSmall(x, y, color, parent) {
         if (!node.wan_mode) node.wan_mode = 'standard';
         if (!node.wan_speed) node.wan_speed = '1000';
         if (!node.usb_config || typeof node.usb_config !== 'object') {
-          node.usb_config = {
-            mode: 'hub',
-            num_ports: 4,
-            speed_std: 'usb3',
-            ports: [
-              { id: 'usb-1', label: 'USB 1', role: 'phone', name: 'Samsung Galaxy S21 FE 5G', speed: 'usb3' },
-              { id: 'usb-2', label: 'USB 2', role: 'phone', name: 'Xiaomi POCO X6 5G', speed: 'usb2' },
-              { id: 'usb-3', label: 'USB 3', role: 'storage', name: 'NVMe SSD Storage', speed: 'usb3' },
-              { id: 'usb-4', label: 'USB 4', role: 'empty', name: '', speed: 'usb3' }
-            ]
-          };
+          node.usb_config = { mode: 'hub', num_ports: 0, speed_std: 'usb3', ports: [] };
         }
       }
 
@@ -7874,63 +7965,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           node.wireless_clients = [];
         }
 
-        // 1. Ensure wired devices (Synology NAS 10.0.0.5) are under exact router LAN port, NEVER in WiFi cluster
-        const isApNode = (node.id === 'node-maxnet-b' || node.id === 'node-ap-lan3' || node.name === 'maxnet-b' || node.ip === '10.0.0.2');
-        if (isApNode && node.ports && node.ports.length > 0) {
-          // Check if Synology NAS is already in ports
-          const hasSynologyInPort = node.ports.some(p => p.child && (p.child.ip === '10.0.0.5' || (p.child.name && p.child.name.toLowerCase().includes('synology'))));
-          if (!hasSynologyInPort && node.ports[0] && node.ports[0].role === 'empty') {
-            node.ports[0].role = 'device';
-            node.ports[0].child = {
-              id: 'dev-synology',
-              type: 'device',
-              name: 'Synology NAS',
-              ip: '10.0.0.5',
-              mac: '00:11:32:92:02:1b',
-              status: 'online',
-              confidence: 'High',
-              evidence: [
-                "Physical bridge FDB: connected to AP LAN port 1 (Synology Gigabit Ethernet)",
-                "ICMP ping: <1ms wired link threshold",
-                "OUI vendor: Synology Incorporated (NAS Storage)",
-                "Direct wired device under infrastructure AP"
-              ],
-              uplinkPort: node.ports[0].id
-            };
-          }
-        }
 
-        // Purge any accidental wired storage devices from wireless_clients
-        node.wireless_clients = node.wireless_clients.filter(wc => {
-          if (!wc) return false;
-          if (wc.ip === '10.0.0.5' || (wc.mac && wc.mac.startsWith('00:11:32')) || (wc.name && wc.name.toLowerCase().includes('synology'))) {
-            return false; // Remove from WiFi cluster!
-          }
-          return true;
-        });
-
-        // 2. Clear stale saved labels: 10.0.0.166 is an Oppo phone client, NOT an Asus router
-        node.wireless_clients.forEach(wc => {
-          if (!wc) return;
-          if (wc.ip === '10.0.0.166' || (wc.mac && wc.mac.toLowerCase() === 'a8:1b:5a:c3:01:13')) {
-            wc.name = 'OPPO A37';
-            wc.type = 'phone';
-            wc.confidence = 'High';
-            if (!wc.evidence || wc.evidence.some(e => e.includes('ASUSTek'))) {
-              wc.evidence = [
-                "Physical bridge FDB: learned on port LAN 3 behind AP maxnet-b",
-                "ICMP ping: avg 296.542 ms (wireless latency signature profile)",
-                "OUI vendor: Guangdong OPPO Mobile Telecommunications (Smartphone client)",
-                "DHCP lease confirmed: OPPO-A37 (10.0.0.166)",
-                "Single signal alone does NOT satisfy router criteria (requires >=2 signals)",
-                "Classified as Wireless Client of maxnet-b"
-              ];
-            }
-          } else if (wc.name && (wc.name.includes('Asus') || wc.name.includes('Router')) && wc.ip === '10.0.0.166') {
-            wc.name = 'OPPO A37';
-            wc.type = 'phone';
-          }
-        });
       }
     }
 
@@ -8207,6 +8242,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (count > 8) count = 8;
       if (!window._topoTree.usb_config) window._topoTree.usb_config = { mode: 'hub', num_ports: count, ports: [] };
       const usbCfg = window._topoTree.usb_config;
+      usbCfg.locked = true;
       usbCfg.num_ports = count;
       usbCfg.ports = usbCfg.ports || [];
       while (usbCfg.ports.length < count) {
@@ -8231,6 +8267,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (!window._topoTree || !window._topoTree.usb_config) return;
       const usbCfg = window._topoTree.usb_config;
       if (!Array.isArray(usbCfg.ports) || !usbCfg.ports[pIdx]) return;
+      usbCfg.locked = true;
       usbCfg.ports[pIdx][field] = val;
       if (field === 'role' && val === 'empty') {
         usbCfg.ports[pIdx].name = '';
@@ -8263,6 +8300,8 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (isNaN(count) || count < 1) count = 1;
       if (count > 48) count = 48;
       node.numPorts = count;
+      node.manual = true;
+      lockTopologyNodeParent(nodeId);
       validateAndFixNodeTree(node);
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
@@ -8275,33 +8314,28 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (!res) return;
       const { port } = res;
       port.role = newRole;
+      port.locked = true;
 
       if (newRole === 'empty') {
         port.child = null;
       } else if (newRole === 'device') {
-        const avail = getAvailableNetworkClients();
-        const usedIps = collectUsedIps(window._topoTree, port.id);
-        const freeClient = avail.find(c => !usedIps.has(c.ip)) || { name: 'Device', ip: '', mac: '' };
         port.child = {
           id: 'dev-' + Date.now().toString(36),
           type: 'device',
-          name: freeClient.name || 'Device',
-          ip: freeClient.ip || '',
-          mac: freeClient.mac || '',
+          manual: true,
+          name: 'New device',
+          ip: '',
+          mac: '',
           uplinkPort: port.id
         };
       } else if (newRole === 'node') {
-        const avail = getAvailableNetworkClients();
-        const usedIps = collectUsedIps(window._topoTree, port.id);
-        const freeNode = avail.find(c => !usedIps.has(c.ip) && (c.name && (c.name.toLowerCase().includes('router') || c.name.toLowerCase().includes('ap')))) ||
-                         avail.find(c => !usedIps.has(c.ip)) ||
-                         { name: 'Access Point', ip: '10.0.0.' + (Math.floor(Math.random() * 40) + 10), mac: '' };
         const childNode = {
           id: 'node-' + Date.now().toString(36),
-          type: 'ap',
-          name: freeNode.name || 'Access Point',
-          ip: freeNode.ip || '',
-          mac: freeNode.mac || '',
+          type: 'router',
+          manual: true,
+          name: 'New router',
+          ip: '',
+          mac: '',
           uplinkPort: port.id,
           numPorts: 4,
           ports: [],
@@ -8317,6 +8351,7 @@ function drawStorageIconSmall(x, y, color, parent) {
         }
         port.child = childNode;
       }
+      markTopologyPortManual(port);
 
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
@@ -8330,6 +8365,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       const child = res.port.child;
 
       if (chosenIp === '__manual__') {
+        markTopologyPortManual(res.port);
         renderTopologyLayersUI(window._topoTree);
         return;
       }
@@ -8342,6 +8378,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       } else if (chosenIp) {
         child.ip = chosenIp;
       }
+      markTopologyPortManual(res.port);
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -8352,6 +8389,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       const res = findPortById(window._topoTree, portId);
       if (!res || !res.port.child) return;
       res.port.child[field] = value;
+      markTopologyPortManual(res.port);
       updateValidationNotice();
       triggerTopologyAutoSave();
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -8371,6 +8409,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       } else if (chosenIp) {
         child.ip = chosenIp;
       }
+      markTopologyPortManual(res.port);
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -8381,6 +8420,8 @@ function drawStorageIconSmall(x, y, color, parent) {
       const node = findNodeById(window._topoTree, nodeId);
       if (!node) return;
       node[field] = value;
+      node.manual = true;
+      lockTopologyNodeParent(nodeId);
       updateValidationNotice();
       triggerTopologyAutoSave();
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -8399,7 +8440,8 @@ function drawStorageIconSmall(x, y, color, parent) {
         ip: freeClient.ip || '',
         mac: freeClient.mac || '',
         band: '5G',
-        linkSpeed: '433 Mbps'
+        linkSpeed: '433 Mbps',
+        manual: true
       });
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
@@ -8410,6 +8452,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (!window._topoTree) return;
       const node = findNodeById(window._topoTree, nodeId);
       if (!node || !Array.isArray(node.wireless_clients)) return;
+      excludeTopologyClient(node, node.wireless_clients[clientIdx]);
       node.wireless_clients.splice(clientIdx, 1);
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
@@ -8421,6 +8464,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       const node = findNodeById(window._topoTree, nodeId);
       if (!node || !Array.isArray(node.wireless_clients) || !node.wireless_clients[clientIdx]) return;
       const wc = node.wireless_clients[clientIdx];
+      wc.manual = true;
       wc[field] = value;
       if (field === 'ip') {
         const avail = getAvailableNetworkClients();
@@ -8644,6 +8688,8 @@ function drawStorageIconSmall(x, y, color, parent) {
         window._topoTree = normalizeTopologyTree(topoData || window._topologyLayers, currentLanIp, currentMac);
       }
       const tree = window._topoTree;
+      tree.discovery_mode = getTopologyDiscoveryMode(tree);
+      updateTopologyDiscoveryModeSummary();
       const availClients = getAvailableNetworkClients();
       const usedIps = collectUsedIps(tree);
 
@@ -8868,16 +8914,16 @@ function drawStorageIconSmall(x, y, color, parent) {
 
                   ${isDevice ? `
                     <select class="mh-input" onchange="onSelectPortDevice('${escapeHtml(port.id)}', this.value)" style="width:100%; box-sizing:border-box; font-size:12px;">
-                      <option value="">-- Choose Device from Network Scan --</option>
+                      <option value="">-- Choose a live client or enter manually --</option>
                       ${availClients.map(c => {
                         const isUsedElsewhere = usedIps.has(c.ip) && c.ip !== devIp;
-                        const disAttr = isUsedElsewhere ? 'disabled style="color:var(--text-dim); opacity:0.45;"' : '';
+                        const disAttr = isUsedElsewhere ? 'disabled style="color:var(--text-dim); opacity:0.45;' : '';
                         const disTag = isUsedElsewhere ? ' [In use]' : '';
                         return `<option value="${escapeHtml(c.ip)}" ${devIp === c.ip ? 'selected' : ''} ${disAttr}>${escapeHtml(c.name || 'Device')} &bull; ${escapeHtml(c.ip)}${disTag}</option>`;
                       }).join('')}
-                      <option value="__manual__" ${(!availClients.some(c => c.ip === devIp) && devIp) ? 'selected' : ''}>+ Custom IP Device...</option>
+                      <option value="__manual__" ${!availClients.some(c => c.ip === devIp) ? 'selected' : ''}>+ Enter device details manually</option>
                     </select>
-                    ${(!availClients.some(c => c.ip === devIp) && devIp) ? `
+                    ${!availClients.some(c => c.ip === devIp) ? `
                       <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; width:100%;">
                         <input type="text" class="mh-input" placeholder="Device Name" value="${escapeHtml(devName)}" oninput="onCustomPortDeviceChange('${escapeHtml(port.id)}', 'name', this.value)" style="width:100%; box-sizing:border-box; font-size:11px;">
                         <input type="text" class="mh-input" placeholder="IPv4 Address" value="${escapeHtml(devIp)}" oninput="onCustomPortDeviceChange('${escapeHtml(port.id)}', 'ip', this.value)" style="width:100%; box-sizing:border-box; font-size:11px; font-family:var(--font-mono);">
@@ -8888,14 +8934,21 @@ function drawStorageIconSmall(x, y, color, parent) {
 
                   ${isNode ? `
                     <select class="mh-input" onchange="onSelectPortNodeClient('${escapeHtml(port.id)}', this.value)" style="width:100%; box-sizing:border-box; font-size:12px;">
-                      <option value="">-- Choose AP/Router from Network Scan --</option>
+                      <option value="">-- Choose a live node or enter details manually --</option>
                       ${availClients.map(c => {
                         const isUsedElsewhere = usedIps.has(c.ip) && c.ip !== child.ip;
                         const disAttr = isUsedElsewhere ? 'disabled style="color:var(--text-dim); opacity:0.45;"' : '';
                         const disTag = isUsedElsewhere ? ' [In use]' : '';
-                        return `<option value="${escapeHtml(c.ip)}" ${child.ip === c.ip ? 'selected' : ''} ${disAttr}>${escapeHtml(c.name || 'Router')} &bull; ${escapeHtml(c.ip)}${disTag}</option>`;
+                        return `<option value="${escapeHtml(c.ip)}" ${child.ip === c.ip ? 'selected' : ''} ${disAttr}>${escapeHtml(c.name || 'Network device')} &bull; ${escapeHtml(c.ip)}${disTag}</option>`;
                       }).join('')}
                     </select>
+                    ${!availClients.some(c => c.ip === child.ip) ? `
+                      <div class="topo-manual-device-fields">
+                        <input type="text" class="mh-input" placeholder="Node name" value="${escapeHtml(child.name || '')}" oninput="onNodeFieldChange('${escapeHtml(child.id)}', 'name', this.value)">
+                        <input type="text" class="mh-input" placeholder="Management IPv4 (optional)" value="${escapeHtml(child.ip || '')}" oninput="onNodeFieldChange('${escapeHtml(child.id)}', 'ip', this.value)">
+                        <input type="text" class="mh-input" placeholder="MAC address (optional)" value="${escapeHtml(child.mac || '')}" oninput="onNodeFieldChange('${escapeHtml(child.id)}', 'mac', this.value)">
+                      </div>
+                    ` : ''}
                   ` : ''}
                 </div>
               </div>
@@ -8988,7 +9041,8 @@ async function onQuickAddWifiClient(nodeId, band, clientIp) {
       id: 'wc-' + Date.now() + Math.random().toString(36).substr(2, 4),
       name: name,
       ip: ip.trim(),
-      band: band
+      band: band,
+      manual: true
     });
   } else {
     const all = (window._lastDataCache && Array.isArray(window._lastDataCache.clients)) ? window._lastDataCache.clients : [];
@@ -9003,7 +9057,8 @@ async function onQuickAddWifiClient(nodeId, band, clientIp) {
         name: name,
         ip: clientIp,
         mac: mac,
-        band: band
+        band: band,
+        manual: true
       });
     }
   }
@@ -9031,6 +9086,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
   const target = findNode(window._topoTree, nodeId);
   if (!target || !Array.isArray(target.wireless_clients)) return;
+  const removed = target.wireless_clients.find(wc => wc.id === clientIdent || wc.ip === clientIdent);
+  excludeTopologyClient(window._topoTree, removed);
   target.wireless_clients = target.wireless_clients.filter(wc => wc.id !== clientIdent && wc.ip !== clientIdent);
 
   triggerTopologyAutoSave();
@@ -9083,6 +9140,9 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const res = await fetch('/cgi-bin/topology_layers?action=reset', { method: 'POST' });
         const result = await res.json();
         const tree = normalizeTopologyTree(result);
+        tree.discovery_mode = 'live';
+        localStorage.setItem('maxnet_topology_discovery_mode', 'live');
+        localStorage.removeItem('maxnet_topo_auto_mode');
         window._topoTree = tree;
         window._topologyLayers = result;
         renderTopologyLayersUI(tree);
@@ -9091,6 +9151,9 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       } catch (err) {
         console.error('Error resetting topology:', err);
         const def = createDefaultTopologyTree();
+        def.discovery_mode = 'live';
+        localStorage.setItem('maxnet_topology_discovery_mode', 'live');
+        localStorage.removeItem('maxnet_topo_auto_mode');
         window._topoTree = def;
         renderTopologyLayersUI(def);
         if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -9099,13 +9162,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     async function fetchTopologyLayers() {
       try {
-        const res = await fetch('/cgi-bin/topology_layers');
+        const res = await fetch('/cgi-bin/topology_layers', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (data) {
             window._topologyLayers = data;
             const tree = normalizeTopologyTree(data);
             window._topoTree = tree;
+            tree.discovery_mode = getTopologyDiscoveryMode(tree);
+            updateTopologyDiscoveryModeSummary();
             renderTopologyLayersUI(tree);
             if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
           }
@@ -9116,34 +9181,16 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
 
     async function autoMapNetworkTopology() {
-      if (typeof showToast === 'function') {
-        showToast('Deep-scanning network ARP tables, DHCP leases, and switch ports...', 'info');
+      if (!window._topoTree) window._topoTree = createDefaultTopologyTree();
+      if (getTopologyDiscoveryMode() === 'manual') {
+        if (typeof showToast === 'function') showToast('Choose an automatic topology type before refreshing discovery.', 'info');
+        return;
       }
-
-      try {
-        const res = await fetch('/cgi-bin/topology_layers?action=auto_scan', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.tree && data.tree.id === 'root') {
-            window._topoTree = data.tree;
-            window._topologyLayers = data;
-            renderTopologyLayersUI(window._topoTree);
-            if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
-            showSaveSuccessNotification('Deep auto-topology generated from kernel bridge & ARP tables!');
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('Backend auto_scan request failed, using client heuristic auto-map:', e);
-      }
-
-      // Heuristic fallback: clean tree + dynamic live sync
-      const tree = createDefaultTopologyTree();
-      syncRealClientsToTopology(tree, window._lastDataCache);
-      window._topoTree = tree;
-      renderTopologyLayersUI(tree);
+      syncRealClientsToTopology(window._topoTree, window._lastDataCache);
+      renderTopologyLayersUI(window._topoTree);
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
-      showSaveSuccessNotification('Topology auto-mapped from real active clients!');
+      triggerTopologyAutoSave();
+      showSaveSuccessNotification('Topology discovery refreshed; manually locked links were preserved.');
     }
 
     // Modal Export / Import handlers
@@ -9297,6 +9344,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       `).join('');
     }
 
+    async function updateClientBlock(action, ip, mac, name) {
+      const res = await apiFetch('/cgi-bin/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ip, mac, name })
+      });
+      const result = await res.json();
+      if (!res.ok || result.status !== 'ok') throw new Error(result.message || `${action} request failed`);
+      await fetchBlockedList();
+      if (typeof fetchData === 'function') await fetchData();
+      return result;
+    }
+
     async function blockDevice(ip, mac, name) {
       if (isGatewayDevice({ ip, mac, name })) {
         if (typeof showToast === 'function') showToast('Cannot block router gateway host.', 'error');
@@ -9304,27 +9364,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
       if (!(await customConfirm(`Are you sure you want to block internet access for ${name || ip}?`, 'Block Internet Access', 'Block Client', true))) return;
       try {
-        await fetch('/cgi-bin/clients', {
-          method: 'POST',
-          body: JSON.stringify({ action: 'block', ip, mac, name })
-        });
-        await fetchBlockedList();
-        fetchData();
+        await updateClientBlock('block', ip, mac, name);
+        if (typeof showToast === 'function') showToast(`Internet access blocked for ${name || ip}`, 'success');
       } catch (e) {
-        showToast('Error blocking client: ' + e, 'error');
+        if (typeof showToast === 'function') showToast('Error blocking client: ' + e.message, 'error');
       }
     }
 
     async function unblockDevice(ip, mac) {
       try {
-        await fetch('/cgi-bin/clients', {
-          method: 'POST',
-          body: JSON.stringify({ action: 'unblock', ip, mac })
-        });
-        await fetchBlockedList();
-        fetchData();
+        await updateClientBlock('unblock', ip, mac, '');
+        if (typeof showToast === 'function') showToast(`Device ${ip || mac} unblocked`, 'success');
       } catch (e) {
-        showToast('Error unblocking client: ' + e, 'error');
+        if (typeof showToast === 'function') showToast('Error unblocking client: ' + e.message, 'error');
       }
     }
 
@@ -10595,7 +10647,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
     }
 
+    function setModalSaveLabel(button, label) {
+      if (!button) return;
+      const icon = '<svg viewBox="0 0 24 24"><path d="M5 3h12l4 4v14H3V3z"/><path d="M7 3v6h10V3M7 21v-7h10v7"/></svg>';
+      button.innerHTML = `${icon}<span>${escapeHtml(label || 'SAVE')}</span>`;
+      button.setAttribute('aria-label', label || 'Save');
+      button.title = label || 'Save';
+    }
+
     function openSettingModal(key) {
+      if (key === 'pppoe_server_users') {
+        openSettingPage('acc-pppoe-users');
+        return;
+      }
       currentModalKey = key;
       const overlay = document.getElementById('settingEditModalOverlay');
       const titleEl = document.getElementById('settingModalTitle');
@@ -10604,9 +10668,79 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const saveBtn = document.getElementById('btnModalSave');
       if (!overlay || !bodyEl) return;
 
-      if (saveBtn) saveBtn.textContent = 'SAVE';
+      if (saveBtn) { saveBtn.disabled = false; setModalSaveLabel(saveBtn, 'SAVE'); }
 
-      if (key === 'device_hostname') {
+      if (key === 'topology_add_node') {
+        titleEl.textContent = 'Add Network Device';
+        descEl.textContent = '';
+        setModalSaveLabel(saveBtn, 'ADD');
+        bodyEl.innerHTML = `
+          <div class="topo-add-node-note">Choose the parent device and its LAN port. This manual link works even when DHCP cannot reveal the physical path.</div>
+          <label class="mh-label" for="modalTopoNodeName">Device name</label>
+          <input id="modalTopoNodeName" class="mh-input" type="text" maxlength="64" placeholder="e.g. Office Router">
+          <label class="mh-label" for="modalTopoNodeType">Device type</label>
+          <select id="modalTopoNodeType" class="mh-input">
+            <option value="router">Router</option>
+            <option value="ap">Access point</option>
+            <option value="switch">Ethernet switch</option>
+          </select>
+          <label class="mh-label" for="modalTopoParentPort">Connected from</label>
+          <select id="modalTopoParentPort" class="mh-input">${buildTopologyParentPortOptions()}</select>
+          <label class="mh-label" for="modalTopoNodeIp">Management IP <span class="topo-add-node-note">optional</span></label>
+          <input id="modalTopoNodeIp" class="mh-input" type="text" inputmode="decimal" placeholder="Learned by DHCP or enter manually">
+          <label class="mh-label" for="modalTopoNodeMac">MAC address <span class="topo-add-node-note">optional</span></label>
+          <input id="modalTopoNodeMac" class="mh-input" type="text" placeholder="AA:BB:CC:DD:EE:FF">
+        `;
+      } else if (key === 'topology_type') {
+        titleEl.textContent = 'Topology Type';
+        descEl.textContent = '';
+        setModalSaveLabel(saveBtn, 'APPLY');
+        const selected = window._topoTree?.discovery_mode || 'live';
+        const discoveryModes = [
+          ['live', 'Live bridge & Wi-Fi', 'Use live router port data, client MAC addresses, and Wi-Fi associations.'],
+          ['mac', 'MAC address map', 'Match clients by hardware address; clients without a MAC are not auto-mapped.'],
+          ['ip', 'IP / DHCP neighbor map', 'Map clients using their current IP and LAN port information.'],
+          ['wireless', 'Wi-Fi associations only', 'Auto-update Wi-Fi clients while leaving wired port placement alone.'],
+          ['manual', 'Manual topology', 'Pause discovery and keep your edited topology exactly as configured.']
+        ];
+        bodyEl.innerHTML = `<div class="topology-type-options">${discoveryModes.map(([value, label, info]) => `
+          <label class="topology-type-option">
+            <input type="radio" name="topologyDiscoveryMode" value="${value}" ${selected === value ? 'checked' : ''}>
+            <span class="topology-type-option-copy"><strong>${label}</strong><small>${info}</small></span>
+          </label>
+        `).join('')}</div>`;
+      } else if (key === 'pppoe_user_add') {
+        titleEl.textContent = 'Add Subscriber';
+        descEl.textContent = '';
+        setModalSaveLabel(saveBtn, 'ADD');
+        bodyEl.innerHTML = `
+          <div class="pppoe-user-add-fields">
+            <input type="text" id="modalInput_new_pppoe_u" class="mh-input" maxlength="128" autocomplete="username" placeholder="Subscriber username">
+            <div class="pppoe-password-input-wrap">
+              <input type="password" id="modalInput_new_pppoe_p" class="mh-input" maxlength="256" autocomplete="new-password" placeholder="Password">
+              <button type="button" class="pppoe-password-reveal" onclick="togglePppoePasswordInput('modalInput_new_pppoe_p', this)" title="Show password" aria-label="Show password">
+                <svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+        `;
+      } else if (key === 'ntp_server') {
+        titleEl.textContent = 'Add NTP Server';
+        descEl.textContent = 'Enter a hostname for the router time synchronization server.';
+        setModalSaveLabel(saveBtn, 'ADD SERVER');
+        bodyEl.innerHTML = `<div><label for="modalInput_ntp_server" style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block;">Server hostname</label><input type="text" id="modalInput_ntp_server" class="mh-input" maxlength="253" autocomplete="off" spellcheck="false" placeholder="time.cloudflare.com" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);"></div>`;
+      } else if (key === 'system_date') {
+        titleEl.textContent = 'Set Date & Time';
+        descEl.textContent = '';
+        setModalSaveLabel(saveBtn, 'SAVE');
+        const currentValue = document.getElementById('systemDateTimeInput')?.value || '';
+        bodyEl.innerHTML = `<input type="datetime-local" id="modalInput_system_date" class="mh-input" aria-label="Choose date and time" value="${escapeHtml(currentValue)}" style="width:100%; box-sizing:border-box;">`;
+      } else if (key === 'system_timezone') {
+        titleEl.textContent = 'Select Timezone';
+        descEl.textContent = '';
+        setModalSaveLabel(saveBtn, 'SAVE');
+        bodyEl.innerHTML = `<input type="search" id="systemTimezoneSearch" class="mh-input" aria-label="Search timezones" placeholder="Search timezone" oninput="filterSystemTimezoneOptions(this.value)"><div id="systemTimezoneOptions" class="system-timezone-options"></div>`;
+      } else if (key === 'device_hostname') {
         titleEl.textContent = 'Device Hostname';
         descEl.textContent = 'System hostname of this router across local network, DNS queries, and DHCP announcements.';
         const curHost = (document.getElementById('netDeviceHostname') ? document.getElementById('netDeviceHostname').value : 'Maxnet-Gateway') || 'Maxnet-Gateway';
@@ -10786,7 +10920,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       } else if (key === 'ts_authkey') {
         titleEl.textContent = 'Tailscale Auth Key';
         descEl.textContent = 'Pre-authenticated auth key (tskey-auth-...) from your Tailscale admin console to connect this router.';
-        if (saveBtn) saveBtn.textContent = 'CONNECT';
+        if (saveBtn) setModalSaveLabel(saveBtn, 'CONNECT');
         bodyEl.innerHTML = `
           <div>
             <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">Auth Key</label>
@@ -10848,7 +10982,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       } else if (key === 'pkg_install') {
         titleEl.textContent = 'Install Gateway Package';
         descEl.textContent = 'Enter package name (e.g. htop, tcpdump, curl, iperf3, wireguard-tools) to install from MAXNET package repository.';
-        if (saveBtn) saveBtn.textContent = 'INSTALL';
+        if (saveBtn) setModalSaveLabel(saveBtn, 'INSTALL');
         bodyEl.innerHTML = `
           <div>
             <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">Package Name</label>
@@ -11018,7 +11152,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       } else if (key === 'restart_usb_modem') {
         titleEl.textContent = 'Restart USB Modem / Hardware';
         descEl.textContent = 'Choose which connected USB modem interface to reset & renew DHCP lease, or reboot physical phone via ADB.';
-        if (saveBtn) saveBtn.textContent = 'EXECUTE RESTART';
+        if (saveBtn) setModalSaveLabel(saveBtn, 'RESTART');
         const devs = (window._cachedUsbWanData?.devices) || [];
         bodyEl.innerHTML = `
           <div>
@@ -11122,7 +11256,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const port = document.getElementById('dufsPortInput')?.value || 5000;
         const proto = window.location.protocol || 'http:';
         const webdavUrl = `${proto}//${host}:${port}/`;
-        if (saveBtn) saveBtn.textContent = 'DONE';
+        if (saveBtn) setModalSaveLabel(saveBtn, 'DONE');
         bodyEl.innerHTML = `
           <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <span style="font-size:13px; font-weight:700; color:#38bdf8; font-family:var(--font-mono); word-break:break-all;">${webdavUrl}</span>
@@ -11289,38 +11423,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           <div style="margin-top:10px;">
             <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">Max Concurrent Sessions</label>
             <input type="number" id="modalInput_pppoe_srv_max" class="mh-input" value="${escapeHtml(srv.max_sessions || '32')}" placeholder="32" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);">
-          </div>
-        `;
-      } else if (key === 'pppoe_server_users') {
-        titleEl.textContent = 'Subscriber Accounts (CHAP Secrets)';
-        descEl.textContent = 'Manage PPPoE client logins allowed to authenticate through this access concentrator.';
-        const srv = (window._cachedPppoeData && window._cachedPppoeData.server) || {};
-        const users = srv.users || [];
-        let rowsHtml = '';
-        if (users.length === 0) {
-          rowsHtml = '<div style="font-size:12px; color:var(--text-dim); padding:10px; text-align:center;">No accounts registered yet.</div>';
-        } else {
-          rowsHtml = users.map(u => `
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:6px; margin-bottom:6px;">
-              <div>
-                <strong style="font-size:12px; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(u.user)}</strong>
-                <span style="font-size:10.5px; color:var(--text-dim); margin-left:8px;">IP: ${escapeHtml(u.ip || '*')}</span>
-              </div>
-              <button type="button" class="mh-btn btn-sm btn-ghost" style="color:#ef4444; padding:2px 8px; font-size:10px;" onclick="deletePppoeUser('${escapeHtml(u.user)}')">DELETE</button>
-            </div>
-          `).join('');
-        }
-        bodyEl.innerHTML = `
-          <div style="max-height:160px; overflow-y:auto; margin-bottom:12px;">
-            ${rowsHtml}
-          </div>
-          <div style="padding-top:10px; border-top:1px solid var(--border-sub);">
-            <div style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:8px; text-transform:uppercase;">Add New Subscriber Account</div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-              <input type="text" id="modalInput_new_pppoe_u" class="mh-input" placeholder="Subscriber Username" style="padding:8px 10px; font-size:12px; font-family:var(--font-mono);">
-              <input type="password" id="modalInput_new_pppoe_p" class="mh-input" placeholder="Password" style="padding:8px 10px; font-size:12px; font-family:var(--font-mono);">
-            </div>
-            <button type="button" class="mh-btn" style="margin-top:8px; width:100%; background:#06b6d4; color:#0b1120; font-weight:700; padding:7px; font-size:11.5px; border-radius:6px;" onclick="addPppoeUserFromModal()">+ ADD SUBSCRIBER</button>
           </div>
         `;
       } else if (key === 'usb_lb_mode') {
@@ -11684,6 +11786,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         `;
       }
 
+      clearTimeout(window._settingModalCloseTimer);
+      overlay.classList.remove('closing');
       overlay.style.display = 'flex';
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -11698,6 +11802,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         _settingModalPushed = true;
       } catch (e) {}
 
+      if (key === 'system_timezone') renderSystemTimezoneOptions('');
       const firstInp = bodyEl.querySelector('input, select, textarea');
       if (firstInp) {
         setTimeout(() => {
@@ -11733,11 +11838,14 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const overlay = document.getElementById('settingEditModalOverlay');
       if (overlay) {
         overlay.classList.remove('active');
-        setTimeout(() => {
+        overlay.classList.add('closing');
+        clearTimeout(window._settingModalCloseTimer);
+        window._settingModalCloseTimer = setTimeout(() => {
           if (!overlay.classList.contains('active')) {
             overlay.style.display = 'none';
+            overlay.classList.remove('closing');
           }
-        }, 220);
+        }, 260);
       }
       window._isSettingModalOpen = false;
       currentModalKey = null;
@@ -11804,7 +11912,85 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     async function saveSettingModal() {
       if (!currentModalKey) { closeSettingModal(); return; }
 
-      if (currentModalKey === 'device_hostname') {
+      if (currentModalKey === 'topology_add_node') {
+        const name = (document.getElementById('modalTopoNodeName')?.value || '').trim();
+        const type = document.getElementById('modalTopoNodeType')?.value || 'router';
+        const portId = document.getElementById('modalTopoParentPort')?.value || '';
+        const ip = (document.getElementById('modalTopoNodeIp')?.value || '').trim();
+        const mac = (document.getElementById('modalTopoNodeMac')?.value || '').trim();
+        const portRef = findPortById(window._topoTree, portId);
+        if (!name) {
+          if (typeof showToast === 'function') showToast('Enter a name for this network device', 'error');
+          document.getElementById('modalTopoNodeName')?.focus();
+          return;
+        }
+        if (!portRef || portRef.port.role !== 'empty' || portRef.port.child) {
+          if (typeof showToast === 'function') showToast('Choose an unused LAN port on the parent device', 'error');
+          return;
+        }
+        if (ip && !isValidIpv4(ip)) {
+          if (typeof showToast === 'function') showToast('Enter a valid management IPv4 address', 'error');
+          return;
+        }
+        if (mac && !isValidMac(mac)) {
+          if (typeof showToast === 'function') showToast('Enter a valid device MAC address', 'error');
+          return;
+        }
+        const id = `node-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const child = { id, type, name, ip, mac, uplinkPort: portId, numPorts: 4, ports: [], wireless_clients: [] };
+        for (let idx = 1; idx <= child.numPorts; idx++) {
+          child.ports.push({ id: `${id}-lan${idx}`, label: `LAN ${idx}`, role: 'empty', child: null });
+        }
+        child.manual = true;
+        portRef.port.role = 'node';
+        portRef.port.child = child;
+        markTopologyPortManual(portRef.port);
+        validateAndFixNodeTree(window._topoTree);
+        triggerTopologyAutoSave();
+        renderTopologyLayersUI(window._topoTree);
+        if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
+        if (typeof showToast === 'function') showToast(`${name} added under ${portRef.parentNode.name} · ${portRef.port.label}`, 'success');
+      } else if (currentModalKey === 'pppoe_user_add') {
+        if (!(await addPppoeUserFromModal())) return;
+      } else if (currentModalKey === 'topology_type') {
+        const mode = document.querySelector('input[name="topologyDiscoveryMode"]:checked')?.value || 'live';
+        setTopologyDiscoveryMode(mode);
+      } else if (currentModalKey === 'system_date') {
+        if (document.getElementById('systemNtpEnabled')?.checked) {
+          if (typeof showToast === 'function') showToast('Automatic time sync is enabled. Turn it off to set the date and time manually.', 'info');
+          return;
+        }
+        const value = document.getElementById('modalInput_system_date')?.value || '';
+        if (!value) {
+          if (typeof showToast === 'function') showToast('Choose a valid date and time', 'error');
+          return;
+        }
+        const dateInput = document.getElementById('systemDateTimeInput');
+        if (dateInput) dateInput.value = value;
+        if (!(await saveSystemSettingsPage())) return;
+      } else if (currentModalKey === 'system_timezone') {
+        if (!(document.getElementById('systemTimezoneInput')?.value || '').trim()) {
+          if (typeof showToast === 'function') showToast('Select a timezone', 'error');
+          return;
+        }
+        if (!(await saveSystemSettingsPage())) return;
+      } else if (currentModalKey === 'ntp_server') {
+        const input = document.getElementById('modalInput_ntp_server');
+        const server = (input?.value || '').trim().toLowerCase();
+        if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(server)) {
+          if (typeof showToast === 'function') showToast('Enter a valid NTP hostname', 'error');
+          input?.focus();
+          return;
+        }
+        const existing = Array.from(document.querySelectorAll('#systemNtpServersList .system-ntp-value')).map(item => item.textContent.toLowerCase());
+        if (existing.includes(server)) {
+          if (typeof showToast === 'function') showToast('That NTP server is already in the list', 'info');
+          input?.focus();
+          return;
+        }
+        addSystemNtpServer(server);
+        if (!(await saveSystemSettingsPage())) return;
+      } else if (currentModalKey === 'device_hostname') {
         const val = (document.getElementById('modalInput_device_hostname').value || '').trim();
         if (!val) {
           showToast('Device hostname cannot be empty', 'error');
@@ -12131,7 +12317,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const mode = document.querySelector('input[name="usb_restart_mode"]:checked')?.value || 'soft';
         const statusEl = document.getElementById('usbRestartModalStatus');
         const saveBtn = document.getElementById('btnModalSave');
-        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'RESTARTING...'; }
+        if (saveBtn) { saveBtn.disabled = true; setModalSaveLabel(saveBtn, 'WORKING'); }
 
         if (statusEl) statusEl.textContent = mode === 'adb' ? 'Transmitting ADB reboot signal to smartphone...' : `Resetting interface (${target}) & renewing DHCP...`;
         
@@ -12153,7 +12339,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         } catch (e) {
           if (statusEl) statusEl.textContent = 'Error: ' + e.message;
           if (typeof showToast === 'function') showToast('Restart error: ' + e.message, 'error');
-          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'EXECUTE RESTART'; }
+          if (saveBtn) { saveBtn.disabled = false; setModalSaveLabel(saveBtn, 'RESTART'); }
         }
         return;
       } else if (currentModalKey === 'wan_static_ip') {
@@ -12229,8 +12415,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const dns2 = (document.getElementById('modalInput_pppoe_srv_dns2')?.value || '1.1.1.1').trim();
         const max_sess = parseInt(document.getElementById('modalInput_pppoe_srv_max')?.value, 10) || 32;
         savePppoeServerConfig(srv_ip, pool_start, pool_end, dns1, dns2, max_sess);
-      } else if (currentModalKey === 'pppoe_server_users') {
-        // Done
       } else if (currentModalKey === 'usb_lb_mode') {
         const sel = document.querySelector('input[name="modal_usb_mode"]:checked');
         if (sel && window._cachedUsbWanData) {
@@ -14204,12 +14388,69 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     /* ==================== PPPOE BROADBAND (CLIENT & SERVER) CONTROLLER ==================== */
     window._cachedPppoeData = null;
 
+    function renderPppoeSubscribers() {
+      const container = document.getElementById('pppoeSubscribersList');
+      if (!container) return;
+      const users = window._cachedPppoeData?.server?.users || [];
+      if (!users.length) {
+        container.innerHTML = '<div class="setting-row-item"><div class="setting-label-col"><span class="setting-label-sub">No subscriber accounts configured.</span></div></div>';
+        return;
+      }
+      container.innerHTML = users.map((user, index) => `
+        <div class="setting-row-item pppoe-subscriber-row">
+          <div class="setting-label-col pppoe-subscriber-details">
+            <span class="setting-label-bold">${escapeHtml(user.user || 'Subscriber')}</span>
+            <span class="setting-label-sub">IP: ${escapeHtml(user.ip || '*')}</span>
+            <span class="setting-label-sub pppoe-subscriber-password">Password: <code id="pppoeSubscriberPassword_${index}" data-revealed="false">••••••••</code>
+              <button type="button" class="pppoe-password-reveal" onclick="togglePppoeSubscriberPassword(${index}, this)" title="Show password" aria-label="Show password">
+                <svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </span>
+          </div>
+          <button type="button" class="mh-btn btn-sm btn-ghost pppoe-subscriber-delete" onclick="deletePppoeUser('${escapeHtml(user.user || '')}')" aria-label="Delete ${escapeHtml(user.user || 'subscriber')}">DELETE</button>
+        </div>
+      `).join('');
+    }
+
+    function togglePppoeSubscriberPassword(index, button) {
+      const user = window._cachedPppoeData?.server?.users?.[index];
+      const output = document.getElementById(`pppoeSubscriberPassword_${index}`);
+      if (!user || !output) return;
+      const reveal = output.dataset.revealed !== 'true';
+      output.textContent = reveal ? (user.password === undefined ? '(unavailable)' : (user.password || '(empty)')) : '••••••••';
+      output.dataset.revealed = reveal ? 'true' : 'false';
+      if (button) {
+        button.title = reveal ? 'Hide password' : 'Show password';
+        button.setAttribute('aria-label', button.title);
+      }
+    }
+
+    function togglePppoePasswordInput(inputId, button) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      input.type = input.type === 'password' ? 'text' : 'password';
+      if (button) {
+        button.title = input.type === 'password' ? 'Show password' : 'Hide password';
+        button.setAttribute('aria-label', button.title);
+      }
+    }
+
     async function loadPppoeConfig() {
       try {
         const res = await fetch('/cgi-bin/pppoe?action=get');
         if (!res.ok) return;
         const data = await res.json();
         if (data && data.status === 'ok') {
+          try {
+            const secretsRes = await apiFetch('/cgi-bin/pppoe?action=get_users');
+            const secrets = await secretsRes.json();
+            if (secretsRes.ok && secrets.status === 'ok' && Array.isArray(secrets.users)) {
+              data.server = data.server || {};
+              data.server.users = secrets.users;
+            }
+          } catch (secretError) {
+            console.warn('Unable to load subscriber passwords:', secretError);
+          }
           window._cachedPppoeData = data;
           const client = data.client || {};
           const server = data.server || {};
@@ -14279,6 +14520,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
             const count = (server.users && server.users.length) || 0;
             srvUsersDesc.textContent = `${count} subscriber account${count === 1 ? '' : 's'} configured • Tap to manage`;
           }
+          if (window._currentSettingPage === 'acc-pppoe-users') renderPppoeSubscribers();
 
           const sessionsText = document.getElementById('pppoeActiveSessionsText');
           if (sessionsText) {
@@ -14397,7 +14639,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           })
         });
         const data = await res.json();
-        if (typeof showToast === 'function') showToast(data.message || 'PPPoE Server state updated', 'success');
+        if (typeof showToast === 'function') showToast(data.message || 'PPPoE Server state updated', data.status === 'ok' ? 'success' : 'error');
       } catch (e) {
         if (typeof showToast === 'function') showToast('PPPoE server toggle error: ' + e.message, 'error');
       }
@@ -14434,10 +14676,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     async function addPppoeUserFromModal() {
       const u = (document.getElementById('modalInput_new_pppoe_u')?.value || '').trim();
-      const p = (document.getElementById('modalInput_new_pppoe_p')?.value || '').trim();
+      const p = document.getElementById('modalInput_new_pppoe_p')?.value || '';
       if (!u || !p) {
         if (typeof showToast === 'function') showToast('Username and password are required', 'error');
-        return;
+        return false;
       }
       try {
         const res = await fetch('/cgi-bin/pppoe?action=add_user', {
@@ -14449,13 +14691,13 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (data.status === 'ok') {
           if (typeof showToast === 'function') showToast(`Subscriber account ${u} added!`, 'success');
           await loadPppoeConfig();
-          openSettingModal('pppoe_server_users');
-        } else {
-          if (typeof showToast === 'function') showToast(data.message || 'Failed to add user', 'error');
+          return true;
         }
+        if (typeof showToast === 'function') showToast(data.message || 'Failed to add user', 'error');
       } catch (e) {
         if (typeof showToast === 'function') showToast('Add user error: ' + e.message, 'error');
       }
+      return false;
     }
 
     async function deletePppoeUser(user) {
@@ -14470,7 +14712,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (data.status === 'ok') {
           if (typeof showToast === 'function') showToast(`Subscriber ${user} deleted`, 'success');
           await loadPppoeConfig();
-          openSettingModal('pppoe_server_users');
+          renderPppoeSubscribers();
         } else {
           if (typeof showToast === 'function') showToast(data.message || 'Failed to delete user', 'error');
         }
@@ -14914,6 +15156,45 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
     window.closeNotificationSettingsModal = closeNotificationSettingsModal;
 
+    function parseNotificationTimestamp(value) {
+      if (value === null || value === undefined || value === '') return null;
+      if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+      if (typeof value === 'object') {
+        const nested = value.epoch ?? value.seconds ?? value.sec ?? value.timestamp ?? value.$date;
+        return nested === undefined ? null : parseNotificationTimestamp(nested);
+      }
+      if (typeof value === 'number' || /^\d+(?:\.\d+)?$/.test(String(value).trim())) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) return null;
+        const millis = numeric < 100000000000 ? numeric * 1000 : numeric;
+        const date = new Date(millis);
+        return Number.isNaN(date.getTime()) ? null : date;
+      }
+      if (/^[A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$/.test(String(value).trim())) return null;
+      const date = new Date(String(value).trim());
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function parseLegacyNotificationTimestamp(value) {
+      const match = /^([A-Z][a-z]{2}) (\d{1,2}), (\d{2}):(\d{2})$/.exec(String(value || '').trim());
+      if (!match) return null;
+      const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(match[1]);
+      if (month < 0) return null;
+      const now = new Date();
+      let date = new Date(now.getFullYear(), month, Number(match[2]), Number(match[3]), Number(match[4]));
+      if (date.getTime() > now.getTime() + 86400000) date = new Date(now.getFullYear() - 1, month, Number(match[2]), Number(match[3]), Number(match[4]));
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function notificationLocalDayKey(date) {
+      if (!date) return 'unknown';
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
+    function formatNotificationTime(date) {
+      return date ? date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(/\s*(AM|PM)$/i, '$1') : 'Time unavailable';
+    }
+
     async function loadNotificationsPage() {
       const container = document.getElementById('notificationsListPageContainer');
       const countEl = document.getElementById('notifStatusSummary');
@@ -14957,14 +15238,32 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         }
         updateNotificationBadge(list.length);
 
-        container.innerHTML = list.map(n => {
+        const sortedNotifications = list.map((notification, index) => {
+          const parsedDates = [notification.timestamp, notification.time, notification.created_at, notification.createdAt, notification.date_time, notification.datetime, notification.date, notification.ts]
+            .map(parseNotificationTimestamp).filter(Boolean);
+          return { notification, index, date: parsedDates[0] || parseLegacyNotificationTimestamp(notification.timestamp || notification.time) };
+        }).sort((a, b) => {
+          const aTime = a.date ? a.date.getTime() : -Infinity;
+          const bTime = b.date ? b.date.getTime() : -Infinity;
+          return bTime - aTime || a.index - b.index;
+        });
+
+        let currentDay = null;
+        container.innerHTML = sortedNotifications.map(({ notification: n, date }) => {
+          const dayKey = notificationLocalDayKey(date);
+          let dayHeader = '';
+          if (dayKey !== currentDay) {
+            currentDay = dayKey;
+            const dayLabel = date ? date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Date unavailable';
+            dayHeader = `<div style="padding:10px 14px 5px; color:var(--text-dim); font-size:10px; font-family:var(--font-mono); font-weight:800; letter-spacing:.6px; text-transform:uppercase;">${escapeHtml(dayLabel)}</div>`;
+          }
           let levelColor = '#38bdf8';
           let badgeCls = 'sky';
           if (n.level === 'danger') { levelColor = '#ef4444'; badgeCls = 'ruby'; }
           else if (n.level === 'warning') { levelColor = '#f59e0b'; badgeCls = 'amber'; }
           else if (n.level === 'healthy' || n.level === 'success') { levelColor = '#10b981'; badgeCls = 'emerald'; }
 
-          return `
+          return `${dayHeader}
             <div class="setting-row-item" style="padding:10px 14px; border-bottom:1px solid var(--border-sub); display:flex; flex-direction:column; gap:4px;">
               <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
                 <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
@@ -14973,7 +15272,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
                   <span class="setting-label-bold" style="font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(n.title || '')}</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                  <span style="font-size:10px; font-family:var(--font-mono); color:var(--text-dim); white-space:nowrap;">${escapeHtml(n.timestamp || '')}</span>
+                  <span style="font-size:10px; font-family:var(--font-mono); color:var(--text-dim); white-space:nowrap;">${escapeHtml(formatNotificationTime(date))}</span>
                   <button type="button" class="round-action-btn btn-danger-action" title="Delete notification" onclick="deleteNotification('${escapeHtml(n.id)}')" style="width:26px; height:26px; min-width:26px; color:#ef4444; padding:0;">
                     <svg viewBox="0 0 24 24" style="width:12px; height:12px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
@@ -15636,15 +15935,30 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
     }
 
+    let pkgSearchRequestId = 0;
     function handlePackageSearchInput(query) {
       if (pkgSearchDebounceTimer) clearTimeout(pkgSearchDebounceTimer);
-      pkgSearchDebounceTimer = setTimeout(() => {
-        if (currentPkgTab === 'installed') {
-          renderPackagesList(cachedInstalledPkgs, query);
-        } else {
-          fetchPackages(query);
+      const term = String(query || '').trim();
+      const requestId = ++pkgSearchRequestId;
+      pkgSearchDebounceTimer = setTimeout(async () => {
+        if (!term) {
+          if (currentPkgTab === 'installed') renderPackagesList(cachedInstalledPkgs);
+          else fetchPackages('');
+          return;
         }
-      }, 400);
+        const container = document.getElementById('pkgListContainer');
+        if (container) container.innerHTML = '<div class="package-search-state">Searching installed and online packages…</div>';
+        try {
+          const response = await fetch(`/cgi-bin/packages?action=search&query=${encodeURIComponent(term)}`);
+          const data = await response.json();
+          if (requestId !== pkgSearchRequestId || term !== (document.getElementById('pkgSearchInput')?.value || '').trim()) return;
+          if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'Package search failed');
+          renderPackagesList(data.packages || []);
+        } catch (error) {
+          if (requestId !== pkgSearchRequestId) return;
+          if (container) container.innerHTML = `<div class="package-search-state is-error">Package search failed: ${escapeHtml(error.message)}</div>`;
+        }
+      }, 250);
     }
 
     async function updatePackageRepositories() {
@@ -16345,10 +16659,17 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
     }
 
+    let tailscaleLoginPollToken = 0;
+    let tailscaleLoginPollCount = 0;
+    let tailscaleLoginPollTimer = null;
+
     async function startTailscaleWebLogin() {
+      const token = ++tailscaleLoginPollToken;
+      tailscaleLoginPollCount = 0;
+      clearTimeout(tailscaleLoginPollTimer);
       showToast('Generating Tailscale login link...', 'info');
       const subEl = document.getElementById('tsWebLoginSub');
-      if (subEl) subEl.textContent = 'Initializing daemon login... Generating authentication link...';
+      if (subEl) subEl.textContent = 'Starting Tailscale daemon and requesting a login link...';
       try {
         const res = await fetch('/cgi-bin/tailscale', {
           method: 'POST',
@@ -16356,35 +16677,50 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           body: JSON.stringify({ action: 'up' })
         });
         const data = await res.json();
-        setTimeout(checkTailscaleAuthUrl, 1200);
+        if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Tailscale could not start');
+        tailscaleLoginPollTimer = setTimeout(() => checkTailscaleAuthUrl(token), 1000);
       } catch (e) {
         console.error('startTailscaleWebLogin error', e);
-        if (subEl) subEl.textContent = 'Failed to generate link. Click icon to retry.';
+        if (subEl) subEl.textContent = `${e.message || 'Unable to start Tailscale.'} Click the login icon to retry.`;
+        showToast('Unable to start Tailscale login', 'error');
       }
     }
 
-    async function checkTailscaleAuthUrl() {
+    async function checkTailscaleAuthUrl(token) {
+      if (token !== tailscaleLoginPollToken) return;
+      const subEl = document.getElementById('tsWebLoginSub');
       try {
         const res = await fetch('/cgi-bin/tailscale');
         const data = await res.json();
+        if (!res.ok || data.status === 'error') throw new Error(data.message || 'Unable to check Tailscale status');
         const url = data.auth_url || '';
 
         if (url) {
           updateTailscaleWebLoginUrl(url);
           showToast('Login URL generated! Click icon to open.', 'success');
-        } else if (data.backend_state === 'Running') {
+          return;
+        }
+        if (data.backend_state === 'Running') {
           updateTailscaleWebLoginUrl('');
           setTailscaleLoginState(true);
           showToast('Tailscale connected & running!', 'success');
           fetchTailscale();
-        } else {
-          const subEl = document.getElementById('tsWebLoginSub');
-          if (subEl) subEl.textContent = 'Initializing daemon login... Please wait 2 seconds.';
-          setTimeout(checkTailscaleAuthUrl, 2000);
+          return;
         }
+        tailscaleLoginPollCount++;
       } catch (e) {
-        console.error(e);
+        console.warn('checkTailscaleAuthUrl error:', e);
+        tailscaleLoginPollCount++;
       }
+
+      if (token !== tailscaleLoginPollToken) return;
+      if (tailscaleLoginPollCount >= 15) {
+        if (subEl) subEl.textContent = 'Login link was not ready. Check router connectivity and click the login icon to retry.';
+        showToast('Tailscale login timed out. You can retry.', 'error');
+        return;
+      }
+      if (subEl) subEl.textContent = `Waiting for Tailscale login link... (${tailscaleLoginPollCount}/15)`;
+      tailscaleLoginPollTimer = setTimeout(() => checkTailscaleAuthUrl(token), 2000);
     }
 
     function copyTsAuthUrl() {
@@ -17562,6 +17898,298 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (d5Bw) d5Bw.textContent = ht5Names[h5] || h5;
     }
 
+
+    function systemEpochToDate(epoch) {
+      const value = Number(epoch);
+      if (!Number.isFinite(value) || value <= 0) return null;
+      const millis = value < 100000000000 ? value * 1000 : value;
+      const date = new Date(millis);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function dateTimePartsInZone(date, timezone) {
+      if (timezone) {
+        try {
+          const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+          return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+        } catch (e) {}
+      }
+      return { year: String(date.getFullYear()), month: String(date.getMonth() + 1).padStart(2, '0'), day: String(date.getDate()).padStart(2, '0'), hour: String(date.getHours()).padStart(2, '0'), minute: String(date.getMinutes()).padStart(2, '0') };
+    }
+
+    function formatDateTimeInput(date) {
+      const parts = dateTimePartsInZone(date, systemSettingsState.zonename);
+      return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+    }
+
+    function parseRouterDateTimeEpoch(value, timezone) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value || '');
+      if (!match) return NaN;
+      const values = match.slice(1).map(Number);
+      const targetUtc = Date.UTC(values[0], values[1] - 1, values[2], values[3], values[4]);
+      if (!timezone) return new Date(value).getTime();
+      let guess = targetUtc;
+      try {
+        const formatter = new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const parts = Object.fromEntries(formatter.formatToParts(new Date(guess)).filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+          const represented = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+          guess += targetUtc - represented;
+        }
+        return guess;
+      } catch (e) {
+        return new Date(value).getTime();
+      }
+    }
+
+    function updateSystemSettingsDisplay() {
+      const dateEl = document.getElementById('systemDateTimeDisplay');
+      const timezoneEl = document.getElementById('systemTimezoneDisplay');
+      const date = systemEpochToDate(systemSettingsState.epoch);
+      let dateLabel = '';
+      if (date) {
+        try {
+          dateLabel = date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', ...(systemSettingsState.zonename ? { timeZone: systemSettingsState.zonename } : {}) });
+        } catch (e) { dateLabel = date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
+      }
+      if (dateEl) dateEl.textContent = date ? dateLabel : 'Router time unavailable';
+      if (timezoneEl) timezoneEl.textContent = systemSettingsState.zonename || 'Timezone not configured';
+      const dateInput = document.getElementById('systemDateTimeInput');
+      const timezoneInput = document.getElementById('systemTimezoneInput');
+      const ntpToggle = document.getElementById('systemNtpEnabled');
+      const currentDate = systemEpochToDate(systemSettingsState.epoch);
+      if (dateInput && currentDate && document.activeElement !== dateInput) dateInput.value = formatDateTimeInput(currentDate);
+      if (timezoneInput && document.activeElement !== timezoneInput) timezoneInput.value = systemSettingsState.zonename || '';
+      if (ntpToggle) ntpToggle.checked = !!systemSettingsState.ntp_enabled;
+      renderSystemTimezoneOptions('');
+      renderSystemNtpServers(systemSettingsState.ntp_servers);
+      const toggle = document.getElementById('autoRebootToggle');
+      const timeInput = document.getElementById('autoRebootTime');
+      const timeRow = document.getElementById('autoRebootTimeRow');
+      if (toggle) toggle.checked = !!systemSettingsState.auto_reboot_enabled;
+      if (timeInput) timeInput.value = systemSettingsState.auto_reboot_time || '';
+      if (timeRow) timeRow.style.display = systemSettingsState.auto_reboot_enabled ? 'flex' : 'none';
+    }
+
+    async function loadSystemSettings() {
+      try {
+        const res = await apiFetch('/cgi-bin/system_settings?action=get');
+        const data = await res.json();
+        if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Unable to load router settings');
+        systemSettingsState = {
+          ...systemSettingsState,
+          epoch: data.epoch,
+          timezone: data.timezone || '',
+          zonename: data.zonename || '',
+          ntp_enabled: data.ntp_enabled === true || data.ntp_enabled === 1 || data.ntp_enabled === '1',
+          ntp_servers: Array.isArray(data.ntp_servers) ? data.ntp_servers : [],
+          auto_reboot_enabled: data.auto_reboot_enabled === true || data.auto_reboot_enabled === 1 || data.auto_reboot_enabled === '1',
+          auto_reboot_time: String(data.auto_reboot_time || '').slice(0, 5)
+        };
+        updateSystemSettingsDisplay();
+      } catch (error) {
+        const dateEl = document.getElementById('systemDateTimeDisplay');
+        if (dateEl && dateEl.textContent === 'Loading router time...') dateEl.textContent = 'Unable to fetch router time';
+        console.warn('loadSystemSettings error:', error);
+      }
+    }
+
+    function buildTopologyParentPortOptions() {
+      const tree = window._topoTree;
+      if (!tree) return '<option value="">Topology is still loading</option>';
+      const choices = flattenTopologyNodes(tree).flatMap(({ node, depth }) => {
+        if (!node || node.type === 'device') return [];
+        return (node.ports || []).filter(port => port.role === 'empty' && !port.child).map(port => ({
+          id: port.id,
+          label: `${node.name || (node.id === 'root' ? 'Main router' : 'Network device')} · ${port.label || 'LAN port'} · layer ${depth}`
+        }));
+      });
+      if (!choices.length) return '<option value="">No free LAN ports available</option>';
+      return choices.map(choice => `<option value="${escapeHtml(choice.id)}">${escapeHtml(choice.label)}</option>`).join('');
+    }
+
+    function renderSystemTimezoneOptions(query = '') {
+      const container = document.getElementById('systemTimezoneOptions');
+      if (!container) return;
+      const normalized = String(query || '').trim().toLowerCase();
+      const supportedZones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+      const zones = Array.from(new Set([...SYSTEM_TIMEZONE_OPTIONS.map(([zone]) => zone), ...supportedZones]));
+      const options = zones.filter(zone => !normalized || zone.toLowerCase().includes(normalized));
+      container.replaceChildren();
+      options.forEach(zone => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'system-timezone-option';
+        button.textContent = zone;
+        button.addEventListener('click', () => selectSystemTimezone(zone));
+        container.appendChild(button);
+      });
+      if (!options.length) {
+        const empty = document.createElement('div');
+        empty.className = 'system-timezone-empty';
+        empty.textContent = 'No matching common timezones';
+        container.appendChild(empty);
+      }
+    }
+
+    function openSystemDateTimeEditor() {
+      if (document.getElementById('systemNtpEnabled')?.checked) {
+        if (typeof showToast === 'function') showToast('Automatic time sync is enabled. Turn it off to set the date and time manually.', 'info');
+        return;
+      }
+      openSettingModal('system_date');
+    }
+
+    function openSystemTimezoneEditor() {
+      openSettingModal('system_timezone');
+    }
+
+    function toggleSystemTimezoneMenu(forceOpen) {
+      const overlay = document.getElementById('settingEditModalOverlay');
+      if (forceOpen !== false) openSystemTimezoneEditor();
+      else if (overlay?.style.display === 'flex' && currentModalKey === 'system_timezone') closeSettingModal();
+    }
+
+    function filterSystemTimezoneOptions(query) {
+      renderSystemTimezoneOptions(query);
+    }
+
+    function selectSystemTimezone(zone) {
+      const input = document.getElementById('systemTimezoneInput');
+      const dateInput = document.getElementById('systemDateTimeInput');
+      const timezoneDisplay = document.getElementById('systemTimezoneDisplay');
+      if (input) input.value = zone;
+      if (timezoneDisplay) timezoneDisplay.textContent = zone;
+      const currentDate = systemEpochToDate(systemSettingsState.epoch);
+      if (dateInput && currentDate) {
+        const parts = dateTimePartsInZone(currentDate, zone);
+        dateInput.value = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+      }
+    }
+
+    function applyCustomSystemTimezone() {
+      openSystemTimezoneEditor();
+    }
+
+    function renderSystemNtpServers(servers) {
+      const list = document.getElementById('systemNtpServersList');
+      if (!list) return;
+      list.replaceChildren();
+      (Array.isArray(servers) ? servers : []).slice(0, 8).forEach(server => addSystemNtpServer(server, false));
+    }
+
+    async function resetSystemNtpServers() {
+      const previousServers = Array.from(document.querySelectorAll('#systemNtpServersList .system-ntp-value'))
+        .map(server => server.textContent.trim()).filter(Boolean);
+      renderSystemNtpServers(DEFAULT_SYSTEM_NTP_SERVERS);
+      if (!(await saveSystemSettingsPage())) {
+        renderSystemNtpServers(previousServers);
+        return;
+      }
+      if (typeof showToast === 'function') showToast('Default NTP servers restored', 'success');
+    }
+
+    function addSystemNtpServer(value = '', announceLimit = true) {
+      const list = document.getElementById('systemNtpServersList');
+      if (!list) return;
+      if (list.children.length >= 8) {
+        if (announceLimit && typeof showToast === 'function') showToast('You can add up to 8 NTP servers', 'info');
+        return;
+      }
+      const row = document.createElement('div');
+      row.className = 'system-ntp-row';
+      const serverLabel = document.createElement('span');
+      serverLabel.className = 'system-ntp-value';
+      serverLabel.textContent = String(value || '');
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'round-action-btn system-ntp-remove';
+      remove.title = 'Remove NTP server';
+      remove.setAttribute('aria-label', 'Remove NTP server');
+      remove.innerHTML = '<svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+      remove.addEventListener('click', async () => {
+        row.remove();
+        if (!(await saveSystemSettingsPage())) list.appendChild(row);
+      });
+      row.append(serverLabel, remove);
+      list.appendChild(row);
+    }
+
+    async function saveSystemSettingsPage() {
+      const ntpEnabled = !!document.getElementById('systemNtpEnabled')?.checked;
+      const ntpServers = Array.from(document.querySelectorAll('#systemNtpServersList .system-ntp-value'))
+        .map(server => server.textContent.trim()).filter(Boolean);
+      const zonename = (document.getElementById('systemTimezoneInput')?.value || '').trim();
+      const timezoneOption = SYSTEM_TIMEZONE_OPTIONS.find(([zone]) => zone === zonename);
+      const timezone = timezoneOption ? timezoneOption[1] : `:${zonename}`;
+      const dateValue = document.getElementById('systemDateTimeInput')?.value || '';
+      const parsed = parseRouterDateTimeEpoch(dateValue, zonename);
+      if (!Number.isFinite(parsed)) {
+        if (typeof showToast === 'function') showToast('Enter a valid router date and time', 'error');
+        return false;
+      }
+      if (!zonename) {
+        if (typeof showToast === 'function') showToast('Enter or select an installed timezone name', 'error');
+        return false;
+      }
+      const epoch = Math.floor(parsed / 1000);
+      try {
+        const res = await apiFetch('/cgi-bin/system_settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_time', epoch, timezone, zonename, ntp_enabled: ntpEnabled, ntp_servers: ntpServers })
+        });
+        const data = await res.json();
+        if (!res.ok || (data.status && data.status !== 'ok')) throw new Error(data.message || 'Unable to update router date/time');
+        if (typeof showToast === 'function') showToast('Router date/time settings saved', 'success');
+        await loadSystemSettings();
+        return true;
+      } catch (error) {
+        if (typeof showToast === 'function') showToast(error.message || 'Unable to update router date/time', 'error');
+        return false;
+      }
+    }
+
+    async function saveScheduledAutoReboot(enabled, time) {
+      try {
+        const res = await apiFetch('/cgi-bin/system_settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_auto_reboot', enabled: !!enabled, time: time || '' })
+        });
+        const data = await res.json();
+        if (!res.ok || (data.status && data.status !== 'ok')) throw new Error(data.message || 'Unable to save auto reboot setting');
+        systemSettingsState.auto_reboot_enabled = !!enabled;
+        systemSettingsState.auto_reboot_time = time || '';
+        updateSystemSettingsDisplay();
+        if (typeof showToast === 'function') showToast(enabled ? `Scheduled reboot set for ${time}` : 'Scheduled auto reboot disabled', 'success');
+      } catch (error) {
+        updateSystemSettingsDisplay();
+        if (typeof showToast === 'function') showToast(error.message || 'Unable to save auto reboot setting', 'error');
+      }
+    }
+
+    function toggleScheduledAutoReboot(enabled) {
+      const timeRow = document.getElementById('autoRebootTimeRow');
+      const timeInput = document.getElementById('autoRebootTime');
+      if (timeRow) timeRow.style.display = enabled ? 'flex' : 'none';
+      if (enabled && !timeInput?.value) {
+        if (typeof showToast === 'function') showToast('Choose a reboot time to enable the schedule', 'info');
+        timeInput?.focus();
+        return;
+      }
+      saveScheduledAutoReboot(enabled, enabled ? timeInput.value : systemSettingsState.auto_reboot_time);
+    }
+
+    function saveScheduledAutoRebootTime(time) {
+      if (!document.getElementById('autoRebootToggle')?.checked) return;
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time || '')) {
+        if (typeof showToast === 'function') showToast('Choose a valid reboot time', 'error');
+        return;
+      }
+      saveScheduledAutoReboot(true, time);
+    }
+
     async function fetchWifiConfig() {
       try {
         const res = await apiFetch('/cgi-bin/wifi?action=get');
@@ -17608,8 +18236,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         // Update subtitle labels beneath settings
         updateWifiDisplayLabels();
 
-        // Render connected clients
-        renderWifiClients(data.clients || []);
+        // Stations are managed on the dedicated Wi-Fi Clients settings page.
+        renderWifiClients(getWifiClientList(data));
 
         // Also check Wi-Fi WAN state
         checkWifiWanStatus();
@@ -17620,7 +18248,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     async function checkWifiWanStatus() {
       try {
-        const res = await apiFetch('/cgi-bin/wifi_scan');
+        const res = await apiFetch('/cgi-bin/wifi_scan?action=status');
         const data = await res.json();
         if (data && data.client_wan) {
           const isConn = data.client_wan.status === 'connected';
@@ -17667,9 +18295,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
 
       try {
-        const res = await apiFetch('/cgi-bin/wifi_scan');
+        const res = await apiFetch('/cgi-bin/wifi_scan?action=scan');
         const data = await res.json();
 
+        if (data.status !== 'ok') throw new Error(data.message || 'Unable to scan for Wi-Fi networks');
         if (data.client_wan) {
           const isConn = data.client_wan.status === 'connected';
           if (badge) {
@@ -17808,11 +18437,50 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     let _repeaterScanResults = [];
     let _repeaterProto = 'dhcp';
     let _isRepeaterScanning = false;
+    let _repeaterEnabled = false;
+    let _repeaterControlRevision = 0;
+
+    function setRepeaterScanControls(enabled) {
+      _repeaterEnabled = !!enabled;
+      const toggle = document.getElementById('repeaterEnabledToggle');
+      const controls = document.getElementById('repeaterScanControls');
+      if (toggle) toggle.checked = _repeaterEnabled;
+      if (controls) controls.style.display = _repeaterEnabled ? 'block' : 'none';
+    }
+
+    async function toggleRepeaterEnabled(enabled) {
+      const toggle = document.getElementById('repeaterEnabledToggle');
+      const previous = _repeaterEnabled;
+      const revision = ++_repeaterControlRevision;
+      if (toggle) toggle.disabled = true;
+      try {
+        const res = await apiFetch('/cgi-bin/system_settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_repeater_enabled', enabled: !!enabled })
+        });
+        const data = await res.json();
+        if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Unable to save repeater setting');
+        if (revision === _repeaterControlRevision) setRepeaterScanControls(!!enabled);
+        if (typeof showToast === 'function') showToast(enabled ? 'Wireless repeater controls enabled' : 'Wireless repeater scan controls disabled', 'success');
+        if (enabled) setTimeout(scanRepeaterWifi, 0);
+      } catch (error) {
+        if (revision === _repeaterControlRevision) setRepeaterScanControls(previous);
+        if (typeof showToast === 'function') showToast(error.message || 'Unable to save repeater setting', 'error');
+      } finally {
+        if (toggle) toggle.disabled = false;
+      }
+    }
 
     async function fetchRepeaterStatus() {
+      const revision = _repeaterControlRevision;
       try {
-        const res = await apiFetch('/cgi-bin/wifi_scan');
+        const res = await apiFetch('/cgi-bin/wifi_scan?action=status');
         const data = await res.json();
+        if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Unable to load repeater status');
+        if (revision === _repeaterControlRevision) {
+          setRepeaterScanControls(data.repeater_enabled === true || data.repeater_enabled === 1 || data.repeater_enabled === '1');
+        }
         const badge = document.getElementById('repeaterStatusBadge');
         const activeCard = document.getElementById('repeaterActiveCard');
         const ssidEl = document.getElementById('repeaterConnectedSsid');
@@ -17840,6 +18508,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
 
     async function scanRepeaterWifi() {
+      if (!_repeaterEnabled) {
+        if (typeof showToast === 'function') showToast('Enable wireless repeater controls before scanning', 'info');
+        return;
+      }
       if (_isRepeaterScanning) return;
       _isRepeaterScanning = true;
       const btn = document.getElementById('btnScanRepeater');
@@ -17847,21 +18519,22 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const listContainer = document.getElementById('repeaterScanResultsList');
 
       if (btn) btn.classList.add('btn-scanning');
-      if (sub) sub.textContent = 'Scanning 2.4 GHz & 5 GHz channels...';
+      if (sub) sub.textContent = 'Searching nearby 2.4 GHz & 5 GHz access points...';
       if (listContainer) {
         listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-dim); font-size:12px; font-family:var(--font-mono);"><span class="m-spinner" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:6px;"></span> Scanning dual-band airwaves...</div>';
       }
 
       try {
-        const res = await apiFetch('/cgi-bin/wifi_scan');
+        const res = await apiFetch('/cgi-bin/wifi_scan?action=scan&source=repeater');
         const data = await res.json();
+        if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Unable to scan for Wi-Fi networks');
         fetchRepeaterStatus();
 
         _repeaterScanResults = data.networks || [];
         if (!listContainer) return;
 
         if (_repeaterScanResults.length === 0) {
-          listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">No wireless networks detected. Tap scan to refresh.</div>';
+          listContainer.innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-muted); font-size:12px;">No visible networks found.</div><button type="button" class="setting-row-item repeater-hidden-network-action" onclick="openRepeaterHiddenNetworkModal()"><span>Connect to a hidden Wi-Fi network</span><span aria-hidden="true">›</span></button>';
           return;
         }
 
@@ -17894,7 +18567,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               </div>
             </div>
           `;
-        }).join('');
+        }).join('') + '<button type="button" class="setting-row-item repeater-hidden-network-action" onclick="openRepeaterHiddenNetworkModal()"><span>Connect to a hidden Wi-Fi network</span><span aria-hidden="true">›</span></button>';
 
       } catch (err) {
         if (listContainer) {
@@ -17903,12 +18576,13 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       } finally {
         _isRepeaterScanning = false;
         if (btn) btn.classList.remove('btn-scanning');
-        if (sub) sub.textContent = 'Scan surrounding 2.4 GHz and 5 GHz networks to connect as uplink';
+        if (sub) sub.textContent = 'Scan starts when repeater is enabled; choose a hotspot to connect';
       }
     }
 
     function openRepeaterConnectModal(idx) {
-      const net = _repeaterScanResults[idx] || {};
+      const net = idx && typeof idx === 'object' ? idx : (_repeaterScanResults[idx] || {});
+      const isHiddenNetwork = net.hidden === true;
       const overlay = document.getElementById('repeaterConnectModalOverlay');
       if (!overlay) return;
 
@@ -17921,16 +18595,25 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const targetKey = document.getElementById('repTargetKey');
       const keyGroup = document.getElementById('repKeyGroup');
       const radioSel = document.getElementById('repTargetRadio');
+      const hiddenNetwork = document.getElementById('repHiddenNetwork');
+      const customBssid = document.getElementById('repCustomBssid');
+      const manualEncryptionGroup = document.getElementById('repManualEncryptionGroup');
+      const manualEncryption = document.getElementById('repManualEncryption');
+      const encryption = net.encryption || (isHiddenNetwork ? 'WPA2/WPA3 PSK' : '');
 
-      if (titleEl) titleEl.textContent = `Connect to ${net.ssid || 'Wi-Fi Uplink'}`;
-      if (targetSsid) targetSsid.value = net.ssid || '';
+      if (titleEl) titleEl.textContent = `Connect to ${net.ssid || (isHiddenNetwork ? 'Hidden Wi-Fi' : 'Wi-Fi Uplink')}`;
+      if (targetSsid) { targetSsid.value = net.ssid || ''; targetSsid.readOnly = !isHiddenNetwork; targetSsid.placeholder = isHiddenNetwork ? 'Enter the exact hidden SSID' : 'Network Name'; }
       if (hiddenBssid) hiddenBssid.value = net.bssid || '';
       if (hiddenBand) hiddenBand.value = net.band || '';
       if (hiddenChan) hiddenChan.value = net.channel || '';
-      if (hiddenEnc) hiddenEnc.value = net.encryption || '';
+      if (hiddenEnc) hiddenEnc.value = encryption;
+      if (hiddenNetwork) hiddenNetwork.value = isHiddenNetwork ? '1' : '0';
+      if (customBssid) customBssid.value = '';
       if (targetKey) targetKey.value = '';
+      if (manualEncryptionGroup) manualEncryptionGroup.style.display = isHiddenNetwork ? 'block' : 'none';
+      if (manualEncryption) manualEncryption.value = 'sae-mixed';
 
-      const isEnc = net.encryption && !net.encryption.toLowerCase().includes('none') && !net.encryption.toLowerCase().includes('open');
+      const isEnc = encryption && !encryption.toLowerCase().includes('none') && !encryption.toLowerCase().includes('open');
       if (keyGroup) keyGroup.style.display = isEnc ? 'block' : 'none';
 
       if (radioSel) {
@@ -17938,6 +18621,12 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         else if (net.band === '2.4GHz') radioSel.value = 'radio0';
         else radioSel.value = 'auto';
       }
+      const manualRadioGroup = document.getElementById('repTargetRadio')?.closest('.mh-form-group');
+      if (manualRadioGroup) manualRadioGroup.style.display = isHiddenNetwork ? 'block' : 'none';
+      const advancedPanel = document.getElementById('repAdvancedPanel');
+      const advancedButton = document.getElementById('btnToggleRepAdv');
+      if (advancedPanel) advancedPanel.style.display = 'none';
+      if (advancedButton) advancedButton.textContent = 'SHOW ADVANCED UPLINK PARAMETERS';
 
       setRepeaterProto('dhcp');
       overlay.style.display = 'flex';
@@ -17969,6 +18658,18 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
     }
 
+    function openRepeaterHiddenNetworkModal() {
+      openRepeaterConnectModal({ ssid: '', encryption: 'WPA2/WPA3 PSK', hidden: true, band: '', channel: '', bssid: '' });
+    }
+
+    function updateRepeaterManualSecurity() {
+      const encryption = document.getElementById('repManualEncryption')?.value || 'psk2';
+      const hiddenEnc = document.getElementById('repHiddenEnc');
+      const keyGroup = document.getElementById('repKeyGroup');
+      if (hiddenEnc) hiddenEnc.value = encryption;
+      if (keyGroup) keyGroup.style.display = encryption === 'none' ? 'none' : 'block';
+    }
+
     function toggleRepeaterAdvanced() {
       const p = document.getElementById('repAdvancedPanel');
       const b = document.getElementById('btnToggleRepAdv');
@@ -17987,11 +18688,30 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const enc = (document.getElementById('repHiddenEnc')?.value || '').trim();
       const radio = document.getElementById('repTargetRadio')?.value || 'auto';
       const mac = (document.getElementById('repCustomMac')?.value || '').trim();
+      const customBssid = (document.getElementById('repCustomBssid')?.value || '').trim();
+      const hiddenNetwork = document.getElementById('repHiddenNetwork')?.value === '1';
+      const manualEncryption = document.getElementById('repManualEncryption')?.value || 'psk2';
       const mtu = (document.getElementById('repCustomMtu')?.value || '').trim();
       const metric = (document.getElementById('repCustomMetric')?.value || '20').trim();
 
-      if (!ssid) {
-        showToast('SSID cannot be empty', 'error');
+      if (!ssid || ssid.length > 32) {
+        showToast('Enter a Wi-Fi name between 1 and 32 characters', 'error');
+        return;
+      }
+      if (mac && !isValidMac(mac)) {
+        showToast('Enter a valid custom radio MAC address', 'error');
+        return;
+      }
+      if (customBssid && !isValidMac(customBssid)) {
+        showToast('Enter a valid access point BSSID', 'error');
+        return;
+      }
+      if (mtu && (!/^\d+$/.test(mtu) || Number(mtu) < 576 || Number(mtu) > 1500)) {
+        showToast('MTU must be between 576 and 1500', 'error');
+        return;
+      }
+      if (!/^\d+$/.test(metric) || Number(metric) < 1 || Number(metric) > 255) {
+        showToast('Route metric must be between 1 and 255', 'error');
         return;
       }
 
@@ -17999,12 +18719,13 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         action: 'connect',
         ssid: ssid,
         key: key,
-        encryption: enc,
+        encryption: hiddenNetwork ? manualEncryption : enc,
+        hidden: hiddenNetwork,
         proto: _repeaterProto,
         device: radio,
         band: band,
         channel: channel,
-        bssid: bssid || undefined,
+        bssid: customBssid || bssid || undefined,
         macaddr: mac || undefined,
         mtu: mtu || undefined,
         metric: metric || '20'
@@ -18018,6 +18739,14 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
         if (!ip || !gw) {
           showToast('IP Address and Gateway are required for Static mode', 'error');
+          return;
+        }
+        if (!isValidIpv4(ip) || !isValidIpv4(gw) || !isValidSubnetMask(mask)) {
+          showToast('Enter valid static IP, gateway, and subnet mask values', 'error');
+          return;
+        }
+        if (dns && !dns.split(/\s+/).every(isValidIpv4)) {
+          showToast('Enter valid DNS IPv4 addresses separated by spaces', 'error');
           return;
         }
         payload.ipaddr = ip;
@@ -18206,35 +18935,87 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (btn) btn.classList.remove('touch-active');
     }, { passive: true });
 
+    function getWifiClientList(data) {
+      const lists = [data?.clients, data?.stations, data?.wifi_clients, data?.data?.clients, data?.data?.stations].filter(Array.isArray);
+      return lists.find(list => list.length > 0) || lists[0] || [];
+    }
+
+    async function fetchWifiClients() {
+      const container = document.getElementById('wifiClientsContainer');
+      if (container) container.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:24px; font-size:12px;">Loading Wi-Fi stations...</div>';
+      try {
+        const res = await apiFetch('/cgi-bin/wifi?action=get');
+        const data = await res.json();
+        if (!res.ok || (data.status && data.status !== 'ok')) throw new Error(data.message || 'Unable to load Wi-Fi stations');
+        renderWifiClients(getWifiClientList(data));
+      } catch (error) {
+        if (container) container.innerHTML = `<div style="text-align:center; color:#ef4444; padding:20px; font-size:12px;">${escapeHtml(error.message || 'Unable to load Wi-Fi stations.')}</div>`;
+      }
+    }
+
+    async function wifiClientAction(action, mac, blocked) {
+      const cleanMac = String(mac || '').trim().toUpperCase();
+      if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(cleanMac)) {
+        if (typeof showToast === 'function') showToast('Invalid Wi-Fi station MAC address', 'error');
+        return;
+      }
+      const payload = action === 'client_block'
+        ? { action, mac: cleanMac, blocked: !!blocked }
+        : { action: 'client_kick', mac: cleanMac };
+      try {
+        const res = await apiFetch('/cgi-bin/wifi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || (data.status && data.status !== 'ok')) throw new Error(data.message || 'Wi-Fi client action failed');
+        if (typeof showToast === 'function') showToast(action === 'client_kick' ? 'Wi-Fi station disconnected' : (blocked ? 'Wi-Fi access blocked for station' : 'Wi-Fi block removed'), 'success');
+        await fetchWifiClients();
+      } catch (error) {
+        if (typeof showToast === 'function') showToast(error.message || 'Wi-Fi client action failed', 'error');
+      }
+    }
+
     function renderWifiClients(clients) {
       const container = document.getElementById('wifiClientsContainer');
       if (!container) return;
-
-      if (!clients || clients.length === 0) {
-        container.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11.5px;">No wireless devices currently connected.</div>';
+      const stations = Array.isArray(clients) ? clients : [];
+      const countEl = document.getElementById('wifiClientCount');
+      if (countEl) countEl.textContent = `${stations.length} CLIENT${stations.length === 1 ? '' : 'S'}`;
+      if (stations.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:24px; font-size:12px;">No Wi-Fi stations are currently reported.</div>';
         return;
       }
 
-      container.innerHTML = clients.map(c => `
-        <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:8px; padding:10px 14px;">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <div style="width:32px; height:32px; border-radius:6px; background:rgba(6,182,212,0.15); color:#06b6d4; display:flex; align-items:center; justify-content:center;">
-              <svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      container.innerHTML = stations.map(station => {
+        const mac = String(station.mac || station.mac_address || station.macaddr || station.address || '').trim().toUpperCase();
+        const validMac = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac);
+        const isBlocked = station.blocked === true || station.blocked === 1 || station.blocked === '1';
+        const isConnected = station.connected === true || station.connected === 1 || station.connected === '1';
+        const name = station.hostname || station.name || station.device || 'Wi-Fi station';
+        const ip = station.ip || station.ip_address || '';
+        const band = station.band || station.radio || station.frequency || 'Wi-Fi';
+        const signal = station.signal ?? station.signal_dbm ?? station.rssi;
+        const signalLabel = signal === undefined || signal === null || signal === '' ? 'Signal unavailable' : `${escapeHtml(signal)} dBm`;
+        const txRate = station.tx_mbps ?? station.tx_rate ?? station.txrate;
+        const safeMac = escapeHtml(mac || 'Unknown MAC');
+        const actionMac = validMac ? `'${mac}'` : "''";
+        return `
+          <div class="setting-row-item" style="display:flex; align-items:center; gap:12px; padding:11px 14px;">
+            <div style="display:flex; align-items:center; justify-content:center; width:18px; min-width:18px;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${isBlocked ? '#ef4444' : '#10b981'}; box-shadow:0 0 7px ${isBlocked ? 'rgba(239,68,68,.4)' : 'rgba(16,185,129,.4)'};"></span></div>
+            <div class="setting-label-col" style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+              <div class="setting-label-bold" style="font-size:13px;">${escapeHtml(name)} ${isBlocked ? '<span class="card-badge ruby" style="font-size:9px;">BLOCKED</span>' : ''}</div>
+              <div style="font-size:12px; font-family:var(--font-mono); color:var(--text-muted);">${safeMac}${ip ? ` · ${escapeHtml(ip)}` : ''}</div>
+              <div style="font-size:10.5px; color:var(--text-dim);">${escapeHtml(band)} · ${signalLabel}${txRate !== undefined && txRate !== null && txRate !== '' ? ` · ${escapeHtml(txRate)} Mbps` : ''}</div>
             </div>
-            <div>
-              <span style="font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--text-main);">${escapeHtml(c.mac)}</span>
-              <div style="font-size:10.5px; color:var(--text-dim); display:flex; gap:8px;">
-                <span>Band: ${escapeHtml(c.band || '2.4 GHz')}</span>
-                <span>Signal: ${c.signal || -60} dBm</span>
-              </div>
+            <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap;">
+              ${validMac ? `${isConnected ? `<button type="button" class="mh-btn btn-ghost" onclick="wifiClientAction('client_kick', ${actionMac})" style="padding:5px 8px; font-size:10px;">KICK</button>` : ''}
+              <button type="button" class="mh-btn ${isBlocked ? 'btn-primary' : 'btn-ghost'}" onclick="wifiClientAction('client_block', ${actionMac}, ${!isBlocked})" style="padding:5px 8px; font-size:10px; color:${isBlocked ? '' : '#ef4444'};">${isBlocked ? 'UNBLOCK' : 'BLOCK'}</button>` : '<span style="font-size:10px;color:var(--text-dim);">MAC unavailable</span>'}
             </div>
           </div>
-          <div style="text-align:right;">
-            <span style="font-size:11px; font-weight:700; color:#10b981;">${c.tx_mbps || 0} Mbps</span>
-            <div style="font-size:9.5px; color:var(--text-muted);">PHY Link Rate</div>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     async function saveWifiSettings() {
@@ -18639,33 +19420,33 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const mem = data.memory || {};
 
         const cpuModelEl = document.getElementById('sysCpuModel');
-        if (cpuModelEl) cpuModelEl.textContent = `${cpu.model || 'Qualcomm IPQ9574'} • ${cpu.cores || 4} Cores • ${cpu.architecture || 'aarch64'}`;
+        if (cpuModelEl) cpuModelEl.textContent = [cpu.model, cpu.cores ? `${cpu.cores} Cores` : '', cpu.architecture].filter(Boolean).join(' • ') || 'CPU data unavailable';
 
         const loadAvgEl = document.getElementById('sysLoadAvg');
         if (loadAvgEl) loadAvgEl.textContent = `Usage: ${cpu.usage_pct || 0}% • Load: ${cpu.load_1m || '0.00'}, ${cpu.load_5m || '0.00'}, ${cpu.load_15m || '0.00'} • BogoMIPS: ${cpu.bogomips || '48.00'}`;
 
         // Physical RAM, ZRAM, and Memory Pool
         const ramSubEl = document.getElementById('sysRamSub');
-        const pTot = mem.phys_total_mb || (mem.total_mb > 500 ? 432 : mem.total_mb);
+        const pTot = Number(mem.phys_total_mb || mem.total_mb) || 0;
         const pFree = mem.phys_free_mb || mem.free_mb || 0;
         const pCache = mem.phys_cached_mb || mem.cached_mb || 0;
         const pAvail = mem.phys_avail_mb || mem.avail_mb || 0;
         const pUsed = mem.phys_used_mb || Math.max(0, pTot - pFree - pCache);
         const pPct = mem.phys_used_pct !== undefined ? mem.phys_used_pct : (pTot > 0 ? Math.round((pUsed * 100) / pTot) : 0);
         if (ramSubEl) {
-          ramSubEl.textContent = `Physical DDR4: ${pUsed} MB used (${pPct}%) • Free: ${pFree} MB • Cache: ${pCache} MB • Available: ${pAvail} MB`;
+          ramSubEl.textContent = pTot > 0 ? `Physical RAM: ${pUsed} MB used (${pPct}%) • Free: ${pFree} MB • Cache: ${pCache} MB • Available: ${pAvail} MB` : 'Physical RAM data unavailable';
         }
 
         const zram = data.zram || {};
         const zramSubEl = document.getElementById('sysZramSub');
-        const zTot = zram.total_mb || mem.zram_total_mb || 384;
+        const zTot = Number(zram.total_mb || mem.zram_total_mb) || 0;
         const zUsed = zram.used_mb !== undefined ? zram.used_mb : (mem.zram_used_mb || 0);
         const zFree = zram.free_mb !== undefined ? zram.free_mb : (zTot - zUsed);
         const zPct = zram.used_pct !== undefined ? zram.used_pct : (zTot > 0 ? Math.round((zUsed * 100) / zTot) : 0);
         const zAlgo = (zram.algorithm || 'lzo').toUpperCase();
-        const zRatio = zram.ratio || '4.54x';
+        const zRatio = zram.ratio || '--';
         if (zramSubEl) {
-          zramSubEl.textContent = `Engine: ${zAlgo} • Pool: ${zTot} MB • Compressed: ${zUsed} MB (${zPct}%) • Available: ${zFree} MB • Ratio: ${zRatio}`;
+          zramSubEl.textContent = zTot > 0 ? `Engine: ${zAlgo} • Pool: ${zTot} MB • Compressed: ${zUsed} MB (${zPct}%) • Available: ${zFree} MB • Ratio: ${zRatio}` : 'ZRAM data unavailable';
         }
 
         const poolSubEl = document.getElementById('sysMemPoolSub');
@@ -18690,8 +19471,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           });
           avgTemp = sum / thermals.length;
         } else {
-          maxTemp = 42.0;
-          avgTemp = 42.0;
+          maxTemp = 0;
+          avgTemp = 0;
         }
 
         // Determine health state based on temperature:
@@ -18744,7 +19525,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (maxTemp > 75) healthIssues.push(`Elevated thermal temperature (${maxTemp.toFixed(1)}°C)`);
 
         let overallHealth = "HEALTHY";
-        let overallSub = `All Systems Nominal • CPU (${cpuPct}%), RAM (${ramPct}%), Temp (${maxTemp > 0 ? maxTemp.toFixed(1) + "°C" : "Optimal"})`;
+        let overallSub = `CPU (${cpuPct}%), RAM (${ramPct}%), Temp (${maxTemp > 0 ? maxTemp.toFixed(1) + "°C" : "Unavailable"})`;
 
         if (healthBadge) {
           if (healthIssues.length > 0) {
@@ -18928,6 +19709,7 @@ if (typeof window !== 'undefined') {
     apiFetch,
     fetchPublicHealthSnapshot,
     showLogin,
+    checkRootPasswordState,
     showDashboard,
     pemSpkiToArrayBuffer,
     encryptCredentials,
@@ -18936,6 +19718,8 @@ if (typeof window !== 'undefined') {
     hideLogoutConfirm,
     logoutSession,
     openSettingPage,
+    saveCurrentSettingPage,
+    resetCurrentSettingPage,
     getValidationTypeForKey,
     onModalLiveValidate,
     triggerModalInitialValidation,
@@ -19057,7 +19841,6 @@ if (typeof window !== 'undefined') {
     copyClientText,
     reserveClientStaticLease,
     getAvailableNetworkClients,
-    toggleTopologyAutoMode,
     createDefaultTopologyTree,
     syncRealClientsToTopology,
     normalizeTopologyTree,
@@ -19093,6 +19876,7 @@ if (typeof window !== 'undefined') {
     renderSingleNodeSettingCard,
     onQuickAddWifiClient,
     onRemoveWifiClient,
+    setTopologyDiscoveryMode,
     saveTopologyLayersConfig,
     resetTopologyLayersConfig,
     fetchTopologyLayers,
@@ -19233,6 +20017,8 @@ if (typeof window !== 'undefined') {
     savePppoeServerConfig,
     addPppoeUserFromModal,
     deletePppoeUser,
+    togglePppoeSubscriberPassword,
+    togglePppoePasswordInput,
     loadDufsConfig,
     toggleDufsService,
     saveDufsConfig,
@@ -19329,7 +20115,21 @@ if (typeof window !== 'undefined') {
     executeFirmwareUpdate,
     confirmCleanUpdate,
     fetchWifiConfig,
+    fetchWifiClients,
+    wifiClientAction,
     renderWifiClients,
+    loadSystemSettings,
+    openSystemDateTimeEditor,
+    openSystemTimezoneEditor,
+    toggleSystemTimezoneMenu,
+    filterSystemTimezoneOptions,
+    selectSystemTimezone,
+    applyCustomSystemTimezone,
+    addSystemNtpServer,
+    resetSystemNtpServers,
+    saveSystemSettingsPage,
+    toggleScheduledAutoReboot,
+    saveScheduledAutoRebootTime,
     saveWifiSettings,
     toggleWifiMasterPower,
     togglePasswordVisibility,
@@ -19382,6 +20182,7 @@ export {
   apiFetch,
   fetchPublicHealthSnapshot,
   showLogin,
+  checkRootPasswordState,
   showDashboard,
   pemSpkiToArrayBuffer,
   encryptCredentials,
@@ -19390,6 +20191,8 @@ export {
   hideLogoutConfirm,
   logoutSession,
   openSettingPage,
+  saveCurrentSettingPage,
+  resetCurrentSettingPage,
   getValidationTypeForKey,
   onModalLiveValidate,
   triggerModalInitialValidation,
@@ -19511,7 +20314,6 @@ export {
   copyClientText,
   reserveClientStaticLease,
   getAvailableNetworkClients,
-  toggleTopologyAutoMode,
   createDefaultTopologyTree,
   syncRealClientsToTopology,
   normalizeTopologyTree,
@@ -19547,6 +20349,7 @@ export {
   renderSingleNodeSettingCard,
   onQuickAddWifiClient,
   onRemoveWifiClient,
+  setTopologyDiscoveryMode,
   saveTopologyLayersConfig,
   resetTopologyLayersConfig,
   fetchTopologyLayers,
@@ -19687,6 +20490,8 @@ export {
   savePppoeServerConfig,
   addPppoeUserFromModal,
   deletePppoeUser,
+  togglePppoeSubscriberPassword,
+  togglePppoePasswordInput,
   loadDufsConfig,
   toggleDufsService,
   saveDufsConfig,
@@ -19783,7 +20588,21 @@ export {
   executeFirmwareUpdate,
   confirmCleanUpdate,
   fetchWifiConfig,
+  fetchWifiClients,
+  wifiClientAction,
   renderWifiClients,
+  loadSystemSettings,
+  openSystemDateTimeEditor,
+  openSystemTimezoneEditor,
+  toggleSystemTimezoneMenu,
+  filterSystemTimezoneOptions,
+  selectSystemTimezone,
+  applyCustomSystemTimezone,
+  addSystemNtpServer,
+  resetSystemNtpServers,
+  saveSystemSettingsPage,
+  toggleScheduledAutoReboot,
+  saveScheduledAutoRebootTime,
   saveWifiSettings,
   scanNearbyWifi,
   connectToWifiNetwork,
@@ -19818,11 +20637,14 @@ export {
   currentTheme,
   currentThemeMode,
   fetchRepeaterStatus,
+  toggleRepeaterEnabled,
   scanRepeaterWifi,
   openRepeaterConnectModal,
   closeRepeaterConnectModal,
   setRepeaterProto,
   toggleRepeaterAdvanced,
+  openRepeaterHiddenNetworkModal,
+  updateRepeaterManualSecurity,
   submitRepeaterConnect,
   disconnectRepeaterWifi,
   fetchHwGesturesConfig,

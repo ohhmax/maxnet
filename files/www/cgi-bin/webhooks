@@ -414,8 +414,8 @@ if [ "$ACTION" = "dispatch" ]; then
     [ -z "$TITLE" ] && TITLE="System Alert"
     [ -z "$LEVEL" ] && LEVEL="info"
     [ -z "$EV_TYPE" ] && EV_TYPE="system"
-    [ -z "$ID" ] && ID="notif_$(date +%s)_$RANDOM"
-    [ -z "$TS" ] && TS=$(date +"%b %d, %H:%M")
+    [ -z "$ID" ] && ID="notif_$(date +%s)_$$"
+    [ -z "$TS" ] && TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     # Ensure NOTIF_FILE is a valid JSON array; self-heal if corrupted
     if [ ! -f "$NOTIF_FILE" ] || ! jq -e 'type=="array"' "$NOTIF_FILE" >/dev/null 2>&1; then
@@ -456,16 +456,17 @@ if [ "$ACTION" = "dispatch" ]; then
         --arg ts "$TS" \
         '{id: $id, title: $title, message: $msg, level: $level, event_type: $type, timestamp: $ts, read: false}' 2>/dev/null)
 
-    # Save to local notifications with robust de-duplication (suppress duplicate ID or same title)
+    # Keep distinct events even when their titles match; only duplicate IDs are replaced.
     if [ "$SAVE_LOCAL" = "true" ] && [ -n "$NEW_ENTRY" ]; then
+        NOTIF_TMP="/tmp/notif_new_$$.json"
         jq --argjson new "$NEW_ENTRY" --argjson max "$MAX_NOTIFS" '
-            ([$new] + (if type=="array" then map(select(.id != $new.id and .title != $new.title)) else [] end))
+            ([$new] + (if type=="array" then map(select(.id != $new.id)) else [] end))
             | .[0:$max]
-        ' "$NOTIF_FILE" > "/tmp/notif_new.json" 2>/dev/null
-        if [ -s "/tmp/notif_new.json" ] && jq -e 'type=="array"' "/tmp/notif_new.json" >/dev/null 2>&1; then
-            mv -f "/tmp/notif_new.json" "$NOTIF_FILE"
+        ' "$NOTIF_FILE" > "$NOTIF_TMP" 2>/dev/null
+        if [ -s "$NOTIF_TMP" ] && jq -e 'type=="array"' "$NOTIF_TMP" >/dev/null 2>&1; then
+            mv -f "$NOTIF_TMP" "$NOTIF_FILE"
         fi
-        rm -f "/tmp/notif_new.json"
+        rm -f "$NOTIF_TMP"
     fi
 
     # Forward to Webhooks if enabled

@@ -12,6 +12,24 @@ ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
 
 PREFS_FILE="/etc/tailscale_prefs.json"
 
+ensure_tailscale_daemon() {
+    command -v tailscale >/dev/null 2>&1 || return 1
+    if tailscale status --json 2>/dev/null | jq -e '.BackendState != null' >/dev/null 2>&1; then
+        return 0
+    fi
+    [ -x /etc/init.d/tailscale ] || return 1
+    /etc/init.d/tailscale start >/dev/null 2>&1 || return 1
+    tries=0
+    while [ "$tries" -lt 10 ]; do
+        if tailscale status --json 2>/dev/null | jq -e '.BackendState != null' >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+        tries=$((tries + 1))
+    done
+    return 1
+}
+
 if [ "$ACTION" = "set_prefs" ] || [ "$ACTION" = "apply" ]; then
     SHARE_LAN=$(echo "$POST_DATA" | jq -r '.share_lan // empty' 2>/dev/null)
     EXIT_NODE=$(echo "$POST_DATA" | jq -r '.exit_node // empty' 2>/dev/null)
@@ -46,6 +64,10 @@ PREF
 fi
 
 if [ "$ACTION" = "up" ]; then
+    if ! ensure_tailscale_daemon; then
+        echo '{"status":"error","message":"Tailscale daemon could not be started. Check that the package and init service are installed."}'
+        exit 0
+    fi
     KEY=$(echo "$POST_DATA" | jq -r '.authkey // empty' 2>/dev/null)
     SHARE_LAN=$(echo "$POST_DATA" | jq -r '.share_lan // empty' 2>/dev/null)
     EXIT_NODE=$(echo "$POST_DATA" | jq -r '.exit_node // empty' 2>/dev/null)
@@ -60,15 +82,32 @@ if [ "$ACTION" = "up" ]; then
     ACCEPT_FLAG="--accept-routes=true"
     [ "$ACCEPT_ROUTES" = "false" ] && ACCEPT_FLAG="--accept-routes=false"
 
-    if [ -n "$KEY" ]; then
-        tailscale up --reset --authkey="$KEY" --hostname="$HOSTNAME" $ROUTES $EXIT_FLAG $ACCEPT_FLAG --timeout=10s >/tmp/ts_up.log 2>&1 &
-        echo '{"status": "ok", "message": "Connecting Tailscale with Auth Key..."}'
-    else
-        CUR_URL=$(tailscale status --json 2>/dev/null | grep -o '"AuthURL": "[^"]*"' | cut -d'"' -f4)
-        if [ -z "$CUR_URL" ]; then
-            tailscale up --reset --hostname="$HOSTNAME" $ROUTES $EXIT_FLAG $ACCEPT_FLAG >/tmp/ts_up.log 2>&1 &
+    case "$HOSTNAME" in
+        ''|*[!A-Za-z0-9.-]*) echo '{"status":"error","message":"Invalid Tailscale hostname"}'; exit 0 ;;
+    esac
+    [ "${#HOSTNAME}" -le 63 ] || { echo '{"status":"error","message":"Tailscale hostname is too long"}'; exit 0; }
+
+    CUR_URL=$(tailscale status --json 2>/dev/null | jq -r '.AuthURL // empty' 2>/dev/null)
+    if [ -z "$CUR_URL" ]; then
+        : > /tmp/ts_up.log
+        rm -f /tmp/ts_up.exit
+        if [ -n "$KEY" ]; then
+            [ "$SHARE_LAN" = "true" ] && ROUTES=10.0.0.0/24 || ROUTES=
+            [ "$EXIT_NODE" = "true" ] && EXIT_FLAG=true || EXIT_FLAG=false
+            [ "$ACCEPT_ROUTES" = "false" ] && ACCEPT_FLAG=false || ACCEPT_FLAG=true
+            set -- up "--authkey=$KEY" "--hostname=$HOSTNAME" "--advertise-routes=$ROUTES" "--advertise-exit-node=$EXIT_FLAG" "--accept-routes=$ACCEPT_FLAG"
+            [ "$(echo "$POST_DATA" | jq -r '.ssh // empty' 2>/dev/null)" = true ] && set -- "$@" --ssh=true || set -- "$@" --ssh=false
+        else
+            # Keep the router's existing Tailscale settings; the default login flow needs no reset or flag overrides.
+            set -- up
         fi
-        echo '{"status": "ok", "message": "Tailscale login requested."}'
+        tailscale "$@" > /tmp/ts_up.log 2>&1 </dev/null &
+        echo $! > /tmp/ts_up.pid
+    fi
+    if [ -n "$KEY" ]; then
+        echo '{"status":"ok","message":"Connecting Tailscale with Auth Key..."}'
+    else
+        echo '{"status":"ok","message":"Tailscale login requested; waiting for the authentication URL."}'
     fi
     exit 0
 fi
@@ -90,6 +129,11 @@ fi
 if [ "$ACTION" = "restart" ]; then
     /etc/init.d/tailscale restart >/dev/null 2>&1
     echo '{"status": "ok", "message": "Tailscale daemon restarted"}'
+    exit 0
+fi
+
+if ! command -v tailscale >/dev/null 2>&1; then
+    echo '{"status":"error","message":"Tailscale is not installed"}'
     exit 0
 fi
 
@@ -129,22 +173,5 @@ if [ -n "$TS_STATUS" ]; then
     })) else [] end)
   }'
 else
-  cat << JSON
-{
-  "status": "ok",
-  "backend_state": "Stopped",
-  "online": false,
-  "tailscale_ip": "",
-  "hostname": "MAXNET",
-  "share_lan": false,
-  "exit_node": false,
-  "accept_routes": true,
-  "auth_url": "",
-  "user": {},
-  "tailnet": "",
-  "devices_total": 0,
-  "devices_online": 0,
-  "peers": []
-}
-JSON
+  jq -cn --arg auth_url "$AUTH_URL" '{status:"ok",backend_state:"Stopped",online:false,tailscale_ip:"",hostname:"MAXNET",share_lan:false,exit_node:false,accept_routes:true,auth_url:$auth_url,user:{},tailnet:"",devices_total:0,devices_online:0,peers:[]}'
 fi

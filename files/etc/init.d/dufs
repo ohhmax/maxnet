@@ -25,11 +25,13 @@ start_service() {
     USER=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
     PASS=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
 
-    # Resolve real mounted external USB storage if active
-    EXT_MOUNT=$(grep -E '/mnt/(storage/[^ ]+|pendrive|sd[a-z][0-9]*)' /proc/mounts | awk '{print $2}' | head -n 1)
-    if [ -n "$EXT_MOUNT" ] && [ -d "$EXT_MOUNT" ]; then
-        PATH_DIR="$EXT_MOUNT"
+    # Only expose an actual mounted external filesystem; never create local storage as a fallback.
+    EXT_MOUNT=$(awk '($2 == "/mnt/pendrive" || $2 == "/mnt/storage" || $2 ~ /^\/mnt\/sd[a-z][0-9]*$/ || index($2, "/mnt/storage/") == 1) { print $2; exit }' /proc/mounts)
+    if [ -z "$EXT_MOUNT" ] || [ ! -d "$EXT_MOUNT" ]; then
+        logger -t dufs 'Not starting: no external filesystem is mounted'
+        return 0
     fi
+    PATH_DIR="$EXT_MOUNT"
 
     [ -z "$USER" ] && [ -n "$PASS" ] && USER="root"
 

@@ -3,7 +3,7 @@ START=90
 STOP=10
 
 USE_PROCD=1
-PROG=/usr/bin/tailscaled
+PROG=/usr/sbin/tailscaled
 
 start_service() {
     mkdir -p /etc/tailscale /var/run/tailscale

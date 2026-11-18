@@ -8,6 +8,7 @@ CONF_SERVER="/etc/pppoe-server.json"
 CHAP_SECRETS="/etc/ppp/chap-secrets"
 PAP_SECRETS="/etc/ppp/pap-secrets"
 OPTIONS_FILE="/etc/ppp/pppoe-server-options"
+SESSION_DIR="/tmp/sessions"
 
 [ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
 
@@ -35,6 +36,44 @@ if [ ! -f "$CONF_SERVER" ]; then
   "service_name": "MAXNET"
 }
 EOF
+fi
+
+# ==================== ACTION: AUTHENTICATED SUBSCRIBER SECRETS ====================
+if [ "$ACTION" = "get_users" ]; then
+    SESSION_TOKEN=${HTTP_X_SESSION_TOKEN:-}
+    case "$SESSION_TOKEN" in
+        ''|*[!a-f0-9]*) echo '{"status":"unauthorized","message":"Administrator session required"}'; exit 0 ;;
+    esac
+    SESSION_FILE="$SESSION_DIR/$SESSION_TOKEN"
+    if [ ! -s "$SESSION_FILE" ] || ! jq -e --arg token "$SESSION_TOKEN" '.token == $token' "$SESSION_FILE" >/dev/null 2>&1; then
+        echo '{"status":"unauthorized","message":"Administrator session expired"}'
+        exit 0
+    fi
+
+    USERS_LIST=""
+    while IFS= read -r line; do
+        case "$line" in \#*|"") continue ;; esac
+        if printf '%s' "$line" | grep -q '^"'; then
+            u_clean=$(printf '%s\n' "$line" | awk -F '"' 'NF >= 5 { print $2 }')
+            p_clean=$(printf '%s\n' "$line" | awk -F '"' 'NF >= 5 { print $4 }')
+            ip_clean=$(printf '%s\n' "$line" | awk '{ print $NF }')
+        else
+            read -r u s p ip <<EOF_USER
+$line
+EOF_USER
+            u_clean=$(printf '%s' "$u" | tr -d '"')
+            p_clean=$(printf '%s' "$p" | tr -d '"')
+            ip_clean=$(printf '%s' "$ip" | tr -d '"')
+        fi
+        [ -n "$u_clean" ] || continue
+        [ -n "$ip_clean" ] || ip_clean="*"
+        item=$(jq -n --arg user "$u_clean" --arg password "$p_clean" --arg ip "$ip_clean" '{user:$user,password:$password,ip:$ip}')
+        if [ -z "$USERS_LIST" ]; then USERS_LIST="$item"; else USERS_LIST="$USERS_LIST,$item"; fi
+    done < "$CHAP_SECRETS"
+    USERS_JSON="[]"
+    [ -n "$USERS_LIST" ] && USERS_JSON="[$USERS_LIST]"
+    jq -n --argjson users "$USERS_JSON" '{status:"ok",users:$users}'
+    exit 0
 fi
 
 # ==================== ACTION: GET ====================
@@ -99,24 +138,15 @@ if [ "$ACTION" = "get" ]; then
     done
     [ -n "$SESS_LIST" ] && ACTIVE_SESSIONS="[$SESS_LIST]"
 
-    # User secrets list (mask passwords)
+    # Usernames and assigned IPs are public to the UI; secrets are fetched separately with a session token.
     USERS_LIST=""
     while read -r u s p ip; do
-        # Ignore comments or empty lines
-        case "$u" in
-            \#*|"") continue ;;
-        esac
-        # Strip quotes
-        u_clean=$(echo "$u" | tr -d '"')
-        ip_clean=$(echo "$ip" | tr -d '"')
-        [ -z "$ip_clean" ] && ip_clean="*"
-        
-        u_item=$(jq -n --arg user "$u_clean" --arg ip "$ip_clean" '{user: $user, ip: $ip}')
-        if [ -z "$USERS_LIST" ]; then
-            USERS_LIST="$u_item"
-        else
-            USERS_LIST="$USERS_LIST,$u_item"
-        fi
+        case "$u" in \#*|"") continue ;; esac
+        u_clean=$(printf '%s' "$u" | tr -d '"')
+        ip_clean=$(printf '%s' "$ip" | tr -d '"')
+        [ -n "$ip_clean" ] || ip_clean="*"
+        u_item=$(jq -n --arg user "$u_clean" --arg ip "$ip_clean" '{user:$user,ip:$ip}')
+        if [ -z "$USERS_LIST" ]; then USERS_LIST="$u_item"; else USERS_LIST="$USERS_LIST,$u_item"; fi
     done < "$CHAP_SECRETS"
     USERS_JSON="[]"
     [ -n "$USERS_LIST" ] && USERS_JSON="[$USERS_LIST]"
@@ -210,8 +240,12 @@ fi
 
 # ==================== ACTION: SERVER_SET ====================
 if [ "$ACTION" = "server_set" ]; then
-    ENABLED=$(echo "$POST_DATA" | jq -r '.server_enabled // empty' 2>/dev/null)
-    IFACE=$(echo "$POST_DATA" | jq -r '.listen_iface // "br-lan"' 2>/dev/null)
+    ENABLED=$(echo "$POST_DATA" | jq -r '.server_enabled // empty')
+    if [ "$ENABLED" = "true" ] && ! { command -v pppoe-server >/dev/null 2>&1 || [ -x /usr/sbin/pppoe-server ]; }; then
+        echo '{"status":"error","message":"PPPoE server is unavailable: install the rp-pppoe-server service package first. No settings were changed."}'
+        exit 0
+    fi
+    IFACE=$(echo "$POST_DATA" | jq -r '.listen_iface // "br-lan"')
     L_IP=$(echo "$POST_DATA" | jq -r '.server_ip // "10.0.0.1"' 2>/dev/null)
     P_START=$(echo "$POST_DATA" | jq -r '.pool_start // "10.0.0.150"' 2>/dev/null)
     P_END=$(echo "$POST_DATA" | jq -r '.pool_end // "10.0.0.220"' 2>/dev/null)
@@ -266,13 +300,37 @@ if [ "$ACTION" = "add_user" ]; then
         exit 0
     fi
 
-    # Remove existing entry if present
-    sed -i "/^\"$NEW_U\"/d; /^$NEW_U[[:space:]]/d" "$CHAP_SECRETS" 2>/dev/null
-    sed -i "/^\"$NEW_U\"/d; /^$NEW_U[[:space:]]/d" "$PAP_SECRETS" 2>/dev/null
+    case "$NEW_U" in
+        *[!a-zA-Z0-9_.@+-]*)
+            echo '{"status":"error","message":"Username may contain only letters, numbers, dot, underscore, @, +, and -"}'
+            exit 0
+            ;;
+    esac
+    if printf '%s' "$NEW_P" | LC_ALL=C grep -q '[[:cntrl:]"\\]'; then
+        echo '{"status":"error","message":"Password cannot contain quotes, backslashes, or control characters"}'
+        exit 0
+    fi
+    if [ "$NEW_IP" != "*" ] && ! printf '%s' "$NEW_IP" | awk -F. 'NF == 4 { for (i=1;i<=4;i++) if ($i !~ /^[0-9]+$/ || $i+0 > 255) exit 1; exit 0 } { exit 1 }'; then
+        echo '{"status":"error","message":"Subscriber IP must be a valid IPv4 address or *"}'
+        exit 0
+    fi
+
+    username_exists() {
+        [ -f "$1" ] || return 1
+        awk -v wanted="$NEW_U" '
+            /^[[:space:]]*#/ || NF == 0 { next }
+            { user=$1; gsub(/^"|"$/, "", user); if (user == wanted) found=1 }
+            END { exit !found }
+        ' "$1"
+    }
+    if username_exists "$CHAP_SECRETS" || username_exists "$PAP_SECRETS"; then
+        echo '{"status":"error","message":"This PPPoE username already exists"}'
+        exit 0
+    fi
 
     # Add new entry: "username" * "password" ip
-    echo "\"$NEW_U\" * \"$NEW_P\" $NEW_IP" >> "$CHAP_SECRETS"
-    echo "\"$NEW_U\" * \"$NEW_P\" $NEW_IP" >> "$PAP_SECRETS"
+    printf '"%s" * "%s" %s\n' "$NEW_U" "$NEW_P" "$NEW_IP" >> "$CHAP_SECRETS"
+    printf '"%s" * "%s" %s\n' "$NEW_U" "$NEW_P" "$NEW_IP" >> "$PAP_SECRETS"
 
     echo '{"status": "ok", "message": "PPPoE user credentials registered successfully."}'
     exit 0
@@ -282,8 +340,21 @@ fi
 if [ "$ACTION" = "del_user" ]; then
     DEL_U=$(echo "$POST_DATA" | jq -r '.user // empty' 2>/dev/null)
     if [ -n "$DEL_U" ]; then
-        sed -i "/^\"$DEL_U\"/d; /^$DEL_U[[:space:]]/d" "$CHAP_SECRETS" 2>/dev/null
-        sed -i "/^\"$DEL_U\"/d; /^$DEL_U[[:space:]]/d" "$PAP_SECRETS" 2>/dev/null
+        remove_user() {
+            file=$1
+            tmp=$(mktemp "${file}.XXXXXX") || return 1
+            awk -v wanted="$DEL_U" '
+                /^[[:space:]]*#/ || NF == 0 { print; next }
+                { user=$1; gsub(/^"|"$/, "", user); if (user != wanted) print }
+            ' "$file" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$file"
+            rc=$?
+            [ "$rc" -eq 0 ] || rm -f "$tmp"
+            return "$rc"
+        }
+        if ! remove_user "$CHAP_SECRETS" || ! remove_user "$PAP_SECRETS"; then
+            echo '{"status":"error","message":"Unable to remove subscriber credentials"}'
+            exit 0
+        fi
         echo '{"status": "ok", "message": "PPPoE user removed."}'
     else
         echo '{"status": "error", "message": "No user specified"}'

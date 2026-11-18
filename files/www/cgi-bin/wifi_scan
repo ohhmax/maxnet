@@ -1,80 +1,124 @@
 #!/bin/sh
-printf "Content-Type: application/json\r\n\r\n"
+printf '%s\r\n' 'Content-Type: application/json' 'Cache-Control: no-cache, no-store, must-revalidate' 'Access-Control-Allow-Origin: *' 'Access-Control-Allow-Methods: GET, OPTIONS' 'Access-Control-Allow-Headers: Content-Type' ''
 
-# Trigger background scan if requested or interfaces are idle
-( iw dev phy0-ap0 scan >/dev/null 2>&1; iw dev phy1-ap0 scan >/dev/null 2>&1 ) &
+json_error() {
+    jq -cn --arg message "$1" '{status:"error",message:$message}'
+}
 
-# Parse scan results from both 2.4GHz (phy0-ap0) and 5GHz (phy1-ap0)
-SCAN_JSON=$( (iw dev phy0-ap0 scan dump 2>/dev/null; iw dev phy1-ap0 scan dump 2>/dev/null) | awk '
-BEGIN { printf "["; first=1; }
-/^BSS / {
-    if (bssid != "" && ssid != "") {
-        if (!first) printf ",";
-        printf "{\"bssid\":\"%s\",\"ssid\":\"%s\",\"freq\":%d,\"channel\":\"%s\",\"signal_dbm\":\"%s\",\"encryption\":\"%s\",\"band\":\"%s\",\"device\":\"%s\"}", bssid, ssid, freq, chan, sig, enc, band, dev;
-        first=0;
-    }
-    bssid = tolower($2);
-    sub(/\(.*/, "", bssid);
-    ssid = ""; freq = 0; chan = ""; sig = "-70"; enc = "Open"; band = ""; dev = "";
+query_value() {
+    printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | sed -n "s/^$1=//p" | sed -n '1p'
 }
-/freq:/ {
-    freq = int($2);
-    if (freq > 4000) { band="5GHz"; dev="radio1"; }
-    else { band="2.4GHz"; dev="radio0"; }
-}
-/primary channel:/ { chan = $NF; }
-/DS Parameter set: channel/ { chan = $NF; }
-/signal:/ { sig = $2; }
-/SSID:/ {
-    sub(/^[ \t]*SSID: */, "");
-    ssid = $0;
-}
-/RSN:/ { enc = "WPA2/WPA3 PSK"; }
-/WPA:/ && enc == "Open" { enc = "WPA PSK"; }
-END {
-    if (bssid != "" && ssid != "") {
-        if (chan == "") {
-            if (freq >= 5000) chan = int((freq - 5000) / 5);
-            else if (freq >= 2412) chan = int((freq - 2407) / 5);
+
+[ "${REQUEST_METHOD:-GET}" = OPTIONS ] && exit 0
+
+ACTION=$(query_value action)
+SOURCE=$(query_value source)
+[ -n "$ACTION" ] || ACTION=status
+REPEATER_ENABLED=$(uci -q get system.maxnet_settings.repeater_enabled)
+[ "$REPEATER_ENABLED" = 1 ] || REPEATER_ENABLED=0
+
+case "$ACTION" in
+    status)
+        ;;
+    scan)
+        if [ "$SOURCE" = repeater ] && [ "$REPEATER_ENABLED" != 1 ]; then
+            json_error 'Enable wireless repeater controls before scanning'
+            exit 0
+        fi
+        command -v iwinfo >/dev/null 2>&1 || {
+            json_error 'Wireless scan tool (iwinfo) is not installed'
+            exit 0
         }
-        if (!first) printf ",";
-        printf "{\"bssid\":\"%s\",\"ssid\":\"%s\",\"freq\":%d,\"channel\":\"%s\",\"signal_dbm\":\"%s\",\"encryption\":\"%s\",\"band\":\"%s\",\"device\":\"%s\"}", bssid, ssid, freq, chan, sig, enc, band, dev;
-    }
-    printf "]";
-}')
+        ;;
+    *)
+        json_error 'Unknown Wi-Fi scan action'
+        exit 0
+        ;;
+esac
 
-# Check active WWAN client status
+SCAN_JSON='[]'
+if [ "$ACTION" = scan ]; then
+    SCAN_JSON=$( (iwinfo phy0-ap0 scan 2>/dev/null; iwinfo phy1-ap0 scan 2>/dev/null) | awk '
+    function quote_json(value, result, i, character) {
+        result = "\""
+        for (i = 1; i <= length(value); i++) {
+            character = substr(value, i, 1)
+            if (character == "\\") result = result "\\\\"
+            else if (character == "\"") result = result "\\\""
+            else if (character == "\n") result = result "\\n"
+            else if (character == "\r") result = result "\\r"
+            else if (character == "\t") result = result "\\t"
+            else result = result character
+        }
+        return result "\""
+    }
+    function emit_network() {
+        if (bssid == "" || ssid == "") return
+        if (!first) printf ","
+        printf "{\"bssid\":%s,\"ssid\":%s,\"freq\":%d,\"channel\":%s,\"signal_dbm\":%s,\"encryption\":%s,\"band\":%s,\"device\":%s}", quote_json(bssid), quote_json(ssid), frequency, quote_json(channel), quote_json(signal), quote_json(encryption), quote_json(band), quote_json(device)
+        first = 0
+    }
+    BEGIN { printf "["; first = 1 }
+    /^Cell [0-9]+ - Address:/ {
+        emit_network()
+        bssid = tolower($5)
+        ssid = ""; frequency = 0; channel = ""; signal = "-70"; encryption = "Open"; band = ""; device = ""
+    }
+    /^[ \t]*ESSID:/ {
+        sub(/^[ \t]*ESSID: *\"?/, "")
+        sub(/\"$/, "")
+        ssid = $0
+    }
+    /^[ \t]*Mode:/ {
+        for (i = 1; i <= NF; i++) {
+            if ($i == "Frequency:") {
+                frequency = int($(i + 1) * 1000)
+                break
+            }
+        }
+        for (i = 1; i <= NF; i++) {
+            if ($i == "Channel:") { channel = $(i + 1); break }
+        }
+        if (frequency > 4000) { band = "5GHz"; device = "radio1" }
+        else { band = "2.4GHz"; device = "radio0" }
+    }
+    /^[ \t]*Signal:/ { signal = $2 }
+    /^[ \t]*Encryption:/ {
+        sub(/^[ \t]*Encryption: */, "")
+        encryption = ($0 ~ /none/i) ? "Open" : $0
+    }
+    END { emit_network(); printf "]" }
+    ')
+    [ -n "$SCAN_JSON" ] || SCAN_JSON='[]'
+fi
+
 WWAN_SSID=$(uci -q get wireless.wwan.ssid)
 WWAN_DEV=$(uci -q get wireless.wwan.device)
 WWAN_PROTO=$(uci -q get network.wwan.proto)
-WWAN_STATUS="disconnected"
-WWAN_IP=""
+WWAN_STATUS=disconnected
+WWAN_IP=
 
 if [ -n "$WWAN_SSID" ]; then
     WWAN_UBUS=$(ubus call network.interface.wwan status 2>/dev/null)
-    WWAN_UP=$(echo "$WWAN_UBUS" | jq -r '.up // false' 2>/dev/null)
-    WWAN_IP=$(echo "$WWAN_UBUS" | jq -r '."ipv4-address"[0].address // empty' 2>/dev/null)
+    WWAN_UP=$(printf '%s' "$WWAN_UBUS" | jq -r '.up // false' 2>/dev/null)
+    WWAN_IP=$(printf '%s' "$WWAN_UBUS" | jq -r '."ipv4-address"[0].address // empty' 2>/dev/null)
     if [ -z "$WWAN_IP" ]; then
-        WWAN_IP=$(ip -4 a show dev phy0-sta0 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
-        [ -z "$WWAN_IP" ] && WWAN_IP=$(ip -4 a show dev phy1-sta0 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}')
+        WWAN_IP=$(ip -4 a show dev phy0-sta0 2>/dev/null | awk '/inet / {print $2}' | awk -F/ '{print $1}')
+        [ -n "$WWAN_IP" ] || WWAN_IP=$(ip -4 a show dev phy1-sta0 2>/dev/null | awk '/inet / {print $2}' | awk -F/ '{print $1}')
     fi
-    if [ "$WWAN_UP" = "true" ] || [ -n "$WWAN_IP" ]; then
-        WWAN_STATUS="connected"
+    if [ "$WWAN_UP" = true ] || [ -n "$WWAN_IP" ]; then
+        WWAN_STATUS=connected
     else
-        WWAN_STATUS="connecting"
+        WWAN_STATUS=connecting
     fi
 fi
 
-cat << JSON_END
-{
-  "status": "ok",
-  "client_wan": {
-    "status": "${WWAN_STATUS}",
-    "ssid": "${WWAN_SSID}",
-    "ip": "${WWAN_IP}",
-    "device": "${WWAN_DEV}",
-    "proto": "${WWAN_PROTO:-dhcp}"
-  },
-  "networks": ${SCAN_JSON:-[]}
-}
-JSON_END
+jq -cn \
+    --arg status "$WWAN_STATUS" \
+    --arg ssid "$WWAN_SSID" \
+    --arg ip "$WWAN_IP" \
+    --arg device "$WWAN_DEV" \
+    --arg proto "${WWAN_PROTO:-dhcp}" \
+    --argjson repeater_enabled "$REPEATER_ENABLED" \
+    --argjson networks "$SCAN_JSON" \
+    '{status:"ok",repeater_enabled:($repeater_enabled == 1),client_wan:{status:$status,ssid:$ssid,ip:$ip,device:$device,proto:$proto},networks:$networks}'
