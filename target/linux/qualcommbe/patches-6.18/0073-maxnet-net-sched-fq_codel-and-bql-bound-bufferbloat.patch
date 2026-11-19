@@ -33,7 +33,7 @@ Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
 +	 * Target 2.5ms standing queue delay and enable ECN by default for pristine latency.
 +	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
 +	 */
-+	params->target = US2TIME(2500);
++	params->target = MS2TIME(5) / 2;
  	params->ce_threshold = CODEL_DISABLED_THRESHOLD;
  	params->ce_threshold_mask = 0;
  	params->ce_threshold_selector = 0;
