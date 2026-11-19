@@ -3,9 +3,12 @@
 # MAXNET HIGH-PERFORMANCE DUAL-BAND WI-FI & HOTSPOT ENGINE
 # Manages 2.4 GHz & 5 GHz wireless configuration, security, channels, & clients
 # ==============================================================================
+# Require administrator authentication
+. /www/cgi-bin/lib/auth_check.sh 2>/dev/null || . "$(dirname "$0")/lib/auth_check.sh" 2>/dev/null || exit 1
+require_auth
+
 echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
-echo "Access-Control-Allow-Origin: *"
 echo ""
 
 ACTION="$1"

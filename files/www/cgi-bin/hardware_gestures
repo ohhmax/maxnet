@@ -1,4 +1,8 @@
 #!/bin/sh
+# Require administrator authentication
+. /www/cgi-bin/lib/auth_check.sh 2>/dev/null || . "$(dirname "$0")/lib/auth_check.sh" 2>/dev/null || exit 1
+require_auth
+
 printf "Content-Type: application/json\r\n\r\n"
 
 CONF_FILE="/etc/maxnet_hardware.json"

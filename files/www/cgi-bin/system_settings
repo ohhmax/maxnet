@@ -1,5 +1,9 @@
 #!/bin/sh
-printf '%s\n' 'Content-Type: application/json' 'Cache-Control: no-cache, no-store, must-revalidate' 'Access-Control-Allow-Origin: *' 'Access-Control-Allow-Methods: GET, POST, OPTIONS' 'Access-Control-Allow-Headers: Content-Type' ''
+# Require administrator authentication
+. /www/cgi-bin/lib/auth_check.sh 2>/dev/null || . "$(dirname "$0")/lib/auth_check.sh" 2>/dev/null || exit 1
+require_auth
+
+printf '%s\n' 'Content-Type: application/json' 'Cache-Control: no-cache, no-store, must-revalidate' 'Access-Control-Allow-Methods: GET, POST, OPTIONS' 'Access-Control-Allow-Headers: Content-Type' ''
 
 json_error() {
     jq -cn --arg message "$1" '{status:"error",message:$message}'

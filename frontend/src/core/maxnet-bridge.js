@@ -193,6 +193,26 @@ async function powerCycleUsbHub() {
 }
 
 if (typeof window !== 'undefined') {
+  // Global token injection for all CGI requests
+  if (window.fetch) {
+    const rawFetch = window.fetch;
+    window.fetch = function(input, init) {
+      let opts = init || {};
+      const token = localStorage.getItem('maxnet_token');
+      if (token && typeof input === 'string' && input.includes('/cgi-bin/')) {
+        const headers = new Headers(opts.headers || {});
+        if (!headers.has('Authorization')) {
+          headers.set('Authorization', 'Bearer ' + token);
+        }
+        if (!headers.has('X-Session-Token')) {
+          headers.set('X-Session-Token', token);
+        }
+        opts = { ...opts, headers };
+      }
+      return rawFetch.call(this, input, opts);
+    };
+  }
+
   // Explicit window property assignments for high performance & legacy compatibility
   window.submitLogin = submitLogin;
   window.logoutSession = logoutSession;

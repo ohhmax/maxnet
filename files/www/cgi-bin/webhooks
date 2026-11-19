@@ -4,6 +4,10 @@
 # Engineered & Developed by Mahendra Mali - Max (c) 2026
 # Donation & Support via UPI: 9824584454@ybl
 # ==============================================================================
+# Require administrator authentication
+. /www/cgi-bin/lib/auth_check.sh 2>/dev/null || . "$(dirname "$0")/lib/auth_check.sh" 2>/dev/null || exit 1
+require_auth
+
 
 CONF_FILE="/etc/maxnet_webhooks.json"
 LOCAL_CONF_FILE="/etc/maxnet_notification_rules.json"
@@ -22,13 +26,11 @@ send_json_str() {
         echo "Content-Type: application/json"
         echo "Content-Encoding: gzip"
         echo "Cache-Control: no-cache, no-store, must-revalidate"
-        echo "Access-Control-Allow-Origin: *"
         echo ""
         printf "%s\n" "$1" | gzip -c -1
     else
         echo "Content-Type: application/json"
         echo "Cache-Control: no-cache, no-store, must-revalidate"
-        echo "Access-Control-Allow-Origin: *"
         echo ""
         printf "%s\n" "$1"
     fi
@@ -39,13 +41,11 @@ send_json_file() {
         echo "Content-Type: application/json"
         echo "Content-Encoding: gzip"
         echo "Cache-Control: no-cache, no-store, must-revalidate"
-        echo "Access-Control-Allow-Origin: *"
         echo ""
         gzip -c -1 < "$1"
     else
         echo "Content-Type: application/json"
         echo "Cache-Control: no-cache, no-store, must-revalidate"
-        echo "Access-Control-Allow-Origin: *"
         echo ""
         cat "$1"
     fi

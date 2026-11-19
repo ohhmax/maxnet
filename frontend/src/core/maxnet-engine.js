@@ -82,7 +82,10 @@ let timer = null;
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
           'Expires': '0',
-          ...(token ? { 'X-Session-Token': token } : {}),
+          ...(token ? {
+            'Authorization': 'Bearer ' + token,
+            'X-Session-Token': token
+          } : {}),
           ...(options.headers || {})
         }
       });

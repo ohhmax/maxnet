@@ -5,9 +5,12 @@
 # Supports all Jio router models: JIDU6811, JIDU6911, JIDU6611, JIDU6411, JIDU6111,
 # JIDU6801, JIDU6401, JIDU6601, JIDU6701, JIDU6101, JIDU6J01
 # ==============================================================================
+# Require administrator authentication
+. /www/cgi-bin/lib/auth_check.sh 2>/dev/null || . "$(dirname "$0")/lib/auth_check.sh" 2>/dev/null || exit 1
+require_auth
+
 echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
-echo "Access-Control-Allow-Origin: *"
 echo ""
 
 ACTION="$1"

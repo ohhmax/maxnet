@@ -49,13 +49,11 @@ send_json_str() {
         echo "Content-Type: application/json"
         echo "Content-Encoding: gzip"
         echo "Cache-Control: no-cache, no-store, must-revalidate"
-        echo "Access-Control-Allow-Origin: *"
         echo ""
         printf "%s\n" "$1" | gzip -c -1
     else
         echo "Content-Type: application/json"
         echo "Cache-Control: no-cache, no-store, must-revalidate"
-        echo "Access-Control-Allow-Origin: *"
         echo ""
         printf "%s\n" "$1"
     fi

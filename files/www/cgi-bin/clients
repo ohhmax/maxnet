@@ -1,5 +1,11 @@
 #!/bin/sh
-printf '%s\n' 'Content-Type: application/json' 'Cache-Control: no-cache, no-store, must-revalidate' 'Access-Control-Allow-Origin: *' 'Access-Control-Allow-Methods: GET, POST, OPTIONS' 'Access-Control-Allow-Headers: Content-Type' ''
+# Require administrator authentication
+. /www/cgi-bin/lib/auth_check.sh 2>/dev/null || . "$(dirname "$0")/lib/auth_check.sh" 2>/dev/null || exit 1
+# Allow unauthenticated IP check on initial page load; enforce auth for all management actions
+_ACT=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | sed -n 's/^action=//p' | head -n 1)
+[ "$_ACT" = "check" ] || require_auth
+
+printf '%s\n' 'Content-Type: application/json' 'Cache-Control: no-cache, no-store, must-revalidate' 'Access-Control-Allow-Methods: GET, POST, OPTIONS' 'Access-Control-Allow-Headers: Content-Type' ''
 
 BLOCK_FILE=/etc/blocked_clients.json
 
