@@ -1,7 +1,8 @@
 #!/bin/sh
 
 # Remove default root password for passwordless system login
-passwd -d root 2>/dev/null || true
+# First-boot system initialization
+# Root password is not cleared - first WebUI visit enforces administrator password setup
 
 # Set system hostname and timezone
 uci set system.@system[0].hostname="MAXNET"
