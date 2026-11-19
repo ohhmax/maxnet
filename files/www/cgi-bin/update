@@ -128,8 +128,26 @@ BIN_URL=""
 EXPECTED_SUM=""
 RESOLVED_FILE=""
 
-rm -f /tmp/manifest.json
+rm -f /tmp/manifest.json /tmp/manifest.json.sig
 curl -s -L --connect-timeout 6 --max-time 15 -o /tmp/manifest.json "$MANIFEST_URL" 2>/dev/null
+
+# Verify Manifest Cryptographic Signature (usign)
+SIGNATURE_VERIFIED="false"
+SIGNATURE_WARNING=""
+PUBKEY="/etc/maxnet_release.pub"
+MANIFEST_SIG_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/manifest.json.sig"
+curl -s -L --connect-timeout 6 --max-time 15 -o /tmp/manifest.json.sig "$MANIFEST_SIG_URL" 2>/dev/null
+
+if [ -f "$PUBKEY" ] && command -v usign >/dev/null 2>&1; then
+    if [ -s /tmp/manifest.json.sig ] && usign -V -p "$PUBKEY" -m /tmp/manifest.json -s /tmp/manifest.json.sig >/dev/null 2>&1; then
+        SIGNATURE_VERIFIED="true"
+    else
+        SIGNATURE_WARNING="Manifest signature verification failed: signature does not match public key"
+    fi
+else
+    # TODO: Install MAXNET release public key to /etc/maxnet_release.pub to cryptographically verify release manifests
+    SIGNATURE_WARNING="Release manifest cryptographic signature verification is unconfigured (missing /etc/maxnet_release.pub)"
+fi
 
 if [ -s /tmp/manifest.json ]; then
     if command -v jq >/dev/null 2>&1; then
@@ -260,4 +278,4 @@ fi
 STATUS_STR="up_to_date"
 [ "$IS_UPDATE_AVAIL" -eq 1 ] && STATUS_STR="update_available"
 
-echo "{\"status\": \"$STATUS_STR\", \"is_update\": $IS_UPDATE_AVAIL, \"current\": \"$CURRENT_VER\", \"latest\": \"$LATEST_TAG\", \"latest_build\": $LATEST_BUILD, \"current_build\": $CURRENT_BUILD, \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"soc\": \"$SOC_NAME\", \"target\": \"$TARGET_ARCH\", \"file\": \"$RESOLVED_FILE\", \"url\": \"$BIN_URL\", \"sha256\": \"$EXPECTED_SUM\", \"size\": $FILE_SIZE, \"itb_file\": \"$ITB_FILE\", \"itb_url\": \"$ITB_URL\", \"itb_sha256\": \"$ITB_SUM\", \"itb_size\": $ITB_SIZE, \"tftp_command\": \"$TFTP_CMD\"}"
+echo "{\"status\": \"$STATUS_STR\", \"is_update\": $IS_UPDATE_AVAIL, \"current\": \"$CURRENT_VER\", \"latest\": \"$LATEST_TAG\", \"latest_build\": $LATEST_BUILD, \"current_build\": $CURRENT_BUILD, \"board\": \"$BOARD_NAME\", \"model\": \"$MODEL_NAME\", \"soc\": \"$SOC_NAME\", \"target\": \"$TARGET_ARCH\", \"file\": \"$RESOLVED_FILE\", \"url\": \"$BIN_URL\", \"sha256\": \"$EXPECTED_SUM\", \"size\": $FILE_SIZE, \"itb_file\": \"$ITB_FILE\", \"itb_url\": \"$ITB_URL\", \"itb_sha256\": \"$ITB_SUM\", \"itb_size\": $ITB_SIZE, \"tftp_command\": \"$TFTP_CMD\", \"signature_verified\": $SIGNATURE_VERIFIED, \"signature_warning\": \"$SIGNATURE_WARNING\"}"

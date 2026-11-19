@@ -65,16 +65,20 @@ if [ "$ACTUAL_SIZE" -lt 10485760 ]; then
     exit 1
 fi
 
-# 2. SHA-256 Verification
-set_status "verifying" 88 "Verifying SHA-256 cryptographic hash..." "$ACTUAL_SIZE" "$ACTUAL_SIZE"
+# 2. SHA-256 Cryptographic Verification (Strict Enforcement)
+set_status "verifying" 88 "Verifying SHA-256 cryptographic hash against manifest..." "$ACTUAL_SIZE" "$ACTUAL_SIZE"
 
-if [ -n "$EXPECTED_SUM" ]; then
-    ACTUAL_SUM=$(sha256sum "$DL_FILE" 2>/dev/null | awk '{print $1}')
-    if [ "$EXPECTED_SUM" != "$ACTUAL_SUM" ]; then
-        set_status "error" 0 "SHA-256 checksum mismatch (expected $EXPECTED_SUM, got $ACTUAL_SUM)" 0 0
-        rm -f "$DL_FILE"
-        exit 1
-    fi
+if [ -z "$EXPECTED_SUM" ]; then
+    set_status "error" 0 "Security error: Manifest does not provide an expected SHA-256 checksum. Aborting upgrade." 0 0
+    rm -f "$DL_FILE"
+    exit 1
+fi
+
+ACTUAL_SUM=$(sha256sum "$DL_FILE" 2>/dev/null | awk '{print $1}')
+if [ -z "$ACTUAL_SUM" ] || [ "$EXPECTED_SUM" != "$ACTUAL_SUM" ]; then
+    set_status "error" 0 "Cryptographic integrity failure: SHA-256 checksum mismatch (expected $EXPECTED_SUM, got $ACTUAL_SUM). Aborting flash." 0 0
+    rm -f "$DL_FILE"
+    exit 1
 fi
 
 # 3. System Integrity Check via sysupgrade -T
