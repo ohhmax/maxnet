@@ -1,0 +1,36 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:08:00 +0530
+Subject: [PATCH] net: core: hotdata: optimize NAPI budget and backlog queue bounds for multi-gigabit routing
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Scale netdev_budget to 600, budget_usecs to 4000us, and max_backlog to 4096 packets in hotdata.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/net/core/hotdata.c
++++ b/net/core/hotdata.c
+@@ -11,12 +11,15 @@
+ 	.offload_base = LIST_HEAD_INIT(net_hotdata.offload_base),
+ 	.gro_normal_batch = 8,
+ 
+-	.netdev_budget = 300,
+-	/* Must be at least 2 jiffes to guarantee 1 jiffy timeout */
+-	.netdev_budget_usecs = 2 * USEC_PER_SEC / HZ,
++	/* MAXNET Network Acceleration Engine by Mahendra Mali (Max):
++	 * Scale NAPI budget and backlog for multi-gigabit line-rate throughput.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	.netdev_budget = 600,
++	.netdev_budget_usecs = 4000,
+ 
+ 	.tstamp_prequeue = 1,
+-	.max_backlog = 1000,
++	.max_backlog = 4096,
+ 	.dev_tx_weight = 64,
+ 	.dev_rx_weight = 64,
+ 	.sysctl_max_skb_frags = MAX_SKB_FRAGS,

@@ -1,0 +1,30 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:09:00 +0530
+Subject: [PATCH] net: ipv4: clamp default TCP rmem and wmem bounds to prevent socket buffer memory exhaustion
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Clamp max_rshare from 32MB to 4MB on 512MB RAM embedded gateways.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/net/ipv4/tcp.c
++++ b/net/ipv4/tcp.c
+@@ -5311,7 +5311,12 @@
+ 	/* Set per-socket limits to no more than 1/128 the pressure threshold */
+ 	limit = nr_free_buffer_pages() << (PAGE_SHIFT - 7);
+ 	max_wshare = min(4UL*1024*1024, limit);
+-	max_rshare = min(32UL*1024*1024, limit);
++	/* MAXNET Low-Memory TCP Optimization by Mahendra Mali (Max):
++	 * Clamp default TCP receive buffer to 4MB max (down from 32MB) to prevent
++	 * socket buffer memory exhaustion on 512MB RAM embedded gateways.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	max_rshare = min(4UL*1024*1024, limit);
+ 
+ 	init_net.ipv4.sysctl_tcp_wmem[0] = PAGE_SIZE;
+ 	init_net.ipv4.sysctl_tcp_wmem[1] = 16*1024;

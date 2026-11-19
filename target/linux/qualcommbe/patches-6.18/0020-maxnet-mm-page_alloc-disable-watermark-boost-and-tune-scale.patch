@@ -1,0 +1,33 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:02:00 +0530
+Subject: [PATCH] mm: page_alloc: disable watermark boosting and optimize watermark scale for low-memory routers
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Disable watermark boosting and set scale factor to 50 to prevent premature OOM kills on 512MB RAM.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -301,8 +301,14 @@
+ 
+ int min_free_kbytes = 1024;
+ int user_min_free_kbytes = -1;
+-static int watermark_boost_factor __read_mostly = 15000;
+-static int watermark_scale_factor = 10;
++/* MAXNET Low-Memory VM Optimization by Mahendra Mali (Max):
++ * Disable aggressive watermark boosting on 512MB networking platforms to
++ * prevent premature OOM killing of network daemons, and scale watermark
++ * to 50 (0.5%) for smoother page reclaim headroom without memory exhaustion.
++ * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++ */
++static int watermark_boost_factor __read_mostly = 0;
++static int watermark_scale_factor = 50;
+ int defrag_mode;
+ 
+ /* movable_zone is the "real" zone pages in ZONE_MOVABLE are taken from */

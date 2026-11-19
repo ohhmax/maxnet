@@ -1,0 +1,52 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:20:00 +0530
+Subject: [PATCH] kernel: sched/rcu: tighten timer slack and accelerate RCU callback drainage for embedded gateways
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+On embedded quad-core Cortex-A73 routing platforms:
+1. init_task.timer_slack_ns defaults to 50us, adding latency jitter to epoll loops
+   and network packet timers.
+2. RCU callback batches are throttled to 10 callbacks per invocation (DEFAULT_RCU_BLIMIT),
+   causing conntrack and SKB destruction to lag behind allocation rates under
+   multi-gigabit loads and hoarding memory until qhimark (10,000) is reached.
+
+This MAXNET patch:
+- Lowers default timer slack to 10us for crisp real-time scheduling.
+- Increases DEFAULT_RCU_BLIMIT to 64 and lowers DEFAULT_RCU_QHIMARK to 2,048,
+  accelerating memory reclamation during high-rate packet traffic.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/init/init_task.c
++++ b/init/init_task.c
+@@ -143,7 +143,7 @@
+ 	.journal_info	= NULL,
+ 	INIT_CPU_TIMERS(init_task)
+ 	.pi_lock	= __RAW_SPIN_LOCK_UNLOCKED(init_task.pi_lock),
+-	.timer_slack_ns = 50000, /* 50 usec default slack */
++	.timer_slack_ns = 10000, /* MAXNET: 10 usec default slack for network responsiveness */
+ 	.thread_pid	= &init_struct_pid,
+ 	.thread_node	= LIST_HEAD_INIT(init_signals.thread_head),
+ #ifdef CONFIG_AUDIT
+--- a/kernel/rcu/tree.c
++++ b/kernel/rcu/tree.c
+@@ -412,11 +412,12 @@
+ 	return false;
+ }
+ 
+-#define DEFAULT_RCU_BLIMIT (IS_ENABLED(CONFIG_RCU_STRICT_GRACE_PERIOD) ? 1000 : 10)
++#define DEFAULT_RCU_BLIMIT (IS_ENABLED(CONFIG_RCU_STRICT_GRACE_PERIOD) ? 1000 : 64)
+ 				// Maximum callbacks per rcu_do_batch ...
+ #define DEFAULT_MAX_RCU_BLIMIT 10000 // ... even during callback flood.
++/* MAXNET: 64 callbacks per batch and 2048 qhimark accelerates memory reclamation on 512MB RAM */
+ static long blimit = DEFAULT_RCU_BLIMIT;
+-#define DEFAULT_RCU_QHIMARK 10000 // If this many pending, ignore blimit.
++#define DEFAULT_RCU_QHIMARK 2048 // If this many pending, ignore blimit.
+ static long qhimark = DEFAULT_RCU_QHIMARK;
+ #define DEFAULT_RCU_QLOMARK 100   // Once only this many pending, use blimit.
+ static long qlowmark = DEFAULT_RCU_QLOMARK;

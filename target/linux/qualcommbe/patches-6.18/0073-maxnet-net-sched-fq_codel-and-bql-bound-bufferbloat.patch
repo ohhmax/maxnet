@@ -1,0 +1,91 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:15:00 +0530
+Subject: [PATCH] net: sched: fq_codel: optimize target, quantum, memory limits, and BQL queue bounds for bufferbloat mitigation
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+On multi-gigabit routing platforms with 512MB RAM:
+1. Default 5ms target queue latency permits excessive standing queue build-up.
+2. 10,240 packet limit and drop_batch_size of 64 packets trigger memory bloat and TCP window collapse.
+3. 64KB GSO superpackets exhaust flow deficit debt, stalling subsequent packets.
+4. BQL defaults to an unconstrained limit (~2GB), bypassing qdiscs.
+
+This MAXNET patch:
+- Tunes CoDel target latency to 2.5ms and enables ECN by default.
+- Clamps FQ_Codel packet limit to 2048 packets and drop batch size to 16.
+- Enforces 1514 byte quantum floor and bounds negative deficit debt to -2x quantum.
+- Restricts BQL max_limit to 128KB.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/include/net/codel_impl.h
++++ b/include/net/codel_impl.h
+@@ -54,11 +54,15 @@
+ static void codel_params_init(struct codel_params *params)
+ {
+ 	params->interval = MS2TIME(100);
+-	params->target = MS2TIME(5);
++	/* MAXNET Bufferbloat Mitigation by Mahendra Mali (Max):
++	 * Target 2.5ms standing queue delay and enable ECN by default for pristine latency.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	params->target = US2TIME(2500);
+ 	params->ce_threshold = CODEL_DISABLED_THRESHOLD;
+ 	params->ce_threshold_mask = 0;
+ 	params->ce_threshold_selector = 0;
+-	params->ecn = false;
++	params->ecn = true;
+ }
+ 
+ static void codel_vars_init(struct codel_vars *vars)
+--- a/net/sched/sch_fq_codel.c
++++ b/net/sched/sch_fq_codel.c
+@@ -314,7 +314,8 @@
+ 		goto begin;
+ 	}
+ 	qdisc_bstats_update(sch, skb);
+-	flow->deficit -= qdisc_pkt_len(skb);
++	/* MAXNET: Prevent deficit debt collapse from 64KB GSO superpackets */
++	flow->deficit = max_t(int, flow->deficit - qdisc_pkt_len(skb), -((int)q->quantum * 2));
+ 
+ 	return skb;
+ }
+@@ -511,12 +512,18 @@
+ 	int i;
+ 	int err;
+ 
+-	sch->limit = 10*1024;
++	/* MAXNET Low-Latency Bufferbloat & Memory Optimization by Mahendra Mali (Max):
++	 * On embedded multi-gigabit gateways, clamp queue limit to 2048 packets,
++	 * memory ceiling to 8MB, and drop batch size to 16 to prevent memory bloat
++	 * and eliminate bufferbloat latency spikes.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	sch->limit = 2048;
+ 	q->flows_cnt = 1024;
+-	q->memory_limit = 32 << 20; /* 32 MBytes */
+-	q->drop_batch_size = 64;
++	q->memory_limit = 8 << 20; /* 8 MBytes */
++	q->drop_batch_size = 16;
+ 	mtu = min_t(u32, psched_mtu(qdisc_dev(sch)), FQ_CODEL_QUANTUM_MAX);
+-	q->quantum = clamp_t(u32, mtu, 256, FQ_CODEL_QUANTUM_MAX);
++	q->quantum = clamp_t(u32, mtu, 1514, FQ_CODEL_QUANTUM_MAX);
+ 	INIT_LIST_HEAD(&q->new_flows);
+ 	INIT_LIST_HEAD(&q->old_flows);
+ 	codel_params_init(&q->cparams);
+--- a/lib/dynamic_queue_limits.c
++++ b/lib/dynamic_queue_limits.c
+@@ -208,7 +208,8 @@
+ 
+ void dql_init(struct dql *dql, unsigned int hold_time)
+ {
+-	dql->max_limit = DQL_MAX_LIMIT;
++	/* MAXNET: Bound BQL hardware queue bufferbloat to 128KB on gigabit interfaces */
++	dql->max_limit = 131072;
+ 	dql->min_limit = 0;
+ 	dql->slack_hold_time = hold_time;
+ 	dql->stall_thrs = 0;

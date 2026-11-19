@@ -1,5 +1,5 @@
 From: Mahendra Mali (Max) <max@maxnet.lan>
-Date: Thu, 19 Nov 2026 22:00:00 +0530
+Date: Fri, 20 Nov 2026 00:01:00 +0530
 Subject: [PATCH] pci: qcom: optimize IPQ9574 PCIe Gen3 equalization and link training
 
 ================================================================================
@@ -8,30 +8,13 @@ Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
 Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
 ================================================================================
 
-On Qualcomm IPQ9574 / IPQ9554 enterprise networking platforms, the Qualcomm
-PCIe 2.9.0 controller interfaces with high-speed Wi-Fi 6/6E radio companion
-endpoints (such as QCN9074).
-
-During Gen3 (8.0 GT/s) link negotiation in Linux 6.18, the standard controller
-driver clears GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL during common equalization,
-causing non-compliant endpoint receiver detection to fail with LTSSM stalling
-in DETECT_QUIET state.
-
-This MAXNET custom patch:
-1. Retains GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL during equalization setup to
-   guarantee immediate Gen3 link synchronization.
-2. Provides a post-PERST deassertion settling interval allowing auxiliary
-   clocks, receiver terminations, and endpoint power rails to stabilize.
+Enforce GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL during Gen3 equalization and add settling delay after PERST.
 
 Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
 ---
- drivers/pci/controller/dwc/pcie-qcom-common.c | 4 +++-
- drivers/pci/controller/dwc/pcie-qcom.c        | 4 ++++
- 2 files changed, 7 insertions(+), 1 deletion(-)
-
 --- a/drivers/pci/controller/dwc/pcie-qcom-common.c
 +++ b/drivers/pci/controller/dwc/pcie-qcom-common.c
-@@ -31,7 +31,9 @@ void qcom_pcie_common_set_equalization(s
+@@ -29,7 +29,8 @@
  		}
  
  		reg = dw_pcie_readl_dbi(pci, GEN3_RELATED_OFF);
@@ -43,14 +26,14 @@ Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
  			  speed - PCIE_SPEED_8_0GT);
 --- a/drivers/pci/controller/dwc/pcie-qcom.c
 +++ b/drivers/pci/controller/dwc/pcie-qcom.c
-@@ -305,6 +305,10 @@ static void qcom_ep_reset_deassert(struc
+@@ -303,6 +303,10 @@
  	/* Ensure that PERST has been asserted for at least 100 ms */
  	msleep(PCIE_T_PVPERL_MS);
  	qcom_perst_assert(pcie, false);
 +	/* MAXNET Hardware Stabilization by Mahendra Mali (Max):
-+	 * Allow endpoint clock, power rails and receiver detect to settle
++	 * Settling delay for QCN9074 PCIe Gen3 receiver detection and clock sync.
 +	 */
-+	msleep(PCIE_T_PVPERL_MS);
++	usleep_range(10000, 20000);
  }
  
  static int qcom_pcie_start_link(struct dw_pcie *pci)

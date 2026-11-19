@@ -1,0 +1,44 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:25:00 +0530
+Subject: [PATCH] mm: compaction: tune proactive compaction and external fragmentation thresholds for 512MB networking gateways
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+On 512MB RAM embedded enterprise routers (Qualcomm IPQ9574 / MediaTek MT7986),
+sysctl_compaction_proactiveness defaults to 20, delaying background memory defragmentation
+until zone fragmentation exceeds 80%. When network drivers (ath11k Wi-Fi 6, 5G USB
+SuperSpeed tethering) request order-1 and order-2 compound pages in GFP_ATOMIC context,
+allocations fail because atomic contexts cannot invoke direct compaction.
+
+Furthermore, sysctl_extfrag_threshold defaults to 500 (50%), allowing unmovable slab
+pages to scatter across movable pageblocks before kcompactd triggers compaction.
+
+This MAXNET patch:
+1. Increases sysctl_compaction_proactiveness to 50, maintaining a continuous pool
+   of contiguous order-1/2 pages for network drivers.
+2. Lowers sysctl_extfrag_threshold to 200 to strictly isolate unmovable slab allocations.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -1918,8 +1918,13 @@
+  * aggressively the kernel should compact memory in the
+  * background. It takes values in the range [0, 100].
+  */
+-static unsigned int __read_mostly sysctl_compaction_proactiveness = 20;
+-static int sysctl_extfrag_threshold = 500;
++/* MAXNET Low-Memory VM Optimization by Mahendra Mali (Max):
++ * Aggressive proactive compaction (50) and low extfrag threshold (200) instruct kcompactd
++ * to defragment memory proactively, preventing atomic order-1/2 allocation failures.
++ * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++ */
++static unsigned int __read_mostly sysctl_compaction_proactiveness = 50;
++static int sysctl_extfrag_threshold = 200;
+ static int __read_mostly sysctl_compact_memory;
+ 
+ static inline void

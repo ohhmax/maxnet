@@ -1,0 +1,43 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:06:00 +0530
+Subject: [PATCH] wifi: ath11k: optimize data path ring buffer allocations for low memory footprints
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Scale RXDMA buffer and monitor rings to save ~52MB of contiguous DMA RAM on 512MB platforms.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/drivers/net/wireless/ath/ath11k/dp.h
++++ b/drivers/net/wireless/ath/ath11k/dp.h
+@@ -216,14 +216,19 @@
+ #define DP_RX_RELEASE_RING_SIZE		1024
+ #define DP_REO_EXCEPTION_RING_SIZE	128
+ #define DP_REO_CMD_RING_SIZE		256
+-#define DP_REO_STATUS_RING_SIZE		2048
+-#define DP_RXDMA_BUF_RING_SIZE		4096
+-#define DP_RXDMA_REFILL_RING_SIZE	2048
++/* MAXNET Memory Optimization by Mahendra Mali (Max):
++ * Scale data-path and monitor rings to balanced bounds (1024/512/256).
++ * Saves ~52MB of unmovable contiguous DMA memory across 3 radios.
++ * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++ */
++#define DP_REO_STATUS_RING_SIZE		1024
++#define DP_RXDMA_BUF_RING_SIZE		1024
++#define DP_RXDMA_REFILL_RING_SIZE	1024
+ #define DP_RXDMA_ERR_DST_RING_SIZE	1024
+-#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
+-#define DP_RXDMA_MONITOR_BUF_RING_SIZE	4096
+-#define DP_RXDMA_MONITOR_DST_RING_SIZE	2048
+-#define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
++#define DP_RXDMA_MON_STATUS_RING_SIZE	256
++#define DP_RXDMA_MONITOR_BUF_RING_SIZE	512
++#define DP_RXDMA_MONITOR_DST_RING_SIZE	256
++#define DP_RXDMA_MONITOR_DESC_RING_SIZE	512
+ 
+ #define DP_RX_RELEASE_RING_NUM	3
+ 

@@ -1,0 +1,62 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:05:00 +0530
+Subject: [PATCH] net: usb: cdc_ncm: enable 64KB SuperSpeed NTB aggregation and lower aggregation delay for 5G mobile tethering
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Default Linux cdc_ncm clamps NTB buffer sizes to 16KB (CDC_NCM_NTB_DEF_SIZE_RX/TX),
+artificially restricting transfer aggregation on SuperSpeed USB 3.0 links.
+Modern 5G SA modems exchange 32KB-64KB NTBs; 16KB clamping forces excessive URB
+interrupts and limits downlink throughput.
+
+This MAXNET patch:
+1. Dynamically scales def_rx and def_tx up to 64KB for USB_SPEED_SUPER devices.
+2. Lowers aggregation timer from 400us to 125us for reduced interactive latency.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/drivers/net/usb/cdc_ncm.c
++++ b/drivers/net/usb/cdc_ncm.c
+@@ -706,10 +706,22 @@
+ 	/* be conservative when selecting initial buffer size to
+ 	 * increase the number of hosts this will work for
+ 	 */
+-	def_rx = min_t(u32, CDC_NCM_NTB_DEF_SIZE_RX,
+-		       le32_to_cpu(ctx->ncm_parm.dwNtbInMaxSize));
+-	def_tx = min_t(u32, CDC_NCM_NTB_DEF_SIZE_TX,
+-		       le32_to_cpu(ctx->ncm_parm.dwNtbOutMaxSize));
++	/* MAXNET SuperSpeed Mobile Tethering Optimization by Mahendra Mali (Max):
++	 * Scale initial NTB buffer sizes up to 64KB for SuperSpeed USB 3.0+ 5G modems
++	 * and smartphones to achieve multi-gigabit throughput with low CPU overhead.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	if (dev->udev->speed >= USB_SPEED_SUPER) {
++		def_rx = min_t(u32, CDC_NCM_NTB_MAX_SIZE_RX,
++			       le32_to_cpu(ctx->ncm_parm.dwNtbInMaxSize));
++		def_tx = min_t(u32, CDC_NCM_NTB_MAX_SIZE_TX,
++			       le32_to_cpu(ctx->ncm_parm.dwNtbOutMaxSize));
++	} else {
++		def_rx = min_t(u32, CDC_NCM_NTB_DEF_SIZE_RX,
++			       le32_to_cpu(ctx->ncm_parm.dwNtbInMaxSize));
++		def_tx = min_t(u32, CDC_NCM_NTB_DEF_SIZE_TX,
++			       le32_to_cpu(ctx->ncm_parm.dwNtbOutMaxSize));
++	}
+ 
+ 	/* clamp rx_max and tx_max and inform device */
+ 	cdc_ncm_update_rxtx_max(dev, def_rx, def_tx);
+--- a/include/linux/usb/cdc_ncm.h
++++ b/include/linux/usb/cdc_ncm.h
+@@ -80,7 +80,8 @@
+ /* Restart the timer, if amount of datagrams is less than given value */
+ #define	CDC_NCM_RESTART_TIMER_DATAGRAM_CNT	3
+ #define	CDC_NCM_TIMER_PENDING_CNT		2
+-#define CDC_NCM_TIMER_INTERVAL_USEC		400UL
++/* MAXNET: 125us aggregation interval for responsive 5G SuperSpeed mobile tethering */
++#define CDC_NCM_TIMER_INTERVAL_USEC		125UL
+ #define CDC_NCM_TIMER_INTERVAL_MIN		5UL
+ #define CDC_NCM_TIMER_INTERVAL_MAX		(U32_MAX / NSEC_PER_USEC)
+ 

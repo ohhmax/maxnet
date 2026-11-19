@@ -1,0 +1,31 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:03:00 +0530
+Subject: [PATCH] sched/cpufreq_schedutil: cap IO wait boost to prevent thermal overheating on fanless gateways
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Cap IO wait boost to 50% capacity to prevent fanless thermal saturation on quad Cortex-A73.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/kernel/sched/cpufreq_schedutil.c
++++ b/kernel/sched/cpufreq_schedutil.c
+@@ -307,8 +307,13 @@
+ 
+ 	/* Double the boost at each request */
+ 	if (sg_cpu->iowait_boost) {
++		/* MAXNET Thermal Optimization by Mahendra Mali (Max):
++		 * Cap IO wait boost to 50% capacity to prevent fanless thermal runaway (61C+).
++		 * Heavy network traffic still scales to max frequency via standard util tracking.
++		 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++		 */
+ 		sg_cpu->iowait_boost =
+-			min_t(unsigned int, sg_cpu->iowait_boost << 1, SCHED_CAPACITY_SCALE);
++			min_t(unsigned int, sg_cpu->iowait_boost << 1, SCHED_CAPACITY_SCALE >> 1);
+ 		return;
+ 	}
+ 

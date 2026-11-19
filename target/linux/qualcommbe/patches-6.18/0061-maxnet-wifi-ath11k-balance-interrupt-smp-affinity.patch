@@ -1,0 +1,43 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:07:00 +0530
+Subject: [PATCH] wifi: ath11k: ahb: distribute data path ext_irq completion groups across secondary CPU cores
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Distribute ext_irq completion interrupts across CPU1-3 to eliminate CPU0 thermal concentration (61C).
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/drivers/net/wireless/ath/ath11k/ahb.c
++++ b/drivers/net/wireless/ath/ath11k/ahb.c
+@@ -438,8 +438,10 @@
+ 	for (i = 0; i < ATH11K_EXT_IRQ_GRP_NUM_MAX; i++) {
+ 		struct ath11k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
+ 
+-		for (j = 0; j < irq_grp->num_irq; j++)
++		for (j = 0; j < irq_grp->num_irq; j++) {
++			irq_set_affinity_hint(ab->irq_num[irq_grp->irqs[j]], NULL);
+ 			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
++		}
+ 
+ 		netif_napi_del(&irq_grp->napi);
+ 		free_netdev(irq_grp->napi_ndev);
+@@ -600,6 +602,14 @@
+ 			if (ret) {
+ 				ath11k_err(ab, "failed request_irq for %d\n",
+ 					   irq);
++			} else if (num_online_cpus() > 1) {
++				/* MAXNET Multicore SMP Balancing by Mahendra Mali (Max):
++				 * Distribute ext_irq data path completion groups across CPU1, CPU2, and CPU3
++				 * to eliminate CPU0 thermal concentration (61C) and balance NAPI softirq load.
++				 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++				 */
++				int target_cpu = 1 + (i % (num_online_cpus() - 1));
++				irq_set_affinity_hint(irq, cpumask_of(target_cpu));
+ 			}
+ 		}
+ 	}

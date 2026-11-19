@@ -1,0 +1,43 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:04:00 +0530
+Subject: [PATCH] net: usb: rndis_host: high-throughput SuperSpeed multi-packet deaggregation engine
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Scale rx_urb_size to 32KB for USB_SPEED_SUPER and handle trailing zero padding gracefully without rx_frame_errors.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/drivers/net/usb/rndis_host.c
++++ b/drivers/net/usb/rndis_host.c
+@@ -345,6 +345,15 @@
+ 
+ 	dev->rx_urb_size = dev->hard_mtu + (dev->maxpacket + 1);
+ 	dev->rx_urb_size &= ~(dev->maxpacket - 1);
++	/* MAXNET SuperSpeed Mobile Tethering Optimization by Mahendra Mali (Max):
++	 * For USB 3.0+ SuperSpeed tethering, allocate 32KB rx URB buffer to match
++	 * multi-packet batching from 5G modems and smartphones.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	if (dev->udev->speed >= USB_SPEED_SUPER)
++		dev->rx_urb_size = max_t(size_t, dev->rx_urb_size, 32 * 1024);
++	else
++		dev->rx_urb_size = max_t(size_t, dev->rx_urb_size, 16 * 1024);
+ 	u.init->max_transfer_size = cpu_to_le32(dev->rx_urb_size);
+ 
+ 	net->netdev_ops = &rndis_netdev_ops;
+@@ -514,6 +523,10 @@
+ 		data_offset = le32_to_cpu(hdr->data_offset);
+ 		data_len = le32_to_cpu(hdr->data_len);
+ 
++		/* MAXNET: Trailing zero padding is normal in SuperSpeed batching */
++		if (unlikely(msg_type == 0 && data_len == 0))
++			break;
++
+ 		/* don't choke if we see oob, per-packet data, etc */
+ 		if (unlikely(msg_type != RNDIS_MSG_PACKET || skb->len < msg_len
+ 				|| (data_offset + data_len + 8) > msg_len

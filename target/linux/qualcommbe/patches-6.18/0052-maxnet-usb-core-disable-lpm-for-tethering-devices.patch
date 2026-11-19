@@ -1,0 +1,35 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:05:00 +0530
+Subject: [PATCH] usb: core: hub: disable U1/U2 LPM for mobile tethering devices to eliminate disconnects
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+Disable U1/U2 LPM for COMM/WIRELESS/MISC devices to prevent errors -71, -110 on SuperSpeed USB tethering.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/drivers/usb/core/hub.c
++++ b/drivers/usb/core/hub.c
+@@ -177,6 +177,18 @@
+ 	if (!udev->bos)
+ 		return 0;
+ 
++	/* MAXNET Tethering Optimization by Mahendra Mali (Max):
++	 * Disable U1/U2 LPM for mobile tethering devices (COMM, WIRELESS, MISC)
++	 * to prevent PHY exit timeouts (errors -71, -110) and unexpected USB disconnects.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	if (udev->descriptor.bDeviceClass == USB_CLASS_COMM ||
++	    udev->descriptor.bDeviceClass == USB_CLASS_WIRELESS_CONTROLLER ||
++	    udev->descriptor.bDeviceClass == USB_CLASS_MISC ||
++	    (udev->actconfig && udev->actconfig->desc.bNumInterfaces > 0 &&
++	     udev->actconfig->interface[0]->cur_altsetting->desc.bInterfaceClass == USB_CLASS_COMM))
++		return 0;
++
+ 	/* USB 2.1 (and greater) devices indicate LPM support through
+ 	 * their USB 2.0 Extended Capabilities BOS descriptor.
+ 	 */

@@ -1,0 +1,59 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 20 Nov 2026 00:00:00 +0530
+Subject: [PATCH] usb: dwc3: qcom/core: stabilize USB3 pipe clock and optimize AXI DMA burst streaming
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+On Qualcomm IPQ9574/IPQ9554 gateway platforms operating with SuperSpeed USB 3.0
+5G cellular modems:
+1. Deasserting BCR resets without an explicit settling delay causes clock glitches
+   on the QMP PHY PIPE clock PLL, resulting in LTSSM link stalls and USB2 fallback.
+2. Unconfigured DWC3_GSBUSCFG0 drops AXI bus utilization to single/4-beat transfers.
+
+This MAXNET acceleration patch:
+- Injects a 1.0-2.0ms post-reset stabilization delay for the QMP PHY PIPE clock PLL.
+- Enables Undefined Length INCR + INCR16 AXI burst streaming to eliminate FIFO underruns.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+--- a/drivers/usb/dwc3/dwc3-qcom.c
++++ b/drivers/usb/dwc3/dwc3-qcom.c
+@@ -649,6 +649,13 @@
+ 		return ret;
+ 	}
+ 
++	/* MAXNET Hardware Pipeline by Mahendra Mali (Max):
++	 * Allow Qualcomm QMP PHY and PIPE clock PLL to stabilize after BCR deassertion
++	 * before enabling peripheral clocks. Prevents LTSSM training drops.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	usleep_range(1000, 2000);
++
+ 	ret = clk_bulk_prepare_enable(qcom->num_clocks, qcom->clks);
+ 	if (ret < 0)
+ 		return ret;
+--- a/drivers/usb/dwc3/core.c
++++ b/drivers/usb/dwc3/core.c
+@@ -1139,8 +1139,17 @@
+ 	 * result > 1, means undefined length burst mode supported.
+ 	 */
+ 	ntype = device_property_count_u32(dev, "snps,incr-burst-type-adjustment");
+-	if (ntype <= 0)
++	if (ntype <= 0) {
++		/* MAXNET AXI DMA Burst Acceleration by Mahendra Mali (Max):
++		 * Enable Undefined Length INCR + INCR16 burst when not declared in DT
++		 * to maximize AXI bus utilization and prevent FIFO starvation.
++		 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++		 */
++		cfg &= ~DWC3_GSBUSCFG0_INCRBRST_MASK;
++		cfg |= DWC3_GSBUSCFG0_INCRBRSTENA | DWC3_GSBUSCFG0_INCR16BRSTENA;
++		dwc3_writel(dwc, DWC3_GSBUSCFG0, cfg);
+ 		return;
++	}
+ 
+ 	vals = kcalloc(ntype, sizeof(u32), GFP_KERNEL);
+ 	if (!vals)
