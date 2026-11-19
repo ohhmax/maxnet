@@ -24,9 +24,9 @@ on:
           - qualcommbe
           - mediatek
       publish_release:
-        description: 'Publish a GitHub release after the build (requires explicit approval)'
+        description: 'Publish a GitHub release after the build'
         required: true
-        default: false
+        default: true
         type: boolean
 
 permissions:
@@ -179,7 +179,7 @@ jobs:
 
   release:
     name: Generate Manifest & Publish Universal Release
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: [version, build]
     runs-on: ubuntu-22.04
     steps:
