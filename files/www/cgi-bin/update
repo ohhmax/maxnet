@@ -148,14 +148,14 @@ if [ -s /tmp/manifest.json ]; then
         ITB_FILE=$(echo "$RESOLVED_DATA" | cut -d'|' -f9)
         ITB_SIZE=$(echo "$RESOLVED_DATA" | cut -d'|' -f10)
     elif command -v python3 >/dev/null 2>&1; then
-        RESOLVED_DATA=$(python3 -c "
+        RESOLVED_DATA=$(python3 -c '
 import json, sys
 try:
-    with open('/tmp/manifest.json') as f:
+    with open("/tmp/manifest.json") as f:
         m = json.load(f)
-    board = '$BOARD_NAME'
-    model = '$MODEL_NAME'.lower()
-    devs = m.get('devices', {})
+    board = sys.argv[1] if len(sys.argv) > 1 else ""
+    model = (sys.argv[2] if len(sys.argv) > 2 else "").lower()
+    devs = m.get("devices", {})
     
     info = devs.get(board)
     if not info:
@@ -163,18 +163,18 @@ try:
             if k.lower() in model or model in k.lower():
                 info = v
                 break
-    if not info and 'jidu6811' in model: info = devs.get('jiorouter,ax6000-jidu6j11-6811')
-    if not info and 'jidu6911' in model: info = devs.get('jiorouter,ax6000-jidu6j11-6911')
-    if not info and 'jidu6401' in model: info = devs.get('jiorouter,ax6000-jidu6401')
-    if not info and 'jidu6801' in model: info = devs.get('jiorouter,ax6000-jidu6801')
+    if not info and "jidu6811" in model: info = devs.get("jiorouter,ax6000-jidu6j11-6811")
+    if not info and "jidu6911" in model: info = devs.get("jiorouter,ax6000-jidu6j11-6911")
+    if not info and "jidu6401" in model: info = devs.get("jiorouter,ax6000-jidu6401")
+    if not info and "jidu6801" in model: info = devs.get("jiorouter,ax6000-jidu6801")
     
     if info:
-        print(f\"{info.get('download_url','')}|{info.get('sha256','')}|{info.get('filename','')}|{info.get('size',0)}|{info.get('soc','')}|{info.get('target','')}|{info.get('itb_download_url','')}|{info.get('itb_sha256','')}|{info.get('itb_filename','')}|{info.get('itb_size',0)}\")
+        print(f"{info.get(\"download_url\",\"\")}|{info.get(\"sha256\",\"\")}|{info.get(\"filename\",\"\")}|{info.get(\"size\",0)}|{info.get(\"soc\",\"\")}|{info.get(\"target\",\"\")}|{info.get(\"itb_download_url\",\"\")}|{info.get(\"itb_sha256\",\"\")}|{info.get(\"itb_filename\",\"\")}|{info.get(\"itb_size\",0)}")
     else:
-        print('|||||||||')
+        print("|||||||||")
 except Exception:
-    print('|||||||||')
-" 2>/dev/null)
+    print("|||||||||")
+' "$BOARD_NAME" "$MODEL_NAME" 2>/dev/null)
 
         BIN_URL=$(echo "$RESOLVED_DATA" | cut -d'|' -f1)
         EXPECTED_SUM=$(echo "$RESOLVED_DATA" | cut -d'|' -f2)

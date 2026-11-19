@@ -40,26 +40,31 @@ if [ "$ACTION" = "set_prefs" ] || [ "$ACTION" = "apply" ]; then
     HOSTNAME=$(echo "$POST_DATA" | jq -r '.hostname // empty' 2>/dev/null)
     [ -z "$HOSTNAME" ] && HOSTNAME="MAXNET"
 
-    ROUTES=""
-    [ "$SHARE_LAN" = "true" ] && ROUTES="10.0.0.0/24"
+    case "$HOSTNAME" in
+        ''|*[!A-Za-z0-9.-]*) HOSTNAME="MAXNET" ;;
+    esac
+    [ "${#HOSTNAME}" -gt 63 ] && HOSTNAME="MAXNET"
 
-    SET_CMD="tailscale set --advertise-routes=\"$ROUTES\" --snat-subnet-routes=true"
-    [ "$EXIT_NODE" = "true" ] && SET_CMD="$SET_CMD --advertise-exit-node=true" || SET_CMD="$SET_CMD --advertise-exit-node=false"
-    [ "$ACCEPT_ROUTES" = "true" ] && SET_CMD="$SET_CMD --accept-routes=true" || SET_CMD="$SET_CMD --accept-routes=false"
-    [ "$SSH_MODE" = "true" ] && SET_CMD="$SET_CMD --ssh=true" || SET_CMD="$SET_CMD --ssh=false"
-    [ -n "$HOSTNAME" ] && SET_CMD="$SET_CMD --hostname=\"$HOSTNAME\""
+    set -- set --snat-subnet-routes=true
+    if [ "$SHARE_LAN" = "true" ]; then
+        set -- "$@" --advertise-routes=10.0.0.0/24
+    else
+        set -- "$@" --advertise-routes=
+    fi
+    [ "$EXIT_NODE" = "true" ] && set -- "$@" --advertise-exit-node=true || set -- "$@" --advertise-exit-node=false
+    [ "$ACCEPT_ROUTES" = "false" ] && set -- "$@" --accept-routes=false || set -- "$@" --accept-routes=true
+    [ "$SSH_MODE" = "true" ] && set -- "$@" --ssh=true || set -- "$@" --ssh=false
+    set -- "$@" "--hostname=$HOSTNAME"
 
-    eval "$SET_CMD" >/tmp/ts_set.log 2>&1
+    tailscale "$@" >/tmp/ts_set.log 2>&1
 
-    cat << PREF > "$PREFS_FILE"
-{
-  "share_lan": ${SHARE_LAN:-false},
-  "exit_node": ${EXIT_NODE:-false},
-  "accept_routes": ${ACCEPT_ROUTES:-true},
-  "ssh": ${SSH_MODE:-false},
-  "hostname": "${HOSTNAME}"
-}
-PREF
+    jq -n \
+        --argjson share_lan "$([ "$SHARE_LAN" = "true" ] && echo true || echo false)" \
+        --argjson exit_node "$([ "$EXIT_NODE" = "true" ] && echo true || echo false)" \
+        --argjson accept_routes "$([ "$ACCEPT_ROUTES" = "false" ] && echo false || echo true)" \
+        --argjson ssh "$([ "$SSH_MODE" = "true" ] && echo true || echo false)" \
+        --arg hostname "$HOSTNAME" \
+        '{share_lan: $share_lan, exit_node: $exit_node, accept_routes: $accept_routes, ssh: $ssh, hostname: $hostname}' > "$PREFS_FILE"
 
     echo '{"status": "ok", "message": "Tailscale preferences updated successfully."}'
     exit 0

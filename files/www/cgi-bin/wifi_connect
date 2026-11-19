@@ -28,6 +28,19 @@ METRIC=$(echo "$POST_DATA" | jq -r '.metric // "20"' 2>/dev/null)
 BSSID=$(echo "$POST_DATA" | jq -r '.bssid // ""' 2>/dev/null)
 HIDDEN=$(echo "$POST_DATA" | jq -r 'if .hidden == true then "1" else "0" end' 2>/dev/null)
 
+send_error() {
+    jq -n --arg msg "$1" '{"status": "error", "message": $msg}'
+    exit 0
+}
+
+is_valid_ipv4() {
+    printf "%s" "$1" | grep -Eq '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+}
+
+is_valid_mac() {
+    printf "%s" "$1" | grep -Eq '^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})$'
+}
+
 if [ "$ACTION" = "disconnect" ]; then
     uci -q delete wireless.wwan
     uci -q delete network.wwan
@@ -38,23 +51,70 @@ if [ "$ACTION" = "disconnect" ]; then
     /etc/init.d/network reload >/dev/null 2>&1
     /sbin/wifi reload >/dev/null 2>&1
     ( sleep 2; /etc/init.d/firewall reload >/dev/null 2>&1 ) &
-    cat << JSON_END
-{
-  "status": "ok",
-  "message": "Disconnected Wi-Fi WAN"
-}
-JSON_END
+    jq -n '{"status": "ok", "message": "Disconnected Wi-Fi WAN"}'
     exit 0
 fi
 
-if [ -z "$SSID" ]; then
-    cat << JSON_END
-{
-  "status": "error",
-  "message": "SSID cannot be empty"
-}
-JSON_END
-    exit 0
+# 1. SSID Validation (1 to 32 bytes)
+SSID_LEN=$(printf "%s" "$SSID" | wc -c)
+if [ "$SSID_LEN" -lt 1 ] || [ "$SSID_LEN" -gt 32 ]; then
+    send_error "SSID must be between 1 and 32 bytes"
+fi
+
+# 2. Key Validation (8-63 chars for WPA or 64 hex characters)
+if [ -n "$KEY" ]; then
+    KEY_LEN=$(printf "%s" "$KEY" | wc -c)
+    if [ "$ENC" != "none" ] && { [ "$KEY_LEN" -lt 8 ] || [ "$KEY_LEN" -gt 64 ]; }; then
+        send_error "Wi-Fi password must be between 8 and 63 characters (or 64 hex characters)"
+    fi
+fi
+
+# 3. Protocol Validation
+case "$PROTO" in
+    dhcp|static) ;;
+    *) send_error "Invalid protocol (must be dhcp or static)" ;;
+esac
+
+# 4. Static IP / Netmask / Gateway / DNS Validation
+if [ "$PROTO" = "static" ]; then
+    if [ -z "$IPADDR" ] || [ -z "$GATEWAY" ]; then
+        send_error "IP Address and Gateway are required for Static IP mode"
+    fi
+    is_valid_ipv4 "$IPADDR" || send_error "Invalid IP address format"
+    is_valid_ipv4 "$NETMASK" || send_error "Invalid netmask format"
+    is_valid_ipv4 "$GATEWAY" || send_error "Invalid gateway IP format"
+    if [ -n "$DNS" ]; then
+        for dns_ip in $DNS; do
+            is_valid_ipv4 "$dns_ip" || send_error "Invalid DNS IP format: $dns_ip"
+        done
+    fi
+fi
+
+# 5. MAC Address and BSSID Validation
+if [ -n "$MACADDR" ]; then
+    is_valid_mac "$MACADDR" || send_error "Invalid MAC address format"
+fi
+if [ -n "$BSSID" ]; then
+    is_valid_mac "$BSSID" || send_error "Invalid BSSID format"
+fi
+
+# 6. Device Validation
+if [ "$DEVICE" != "auto" ] && [ -n "$DEVICE" ]; then
+    printf "%s" "$DEVICE" | grep -Eq '^radio[0-9]+$' || send_error "Invalid radio device"
+fi
+
+# 7. Channel, MTU, Metric Validation
+if [ -n "$CHANNEL" ] && [ "$CHANNEL" != "0" ] && [ "$CHANNEL" != "null" ]; then
+    printf "%s" "$CHANNEL" | grep -Eq '^[0-9]+$' || send_error "Invalid channel"
+fi
+if [ -n "$MTU" ]; then
+    printf "%s" "$MTU" | grep -Eq '^[0-9]+$' || send_error "Invalid MTU"
+    if [ "$MTU" -lt 576 ] || [ "$MTU" -gt 9000 ]; then
+        send_error "MTU must be between 576 and 9000"
+    fi
+fi
+if [ -n "$METRIC" ]; then
+    printf "%s" "$METRIC" | grep -Eq '^[0-9]+$' || send_error "Invalid metric"
 fi
 
 # Auto-resolve target radio device based on band or device parameter
@@ -158,9 +218,7 @@ uci commit wireless
     done
 ) &
 
-cat << JSON_END
-{
-  "status": "ok",
-  "message": "Connecting to ${SSID} as Wi-Fi WAN Uplink (${PROTO})"
-}
-JSON_END
+jq -n --arg ssid "$SSID" --arg proto "$PROTO" '{
+  status: "ok",
+  message: ("Connecting to " + $ssid + " as Wi-Fi WAN Uplink (" + $proto + ")")
+}'
