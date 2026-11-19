@@ -46,8 +46,12 @@ MEM_BUFFERS=$(awk '/Buffers/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || 
 MEM_CACHED=$(awk '/^Cached/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_PHYS_AVAIL=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 
-# True Linux active physical RAM used = Total - Free - Buffers - Cached
-MEM_PHYS_USED=$((MEM_PHYS_TOTAL - MEM_FREE - MEM_BUFFERS - MEM_CACHED))
+# Accurate Linux physical RAM used = Total - MemAvailable (falls back to Total - Free - Buffers - Cached)
+if [ "$MEM_PHYS_AVAIL" -gt 0 ]; then
+    MEM_PHYS_USED=$((MEM_PHYS_TOTAL - MEM_PHYS_AVAIL))
+else
+    MEM_PHYS_USED=$((MEM_PHYS_TOTAL - MEM_FREE - MEM_BUFFERS - MEM_CACHED))
+fi
 [ "$MEM_PHYS_USED" -lt 0 ] && MEM_PHYS_USED=0
 [ "$MEM_PHYS_TOTAL" -gt 0 ] && MEM_PHYS_PCT=$((100 * MEM_PHYS_USED / MEM_PHYS_TOTAL)) || MEM_PHYS_PCT=0
 

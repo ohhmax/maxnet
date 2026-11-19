@@ -64,10 +64,17 @@ EOF
     mv "$SMB_CONF.tmp" "$SMB_CONF"
 
     # Reload or restart Samba without dropping active sessions
-    if pgrep smbd >/dev/null; then
-        killall -HUP smbd 2>/dev/null
+    if [ -n "$CURR_DISKS" ]; then
+        if pgrep smbd >/dev/null; then
+            killall -HUP smbd 2>/dev/null
+        else
+            /etc/init.d/samba start 2>/dev/null || smbd -D
+        fi
     else
-        /etc/init.d/samba start 2>/dev/null || smbd -D
+        # No disks mounted: stop smbd to conserve ~20MB RAM
+        if pgrep smbd >/dev/null; then
+            /etc/init.d/samba stop 2>/dev/null || killall smbd 2>/dev/null
+        fi
     fi
 }
 

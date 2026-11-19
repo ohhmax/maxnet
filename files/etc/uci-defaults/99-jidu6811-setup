@@ -17,7 +17,9 @@ uci add_list network.lan.ipaddr="10.0.0.254/24" 2>/dev/null || true
 uci set network.@globals[0].packet_steering="1"
 uci commit network
 
-# Set Default High-Performance Wi-Fi SSIDs
+# Set Default High-Performance Wi-Fi SSIDs & Balanced Tx-Power
+uci set wireless.radio0.txpower="20" 2>/dev/null || true
+uci set wireless.radio1.txpower="23" 2>/dev/null || true
 uci set wireless.default_radio0.ssid="MAXNET" 2>/dev/null || true
 uci set wireless.default_radio0.encryption="none" 2>/dev/null || true
 uci delete wireless.default_radio0.key 2>/dev/null || true
