@@ -9,6 +9,13 @@ raw_binaries/
 harvest/
 release_files/
 
+# Security sensitive keys and certificates (per-device generated)
+files/etc/uhttpd.key
+files/etc/uhttpd.crt
+files/root/.android/adbkey
+files/root/.android/adbkey.pub
+files/etc/dropbear/authorized_keys
+
 # Frontend dependencies and temporary build files
 frontend/node_modules/
 node_modules/

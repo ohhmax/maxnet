@@ -73,6 +73,30 @@ fi
 # Enable LED Internet Lifecycle Monitor Service if present
 [ -x /etc/init.d/led_internet_monitor ] && /etc/init.d/led_internet_monitor enable && /etc/init.d/led_internet_monitor start
 
+# Generate per-device TLS certificate and key if absent
+if [ ! -s /etc/uhttpd.key ] || [ ! -s /etc/uhttpd.crt ]; then
+	if command -v uhttpd-gencert >/dev/null 2>&1; then
+		uhttpd-gencert -d 3650 -D MAXNET -L "MAXNET Router"
+	elif command -v openssl >/dev/null 2>&1; then
+		openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+			-keyout /etc/uhttpd.key -out /etc/uhttpd.crt \
+			-subj "/C=IN/ST=GJ/L=MAXNET/O=MAXNET Enterprise/CN=10.0.0.1" 2>/dev/null || true
+	fi
+	chmod 600 /etc/uhttpd.key 2>/dev/null || true
+	chmod 644 /etc/uhttpd.crt 2>/dev/null || true
+fi
+
+# Generate per-device Android ADB key if absent
+mkdir -p /root/.android
+chmod 700 /root/.android 2>/dev/null || true
+if [ ! -s /root/.android/adbkey ]; then
+	if command -v adb >/dev/null 2>&1; then
+		adb keygen /root/.android/adbkey 2>/dev/null || true
+		chmod 600 /root/.android/adbkey 2>/dev/null || true
+		chmod 644 /root/.android/adbkey.pub 2>/dev/null || true
+	fi
+fi
+
 # Enable uhttpd web monitor on port 80
 [ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd enable && /etc/init.d/uhttpd restart
 
