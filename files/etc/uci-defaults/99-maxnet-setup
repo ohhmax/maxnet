@@ -18,15 +18,23 @@ uci add_list network.lan.ipaddr="10.0.0.254/24" 2>/dev/null || true
 uci set network.@globals[0].packet_steering="1"
 uci commit network
 
-# Set Default High-Performance Wi-Fi SSIDs & Balanced Tx-Power
+# Set Default High-Performance Wi-Fi SSIDs & WPA2/WPA3 Encryption with Random Per-Device Key
+WIFI_KEY_FILE="/etc/maxnet_default_wifi_key"
+if [ ! -s "$WIFI_KEY_FILE" ]; then
+	hexdump -vn 6 -e '6/1 "%02x"' /dev/urandom 2>/dev/null > "$WIFI_KEY_FILE" || head -c 12 /dev/urandom | tr -dc 'A-Za-z0-9' > "$WIFI_KEY_FILE"
+	chmod 600 "$WIFI_KEY_FILE" 2>/dev/null || true
+fi
+RAND_WIFI_KEY=$(cat "$WIFI_KEY_FILE" 2>/dev/null)
+[ -z "$RAND_WIFI_KEY" ] && RAND_WIFI_KEY="maxnet2026"
+
 uci set wireless.radio0.txpower="20" 2>/dev/null || true
 uci set wireless.radio1.txpower="23" 2>/dev/null || true
 uci set wireless.default_radio0.ssid="MAXNET" 2>/dev/null || true
-uci set wireless.default_radio0.encryption="none" 2>/dev/null || true
-uci delete wireless.default_radio0.key 2>/dev/null || true
+uci set wireless.default_radio0.encryption="sae-mixed" 2>/dev/null || true
+uci set wireless.default_radio0.key="$RAND_WIFI_KEY" 2>/dev/null || true
 uci set wireless.default_radio1.ssid="MAXNET-5G" 2>/dev/null || true
-uci set wireless.default_radio1.encryption="none" 2>/dev/null || true
-uci delete wireless.default_radio1.key 2>/dev/null || true
+uci set wireless.default_radio1.encryption="sae-mixed" 2>/dev/null || true
+uci set wireless.default_radio1.key="$RAND_WIFI_KEY" 2>/dev/null || true
 uci commit wireless 2>/dev/null || true
 
 # Fix dnsmasq startup sequence (START=60 after S20network)
@@ -38,8 +46,8 @@ rm -f /etc/rc.d/S19dnsmasq 2>/dev/null || true
 mtdnum=$(find_mtd_index 0:APPSBLENV)
 [ -n "$mtdnum" ] && echo "/dev/mtd$mtdnum 0x0 0x40000 0x20000" > /etc/fw_env.config
 
-# Enable Dropbear SSH on all interfaces
-uci set dropbear.@dropbear[0].Interface=""
+# Restrict Dropbear SSH exclusively to LAN interface
+uci set dropbear.@dropbear[0].Interface="lan"
 uci commit dropbear
 
 # Add USB Tethering interface (wan_usb) for mobile internet

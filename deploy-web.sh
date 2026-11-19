@@ -11,7 +11,11 @@ FILES_WWW_DIR="${SCRIPT_DIR}/files/www"
 DIST_DIR="${FILES_WWW_DIR}/dist"
 
 ROUTER_IP="${1:-10.0.0.1}"
-ROUTER_PASS="${ROUTER_PASS:-maxmax}"
+if [ -z "${ROUTER_PASS:-}" ]; then
+    echo "[!] ERROR: ROUTER_PASS environment variable is required to authenticate deployment to ${ROUTER_IP}."
+    echo "    Usage: ROUTER_PASS=\"your_password\" ./deploy-web.sh [ROUTER_IP]"
+    exit 1
+fi
 
 echo "========================================================"
 echo " [*] MAXNET PRODUCTION BUILD PIPELINE"

@@ -12,9 +12,79 @@ PUB_KEY="/etc/maxnet_auth_pub.pem"
 NONCE_DIR="/tmp/auth_nonces"
 SESS_DIR="/tmp/sessions"
 LOGIN_ATTEMPTS_DIR="/tmp/login_attempts"
+PERSIST_LOCKOUT_DIR="/etc/login_lockouts"
 
-mkdir -p "$SESS_DIR" "$NONCE_DIR" "$LOGIN_ATTEMPTS_DIR"
-chmod 700 "$SESS_DIR" "$NONCE_DIR" "$LOGIN_ATTEMPTS_DIR" 2>/dev/null
+mkdir -p "$SESS_DIR" "$NONCE_DIR" "$LOGIN_ATTEMPTS_DIR" "$PERSIST_LOCKOUT_DIR" 2>/dev/null
+chmod 700 "$SESS_DIR" "$NONCE_DIR" "$LOGIN_ATTEMPTS_DIR" "$PERSIST_LOCKOUT_DIR" 2>/dev/null
+
+check_ip_rate_limit() {
+    local ip_clean ip_tmp ip_persist fail_count lock_time remain
+    ip_clean=$(echo "$CLIENT_IP" | tr -c 'a-zA-Z0-9.' '_')
+    ip_tmp="$LOGIN_ATTEMPTS_DIR/$ip_clean"
+    ip_persist="$PERSIST_LOCKOUT_DIR/$ip_clean"
+
+    if [ ! -f "$ip_tmp" ] && [ -f "$ip_persist" ]; then
+        cp -f "$ip_persist" "$ip_tmp" 2>/dev/null
+    fi
+
+    if [ -f "$ip_tmp" ]; then
+        fail_count=$(awk 'NR==1{print $1}' "$ip_tmp" 2>/dev/null || echo 0)
+        lock_time=$(awk 'NR==1{print $2}' "$ip_tmp" 2>/dev/null || echo 0)
+        if [ "$fail_count" -ge 5 ]; then
+            remain=$((lock_time + 900 - NOW))
+            if [ "$remain" -gt 0 ]; then
+                send_json_str "{\"status\": \"error\", \"message\": \"Security Lockout: Too many failed login attempts. Retry in ${remain} seconds.\"}"
+                exit 0
+            else
+                rm -f "$ip_tmp" "$ip_persist" 2>/dev/null
+            fi
+        fi
+    fi
+}
+
+record_ip_failure() {
+    local ip_clean ip_tmp ip_persist fail_count attempts_left
+    ip_clean=$(echo "$CLIENT_IP" | tr -c 'a-zA-Z0-9.' '_')
+    ip_tmp="$LOGIN_ATTEMPTS_DIR/$ip_clean"
+    ip_persist="$PERSIST_LOCKOUT_DIR/$ip_clean"
+
+    fail_count=0
+    if [ -f "$ip_tmp" ]; then
+        fail_count=$(awk 'NR==1{print $1}' "$ip_tmp" 2>/dev/null || echo 0)
+    fi
+    fail_count=$((fail_count + 1))
+    # Cap ceiling to prevent unbounded growth
+    [ "$fail_count" -gt 100 ] && fail_count=100
+
+    # Housekeeping: prune old entries if record count exceeds ceiling (50 records)
+    if [ $(ls -1 "$LOGIN_ATTEMPTS_DIR" 2>/dev/null | wc -l) -gt 50 ]; then
+        find "$LOGIN_ATTEMPTS_DIR" -type f -mmin +60 -delete 2>/dev/null || true
+    fi
+    if [ $(ls -1 "$PERSIST_LOCKOUT_DIR" 2>/dev/null | wc -l) -gt 50 ]; then
+        find "$PERSIST_LOCKOUT_DIR" -type f -mmin +1440 -delete 2>/dev/null || true
+    fi
+
+    echo "$fail_count $NOW" > "$ip_tmp"
+    if [ "$fail_count" -ge 5 ]; then
+        echo "$fail_count $NOW" > "$ip_persist" 2>/dev/null
+    fi
+
+    attempts_left=$((5 - fail_count))
+    if [ "$attempts_left" -le 0 ]; then
+        dispatch_login_alert "Security Lockout: Brute-Force Blocked" "IP $CLIENT_IP locked out for 15 minutes after 5 consecutive failed WebUI login attempts." "danger" "security_alert"
+        send_json_str '{"status": "error", "message": "Security Lockout: Too many failed login attempts. Account locked for 15 minutes."}'
+    else
+        dispatch_login_alert "Failed Router Login Attempt" "Failed WebUI login attempt for user '$USER' from IP $CLIENT_IP ($attempts_left attempts remaining)." "warning" "router_login"
+        send_json_str "{\"status\": \"error\", \"message\": \"Invalid username or password. ${attempts_left} attempts remaining before temporary lockout.\"}"
+    fi
+    exit 0
+}
+
+clear_ip_failure() {
+    local ip_clean
+    ip_clean=$(echo "$CLIENT_IP" | tr -c 'a-zA-Z0-9.' '_')
+    rm -f "$LOGIN_ATTEMPTS_DIR/$ip_clean" "$PERSIST_LOCKOUT_DIR/$ip_clean" 2>/dev/null
+}
 
 [ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
 
@@ -152,23 +222,7 @@ fi
 
 # ==================== ACTION: LOGIN_ENCRYPTED ====================
 if [ "$ACTION" = "login_encrypted" ]; then
-    IP_FILE="$LOGIN_ATTEMPTS_DIR/$(echo "$CLIENT_IP" | tr -c 'a-zA-Z0-9.' '_')"
-    
-    FAIL_COUNT=0
-    if [ -f "$IP_FILE" ]; then
-        FAIL_COUNT=$(awk 'NR==1{print $1}' "$IP_FILE" 2>/dev/null || echo 0)
-        LOCK_TIME=$(awk 'NR==1{print $2}' "$IP_FILE" 2>/dev/null || echo 0)
-        if [ "$FAIL_COUNT" -ge 5 ]; then
-            REMAIN=$((LOCK_TIME + 900 - NOW))
-            if [ "$REMAIN" -gt 0 ]; then
-                send_json_str "{\"status\": \"error\", \"message\": \"Security Lockout: Too many failed login attempts. Retry in ${REMAIN} seconds.\"}"
-                exit 0
-            else
-                rm -f "$IP_FILE"
-                FAIL_COUNT=0
-            fi
-        fi
-    fi
+    check_ip_rate_limit
 
     ENC_PAYLOAD=$(echo "$POST_DATA" | jq -r '.payload // empty' 2>/dev/null)
     NONCE=$(echo "$POST_DATA" | jq -r '.nonce // empty' 2>/dev/null)
@@ -211,7 +265,7 @@ if [ "$ACTION" = "login_encrypted" ]; then
     fi
 
     if [ "$AUTH_OK" -eq 1 ]; then
-        rm -f "$IP_FILE"
+        clear_ip_failure
         T=$(head -c 16 /dev/urandom | md5sum | awk '{print $1}')
         cat << SESS > "$SESS_DIR/$T"
 {
@@ -228,16 +282,7 @@ SESS
         dispatch_login_alert "Router WebUI Login: $USER" "Administrator '$USER' logged into MAXNET Gateway WebUI via RSA-OAEP encrypted session from IP $CLIENT_IP." "info" "router_login"
         send_json_str "{\"status\": \"ok\", \"token\": \"$T\", \"user\": \"$USER\", \"ip\": \"$CLIENT_IP\", \"encrypted\": true}"
     else
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        echo "$FAIL_COUNT $NOW" > "$IP_FILE"
-        ATTEMPTS_LEFT=$((5 - FAIL_COUNT))
-        if [ "$ATTEMPTS_LEFT" -le 0 ]; then
-            dispatch_login_alert "Security Lockout: Brute-Force Blocked" "IP $CLIENT_IP locked out for 15 minutes after 5 consecutive failed WebUI login attempts." "danger" "security_alert"
-            send_json_str '{"status": "error", "message": "Security Lockout: Too many failed login attempts. Account locked for 15 minutes."}'
-        else
-            dispatch_login_alert "Failed Router Login Attempt" "Failed WebUI login attempt for user '$USER' from IP $CLIENT_IP ($ATTEMPTS_LEFT attempts remaining)." "warning" "router_login"
-            send_json_str "{\"status\": \"error\", \"message\": \"Invalid username or password. ${ATTEMPTS_LEFT} attempts remaining before temporary lockout.\"}"
-        fi
+        record_ip_failure
     fi
     exit 0
 fi
@@ -385,14 +430,15 @@ if [ "$ACTION" = "change_password" ]; then
     # When password already exists, require valid session and old password verification
     if [ "$HAS_PASSWORD" = "true" ]; then
         require_valid_session
+        check_ip_rate_limit
         if [ -z "$OLD_PASS" ]; then
             send_json_str '{"status": "error", "message": "Current password is required"}'
             exit 0
         fi
         if ! /usr/bin/checkpass "$USER" "$OLD_PASS" >/dev/null 2>&1; then
-            send_json_str '{"status": "error", "message": "Current password is incorrect"}'
-            exit 0
+            record_ip_failure
         fi
+        clear_ip_failure
     fi
 
     printf "%s\n%s\n" "$NEW_PASS" "$NEW_PASS" | passwd "$USER" >/dev/null 2>&1

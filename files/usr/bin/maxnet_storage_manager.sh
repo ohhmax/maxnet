@@ -27,12 +27,7 @@ update_samba_shares() {
 	workgroup = WORKGROUP
 	security = user
 	passdb backend = smbpasswd
-	null passwords = yes
-	guest account = root
-	force user = root
-	force group = root
-	smb encrypt = disabled
-	map to guest = Bad User
+	smb encrypt = auto
 	max connections = 0
 	socket options = TCP_NODELAY IPTOS_LOWDELAY SO_KEEPALIVE SO_RCVBUF=131072 SO_SNDBUF=131072
 	aio read size = 16384
@@ -58,9 +53,10 @@ EOF
 	path = $m
 	browseable = yes
 	read only = no
-	guest ok = yes
-	create mask = 0777
-	directory mask = 0777
+	guest ok = no
+	valid users = root
+	create mask = 0664
+	directory mask = 0775
 EOF
     done
 
@@ -77,9 +73,10 @@ EOF
 	path = $LEGACY_BASE
 	browseable = yes
 	read only = no
-	guest ok = yes
-	create mask = 0777
-	directory mask = 0777
+	guest ok = no
+	valid users = root
+	create mask = 0664
+	directory mask = 0775
 EOF
         fi
     fi
