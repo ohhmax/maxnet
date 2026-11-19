@@ -9,17 +9,16 @@ echo "Cache-Control: no-cache, no-store, must-revalidate"
 echo ""
 
 ARCHIVE="/tmp/maxnet_config_backup.tar.gz"
-tar -czf "$ARCHIVE" \
-    /etc/config \
-    /etc/dropbear \
-    /etc/shadow \
-    /etc/passwd \
-    /etc/nftables.d \
-    /etc/sysctl.conf \
-    /etc/rc.local \
-    /etc/blocked_clients.json \
-    /etc/tailscale_prefs.json \
-    /etc/traffic_totals.tsv 2>/dev/null
+# Exclude /etc/shadow and /etc/passwd to prevent credential leakage
+tar -czf "$ARCHIVE" -C / \
+    etc/config \
+    etc/dropbear \
+    etc/nftables.d \
+    etc/sysctl.conf \
+    etc/rc.local \
+    etc/blocked_clients.json \
+    etc/tailscale_prefs.json \
+    etc/traffic_totals.tsv 2>/dev/null
 
 cat "$ARCHIVE"
 rm -f "$ARCHIVE"

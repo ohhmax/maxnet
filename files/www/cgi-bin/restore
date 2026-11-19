@@ -22,20 +22,70 @@ if [ "$ACTION" = "reboot" ]; then
 fi
 
 RESTORE_FILE="/tmp/restore_upload.tar.gz"
+RESTORE_LIST="/tmp/restore_list.txt"
 cat > "$RESTORE_FILE"
 
 if [ -s "$RESTORE_FILE" ]; then
-    if tar -tzf "$RESTORE_FILE" >/dev/null 2>&1; then
-        tar -xzf "$RESTORE_FILE" -C / >/dev/null 2>&1
-        rm -f "$RESTORE_FILE"
-        echo '{"status": "ok", "message": "Configuration restored successfully. Gateway rebooting..."}'
-        ( sleep 1 && /etc/init.d/trafficd stop && sync && sleep 1 && reboot ) >/dev/null 2>&1 &
-        exit 0
-    else
-        rm -f "$RESTORE_FILE"
+    # 1. Validate tar archive format and read file listing
+    if ! tar -tzf "$RESTORE_FILE" > "$RESTORE_LIST" 2>/dev/null; then
+        rm -f "$RESTORE_FILE" "$RESTORE_LIST"
         echo '{"status": "error", "message": "Invalid configuration backup archive format."}'
         exit 0
     fi
+
+    # 2. Reject directory traversal attempts (..)
+    if grep -Eq '(^|/)\.\.(/|$)' "$RESTORE_LIST"; then
+        rm -f "$RESTORE_FILE" "$RESTORE_LIST"
+        echo '{"status": "error", "message": "Security error: Archive contains invalid directory traversal paths (..)."}'
+        exit 0
+    fi
+
+    # 3. Reject absolute file paths
+    if grep -Eq '^/' "$RESTORE_LIST"; then
+        rm -f "$RESTORE_FILE" "$RESTORE_LIST"
+        echo '{"status": "error", "message": "Security error: Archive contains prohibited absolute paths."}'
+        exit 0
+    fi
+
+    # 4. Reject symbolic and hard links
+    if tar -tvzf "$RESTORE_FILE" 2>/dev/null | grep -Eq '^[lh]'; then
+        rm -f "$RESTORE_FILE" "$RESTORE_LIST"
+        echo '{"status": "error", "message": "Security error: Archive contains prohibited symbolic or hard links."}'
+        exit 0
+    fi
+
+    # 5. Strictly enforce file allowlist
+    while IFS= read -r entry; do
+        [ -z "$entry" ] && continue
+        clean_entry=$(printf "%s" "$entry" | sed -e 's|^\./||' -e 's|/$||')
+        [ -z "$clean_entry" ] && continue
+        [ "$clean_entry" = "." ] && continue
+        [ "$clean_entry" = "etc" ] && continue
+
+        case "$clean_entry" in
+            etc/config|etc/config/*) ;;
+            etc/dropbear|etc/dropbear/*) ;;
+            etc/nftables.d|etc/nftables.d/*) ;;
+            etc/sysctl.conf) ;;
+            etc/rc.local) ;;
+            etc/blocked_clients.json) ;;
+            etc/tailscale_prefs.json) ;;
+            etc/traffic_totals.tsv) ;;
+            *)
+                rm -f "$RESTORE_FILE" "$RESTORE_LIST"
+                echo "{\"status\": \"error\", \"message\": \"Security error: Archive contains unauthorized file outside allowlist: $clean_entry\"}"
+                exit 0
+                ;;
+        esac
+    done < "$RESTORE_LIST"
+
+    # All security checks passed: perform extraction
+    rm -f "$RESTORE_LIST"
+    tar -xzf "$RESTORE_FILE" -C / >/dev/null 2>&1
+    rm -f "$RESTORE_FILE"
+    echo '{"status": "ok", "message": "Configuration restored successfully. Gateway rebooting..."}'
+    ( sleep 1 && /etc/init.d/trafficd stop && sync && sleep 1 && reboot ) >/dev/null 2>&1 &
+    exit 0
 fi
 
 echo '{"status": "error", "message": "No backup file uploaded"}'
