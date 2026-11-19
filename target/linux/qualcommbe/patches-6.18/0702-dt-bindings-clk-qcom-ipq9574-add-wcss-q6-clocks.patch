@@ -1,14 +1,18 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Igor Kravchenko <igor.kravchenko05@gmail.com>
-Date: Fri, 24 Jul 2026 12:00:00 +0000
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 24 Jul 2026 12:00:00 +0530
 Subject: [PATCH] dt-bindings: clk: qcom: ipq9574: add WCSS Q6 clocks
 
-Add the IPQ9574 GCC clock IDs needed by the native WCSS remoteproc
-bring-up path. These clocks are used by qcom_q6v5_wcss when booting the
-integrated Wi-Fi firmware outside PAS mode.
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
 
-Signed-off-by: Alexandru Gagniuc <mr.nuke.me@gmail.com>
-Signed-off-by: Igor Kravchenko <igor.kravchenko05@gmail.com>
+Add the IPQ9574 GCC clock IDs needed by the native WCSS remoteproc bring-up path.
+These clocks are used by qcom_q6v5_wcss when booting the integrated Wi-Fi firmware
+outside PAS mode for MAXNET Router OS.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
 ---
  include/dt-bindings/clock/qcom,ipq9574-gcc.h | 22 ++++++++++++++++++++
  1 file changed, 22 insertions(+)

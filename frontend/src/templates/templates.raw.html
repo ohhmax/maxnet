@@ -793,14 +793,14 @@
         <div class="settings-grid" id="settingsGrid">
 
           <!-- 1. Network -->
-          <div class="settings-nav-card" id="card-network" onclick="openSettingPage('acc-network')" data-search="network dhcp gateway ip subnet mask dns nameservers lease pool lan interface ipv6 slaac dhcpv6 ula flow offloading acceleration ppe mss mtu">
+          <div class="settings-nav-card" id="card-network" onclick="openSettingPage('acc-network')" data-search="network dhcp gateway ip subnet mask dns nameservers lease pool lan interface ipv6 slaac dhcpv6 ula flow offloading acceleration ppe mss mtu wan as lan use wan port as lan 5th lan">
             <div class="snc-left">
               <div class="snc-icon-box" style="color:#38bdf8;">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
               </div>
               <div class="snc-info">
                 <span class="snc-title">Network</span>
-                <span class="snc-desc">Gateway IP, subnet mask, DNS, and DHCP pool</span>
+                <span class="snc-desc">Gateway IP, subnet mask, DNS, DHCP pool, and WAN-as-LAN mode</span>
               </div>
             </div>
             <div class="snc-right">
@@ -809,14 +809,14 @@
           </div>
 
           <!-- Interfaces (Physical WAN, LAN Bridge, Custom MAC) -->
-          <div class="settings-nav-card" id="card-interfaces" onclick="openSettingPage('acc-interfaces')" data-search="interfaces wan lan dhcp static custom mac clone mtu link physical ethernet usb0 br-lan wan as lan use wan port as lan 5th lan">
+          <div class="settings-nav-card" id="card-interfaces" onclick="openSettingPage('acc-interfaces')" data-search="interfaces wan lan dhcp static custom mac clone mtu link physical ethernet usb0 br-lan">
             <div class="snc-left">
               <div class="snc-icon-box" style="color:#0ea5e9;">
                 <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
               </div>
               <div class="snc-info">
                 <span class="snc-title">Interfaces</span>
-                <span class="snc-desc">Physical WAN protocol (DHCP / Static), WAN-as-LAN mode, physical Ethernet links, and bridge status</span>
+                <span class="snc-desc">Physical WAN protocol (DHCP / Static), physical Ethernet links, and bridge status</span>
               </div>
             </div>
             <div class="snc-right">

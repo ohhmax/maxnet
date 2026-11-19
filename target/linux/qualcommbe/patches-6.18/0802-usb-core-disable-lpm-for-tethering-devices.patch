@@ -1,0 +1,54 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Thu, 19 Nov 2026 22:30:00 +0530
+Subject: [PATCH] usb: core: hub: disable U1/U2 LPM for mobile tethering devices to eliminate disconnects
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+When Android and mobile broadband devices are connected to Qualcomm IPQ9574
+DWC3 SuperSpeed USB 3.0 ports for 5G WAN tethering, the xHCI host driver
+negotiates USB 3.0 U1/U2 Link Power Management (LPM) states.
+
+Due to strict exit latency tolerances (tU1_Exit / tU2_Exit) on mobile device PHYs,
+the handset USB controller frequently fails link state resumption during
+sporadic packet pauses, triggering hardware errors in xHCI:
+- "device descriptor read/8, error -71" (EPROTO)
+- "device descriptor read/8, error -110" (ETIMEDOUT)
+- Repeated port resets and unexpected "USB disconnect" drops.
+
+This MAXNET stability patch:
+1. Inspects the USB device descriptor in usb_device_supports_lpm() and skips
+   U1/U2 LPM enablement for communication and wireless networking class devices
+   (CDC, RNDIS, NCM, and multi-function Android tethering interfaces).
+2. Keeps the SuperSpeed link permanently in active U0 state during tethering,
+   guaranteeing uninterrupted gigabit mobile WAN throughput without link drops.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+ drivers/usb/core/hub.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+--- a/drivers/usb/core/hub.c
++++ b/drivers/usb/core/hub.c
+@@ -4218,6 +4218,18 @@ static int usb_device_supports_lpm(struc
+ 	 * USB 3.0 devices support LPM, but sometimes their descriptors are
+ 	 * bogus...
+ 	 */
++	/* MAXNET Tethering Optimization by Mahendra Mali (Max):
++	 * Disable U1/U2 LPM for mobile tethering devices (COMM, WIRELESS, MISC)
++	 * to prevent PHY exit timeouts (errors -71, -110) and unexpected USB disconnects.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	if (udev->descriptor.bDeviceClass == USB_CLASS_COMM ||
++	    udev->descriptor.bDeviceClass == USB_CLASS_WIRELESS_CONTROLLER ||
++	    udev->descriptor.bDeviceClass == USB_CLASS_MISC ||
++	    (udev->actconfig && udev->actconfig->desc.bNumInterfaces > 0 &&
++	     udev->actconfig->interface[0]->cur_altsetting->desc.bInterfaceClass == USB_CLASS_COMM))
++		return 0;
++
+ 	if (udev->speed >= USB_SPEED_SUPER) {
+ 		if (udev->bos->ss_cap)
+ 			return 1;

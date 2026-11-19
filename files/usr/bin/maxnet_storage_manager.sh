@@ -64,24 +64,16 @@ EOF
 EOF
     done
 
-    # If no external drives mounted, provide fallback [Pendrive] share for local storage
+    # If no external drives mounted, only provide fallback share if user explicitly enabled samba
     if [ "$has_shares" -eq 0 ]; then
-        mkdir -p "$LEGACY_BASE"
-        if [ -z "$(ls -A "$LEGACY_BASE" 2>/dev/null)" ]; then
-            cat << 'INFO' > "$LEGACY_BASE/README_STORAGE.txt"
-MAXNET ENTERPRISE ROUTER - USB STORAGE & SMB
-============================================
-Status: Local fallback storage active (No external USB drive mounted).
+        samba_user_enabled=0
+        /etc/init.d/samba4 enabled 2>/dev/null && samba_user_enabled=1
+        if [ "$samba_user_enabled" -eq 1 ]; then
+            mkdir -p "$LEGACY_BASE"
+            cat << EOF >> "$SMB_CONF.tmp"
 
-To use high-speed external storage:
-1. Plug any USB 3.0 Pendrive, Hard Disk, or SSD into the router USB port.
-2. The router will automatically mount it here.
-INFO
-        fi
-        cat << EOF >> "$SMB_CONF.tmp"
-
-[Pendrive]
-	comment = Fast USB Storage (Pendrive)
+[Storage]
+	comment = Fast Router Storage
 	path = $LEGACY_BASE
 	browseable = yes
 	read only = no
@@ -89,6 +81,7 @@ INFO
 	create mask = 0777
 	directory mask = 0777
 EOF
+        fi
     fi
 
     mv "$SMB_CONF.tmp" "$SMB_CONF"
@@ -201,19 +194,8 @@ while true; do
     CURR_DISKS=$(echo "$CURR_DISKS" | xargs)
 
     if [ -z "$CURR_DISKS" ]; then
-        df_out=$(df -h "$LEGACY_BASE" 2>/dev/null | tail -n 1)
-        [ -z "$df_out" ] && df_out=$(df -h / 2>/dev/null | tail -n 1)
-        tot_sp=$(echo "$df_out" | awk '{print $2}')
-        used_sp=$(echo "$df_out" | awk '{print $3}')
-        free_sp=$(echo "$df_out" | awk '{print $4}')
-        used_pct=$(echo "$df_out" | awk '{print $5}' | tr -d '%')
-        [ -z "$tot_sp" ] && tot_sp="--"
-        [ -z "$free_sp" ] && free_sp="--"
-        LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | awk -F/ '{print $1}' | head -n 1)
-        [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
-        share_unc="\\\\${LAN_IP}\\Pendrive"
-        safe_unc=$(echo "$share_unc" | sed 's/\\/\\\\/g')
-        DISKS_JSON="[{\"partition\":\"local\",\"label\":\"Pendrive\",\"mount\":\"$LEGACY_BASE\",\"fs\":\"local\",\"total_space\":\"$tot_sp\",\"free_space\":\"$free_sp\",\"used_pct\":\"${used_pct:-0}\",\"share_name\":\"Pendrive\",\"share_path\":\"$safe_unc\"}]"
+        # No USB storage attached: return empty drives list (do not broadcast internal flash)
+        DISKS_JSON="[]"
     else
         DISKS_JSON="$DISKS_JSON]"
     fi

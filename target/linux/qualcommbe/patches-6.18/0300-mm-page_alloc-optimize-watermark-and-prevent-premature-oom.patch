@@ -1,0 +1,49 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Thu, 19 Nov 2026 22:30:00 +0530
+Subject: [PATCH] mm: page_alloc: disable watermark boosting and optimize watermark scale for low-memory routers
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+On 512MB embedded enterprise networking gateways (such as Qualcomm IPQ9574 /
+IPQ9554), Linux 6.18 kernel initializes watermark_boost_factor to 15000 (150%).
+When high-throughput network interfaces (Wi-Fi 6 160MHz ath11k, 5G USB tethering,
+and 2.5G SGMII ports) request order-1 and order-2 compound page allocations for
+sk_buff packets under memory fragmentation, boost_watermark() inflates the zone
+minimum watermark by over 24MB (reaching 40.9MB).
+
+Because managed RAM is ~442MB and over 380MB is actively utilized, any concurrent
+user-space allocation (such as Samba, DuFS, or ttyd) triggers premature
+out_of_memory kills even when 25-30MB of clean physical RAM remains available.
+
+This MAXNET memory optimization patch:
+1. Sets default watermark_boost_factor to 0, completely preventing watermark
+   inflation spikes and guaranteeing that all available memory remains accessible
+   to system daemons without premature OOM terminations.
+2. Tunes default watermark_scale_factor from 10 (0.1%) to 50 (0.5%), giving kswapd
+   smooth background reclaim headroom without stalling user processes.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+ mm/page_alloc.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -290,8 +290,14 @@
+ 
+-static int watermark_boost_factor __read_mostly = 15000;
+-static int watermark_scale_factor = 10;
++/* MAXNET Low-Memory VM Optimization by Mahendra Mali (Max):
++ * Disable aggressive watermark boosting on 512MB networking platforms to
++ * prevent premature OOM killing of network daemons, and scale watermark
++ * to 50 (0.5%) for smoother page reclaim headroom without memory exhaustion.
++ * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++ */
++static int watermark_boost_factor __read_mostly = 0;
++static int watermark_scale_factor = 50;
+ 
+ static void __setup_per_zone_wmarks(void)

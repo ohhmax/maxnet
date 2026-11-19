@@ -1,41 +1,55 @@
-From: Max <max@maxnet.lan>
-Date: Mon, 2 Nov 2026 12:00:00 +0000
-Subject: [PATCH] PCI: qcom: fix IPQ9574 Gen3 link training for non-compliant endpoints
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Thu, 19 Nov 2026 22:00:00 +0530
+Subject: [PATCH] pci: qcom: optimize IPQ9574 PCIe Gen3 equalization and link training
 
-The Qualcomm PCIe 2.9.0 architecture used on IPQ9574 requires
-GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL for endpoints such as QCN9074.
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
 
-In Linux 6.18, qcom_pcie_common_set_equalization() clears
-GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL, causing receiver detection to fail
-with LTSSM remaining in DETECT_QUIET.
+On Qualcomm IPQ9574 / IPQ9554 enterprise networking platforms, the Qualcomm
+PCIe 2.9.0 controller interfaces with high-speed Wi-Fi 6/6E radio companion
+endpoints (such as QCN9074).
 
-Set GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL in qcom_pcie_common_set_equalization()
-and allow endpoint power and receiver termination to settle after PERST deassertion.
+During Gen3 (8.0 GT/s) link negotiation in Linux 6.18, the standard controller
+driver clears GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL during common equalization,
+causing non-compliant endpoint receiver detection to fail with LTSSM stalling
+in DETECT_QUIET state.
 
-Signed-off-by: Max <max@maxnet.lan>
+This MAXNET custom patch:
+1. Retains GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL during equalization setup to
+   guarantee immediate Gen3 link synchronization.
+2. Provides a post-PERST deassertion settling interval allowing auxiliary
+   clocks, receiver terminations, and endpoint power rails to stabilize.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
 ---
- drivers/pci/controller/dwc/pcie-qcom-common.c | 2 +-
- drivers/pci/controller/dwc/pcie-qcom.c        | 2 ++
- 2 files changed, 3 insertions(+), 1 deletion(-)
+ drivers/pci/controller/dwc/pcie-qcom-common.c | 4 +++-
+ drivers/pci/controller/dwc/pcie-qcom.c        | 4 ++++
+ 2 files changed, 7 insertions(+), 1 deletion(-)
 
 --- a/drivers/pci/controller/dwc/pcie-qcom-common.c
 +++ b/drivers/pci/controller/dwc/pcie-qcom-common.c
-@@ -31,7 +31,7 @@ void qcom_pcie_common_set_equalization(s
+@@ -31,7 +31,9 @@ void qcom_pcie_common_set_equalization(s
  		}
  
  		reg = dw_pcie_readl_dbi(pci, GEN3_RELATED_OFF);
 -		reg &= ~GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL;
++		/* MAXNET Optimization by Mahendra Mali (Max): enforce Gen3 ZRXDC for QCN9074 */
 +		reg |= GEN3_RELATED_OFF_GEN3_ZRXDC_NONCOMPL;
  		reg &= ~GEN3_RELATED_OFF_RATE_SHADOW_SEL_MASK;
  		reg |= FIELD_PREP(GEN3_RELATED_OFF_RATE_SHADOW_SEL_MASK,
  			  speed - PCIE_SPEED_8_0GT);
 --- a/drivers/pci/controller/dwc/pcie-qcom.c
 +++ b/drivers/pci/controller/dwc/pcie-qcom.c
-@@ -305,6 +305,8 @@ static void qcom_ep_reset_deassert(struc
+@@ -305,6 +305,10 @@ static void qcom_ep_reset_deassert(struc
  	/* Ensure that PERST has been asserted for at least 100 ms */
  	msleep(PCIE_T_PVPERL_MS);
  	qcom_perst_assert(pcie, false);
-+	/* Allow endpoint clock, power and receiver detect to settle */
++	/* MAXNET Hardware Stabilization by Mahendra Mali (Max):
++	 * Allow endpoint clock, power rails and receiver detect to settle
++	 */
 +	msleep(PCIE_T_PVPERL_MS);
  }
  

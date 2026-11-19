@@ -25,10 +25,16 @@ start_service() {
     USER=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
     PASS=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
 
-    # Use mounted external filesystem if present; fallback to local storage if manually enabled
+    # Use mounted external filesystem if present; only fallback to local storage if user explicitly enabled it
     EXT_MOUNT=$(awk '($2 == "/mnt/pendrive" || $2 == "/mnt/storage" || $2 ~ /^\/mnt\/sd[a-z][0-9]*$/ || index($2, "/mnt/storage/") == 1) { print $2; exit }' /proc/mounts)
     if [ -n "$EXT_MOUNT" ] && [ -d "$EXT_MOUNT" ]; then
         PATH_DIR="$EXT_MOUNT"
+    else
+        # No USB storage drive connected: default to OFF unless user explicitly forced local storage
+        FORCE_LOCAL=$(jq -r '.force_local // false' "$CONF_FILE" 2>/dev/null)
+        if [ "$FORCE_LOCAL" != "true" ]; then
+            return 0
+        fi
     fi
 
     [ -z "$USER" ] && [ -n "$PASS" ] && USER="root"

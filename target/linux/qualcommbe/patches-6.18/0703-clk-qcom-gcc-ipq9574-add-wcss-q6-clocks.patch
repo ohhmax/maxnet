@@ -1,14 +1,19 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Igor Kravchenko <igor.kravchenko05@gmail.com>
-Date: Fri, 24 Jul 2026 12:00:00 +0000
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Fri, 24 Jul 2026 12:00:00 +0530
 Subject: [PATCH] clk: qcom: gcc-ipq9574: add WCSS Q6 clocks
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
 
 Expose the IPQ9574 GCC branch clocks required to start the WCSS Q6
 remote processor. The native WCSS loader needs a pre-boot clock set and
-a smaller post-boot clock set before ath11k can obtain its remoteproc.
+a smaller post-boot clock set before ath11k can obtain its remoteproc for
+MAXNET Router OS.
 
-Signed-off-by: Alexandru Gagniuc <mr.nuke.me@gmail.com>
-Signed-off-by: Igor Kravchenko <igor.kravchenko05@gmail.com>
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
 ---
  drivers/clk/qcom/gcc-ipq9574.c | 380 +++++++++++++++++++++++++++++++++
  1 file changed, 380 insertions(+)

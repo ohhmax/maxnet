@@ -1,0 +1,50 @@
+From: Mahendra Mali (Max) <max@maxnet.lan>
+Date: Thu, 19 Nov 2026 22:30:00 +0530
+Subject: [PATCH] net: ipv4: clamp default TCP rmem and wmem bounds to prevent socket buffer memory exhaustion
+
+================================================================================
+MAXNET High-Performance Kernel Engine & Hardware Architecture Optimization
+Engineered & Developed by Mahendra Mali (Max) for MAXNET Router OS
+Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
+================================================================================
+
+On memory-constrained embedded routing platforms (512MB RAM), default Linux
+TCP auto-tuning calculates max_rshare and max_wshare socket buffers based on
+total physical pages, allowing single TCP streams to balloon up to 16MB.
+
+When concurrent multi-gigabit connections run alongside local services
+(such as Samba, DuFS WebDAV, or Tailscale VPN tunnels), unconstrained socket
+memory buffers rapidly consume SLUB and page-allocator headroom, triggering
+aggressive direct reclaim and OOM kills.
+
+This MAXNET TCP acceleration patch:
+1. Clamps maximum default TCP receive buffer (sysctl_tcp_rmem[2]) and transmit
+   buffer (sysctl_tcp_wmem[2]) to 4MB (4,194,304 bytes).
+2. Maintains complete saturation of 2.5G/5G line rates (supporting >6 Gbps at
+   5ms RTT bandwidth-delay product) while strictly bounding total TCP kernel
+   footprint under high concurrent connection loads.
+
+Signed-off-by: Mahendra Mali (Max) <max@maxnet.lan>
+---
+ net/ipv4/tcp.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+--- a/net/ipv4/tcp.c
++++ b/net/ipv4/tcp.c
+@@ -4876,8 +4876,16 @@ void __init tcp_init(void)
+ 	init_net.ipv4.sysctl_tcp_rmem[0] = PAGE_SIZE;
+ 	init_net.ipv4.sysctl_tcp_rmem[1] = 131072;
+-	init_net.ipv4.sysctl_tcp_rmem[2] = max(131072, max_rshare);
++	/* MAXNET TCP Acceleration & Memory Guard by Mahendra Mali (Max):
++	 * Clamp maximum per-socket TCP memory buffer to 4MB (4194304 bytes)
++	 * to sustain full multi-gigabit routing without memory starvation.
++	 * Copyright (c) 2026 Mahendra Mali - Max. All Rights Reserved.
++	 */
++	init_net.ipv4.sysctl_tcp_rmem[2] = min_t(int, max(131072, max_rshare), 4194304);
+ 
+ 	init_net.ipv4.sysctl_tcp_wmem[0] = PAGE_SIZE;
+ 	init_net.ipv4.sysctl_tcp_wmem[1] = 16384;
+-	init_net.ipv4.sysctl_tcp_wmem[2] = max(65536, max_wshare);
++	init_net.ipv4.sysctl_tcp_wmem[2] = min_t(int, max(65536, max_wshare), 4194304);
+ 
+ 	init_net.ipv4.sysctl_tcp_comp_sack_delay_ns = NSEC_PER_MSEC;
