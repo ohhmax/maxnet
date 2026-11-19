@@ -79,9 +79,13 @@ fi
 for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog phone_telemetry ttyd; do
 	[ -x "/etc/init.d/$s" ] && /etc/init.d/"$s" enable 2>/dev/null && /etc/init.d/"$s" start 2>/dev/null || true
 done
-# Ensure Samba, Tailscale, Avahi, DBus are disabled at boot to conserve DDR4 RAM
+# Conserve DDR4 RAM by default, but preserve Tailscale if already configured
 [ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 disable 2>/dev/null || true
-[ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale disable 2>/dev/null || true
+if [ -s /etc/tailscale/tailscaled.state ]; then
+	[ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale enable 2>/dev/null && /etc/init.d/tailscale start 2>/dev/null || true
+else
+	[ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale disable 2>/dev/null || true
+fi
 [ -x /etc/init.d/dbus ] && /etc/init.d/dbus disable 2>/dev/null || true
 [ -x /etc/init.d/avahi-daemon ] && /etc/init.d/avahi-daemon disable 2>/dev/null || true
 

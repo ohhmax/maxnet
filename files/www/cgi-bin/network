@@ -157,9 +157,9 @@ if [ "$ACTION" = "set_wan_as_lan" ]; then
 
         brctl addif br-lan wan 2>/dev/null || true
         ip link set dev wan up 2>/dev/null || true
-        (/sbin/ifdown wan >/dev/null 2>&1; /sbin/ifup lan >/dev/null 2>&1; ubus call network reload >/dev/null 2>&1) &
-
         echo '{"status": "ok", "wan_as_lan": true, "message": "WAN port bridged into LAN (br-lan). WAN uplink disabled."}'
+        (sleep 1; /sbin/ifdown wan >/dev/null 2>&1) </dev/null >/dev/null 2>&1 &
+        exit 0
     else
         # OFF: Standard WAN uplink (Default)
         uci -q del_list "network.$dev_sec.ports=wan"
@@ -170,9 +170,9 @@ if [ "$ACTION" = "set_wan_as_lan" ]; then
         uci commit network
 
         brctl delif br-lan wan 2>/dev/null || true
-        (/sbin/ifup wan >/dev/null 2>&1; /sbin/ifup lan >/dev/null 2>&1; ubus call network reload >/dev/null 2>&1) &
-
         echo '{"status": "ok", "wan_as_lan": false, "message": "Standard WAN uplink restored. WAN port unbridged from LAN."}'
+        (sleep 1; /sbin/ifup wan >/dev/null 2>&1) </dev/null >/dev/null 2>&1 &
+        exit 0
     fi
     exit 0
 fi

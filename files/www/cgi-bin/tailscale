@@ -13,17 +13,16 @@ ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
 PREFS_FILE="/etc/tailscale_prefs.json"
 
 ensure_tailscale_daemon() {
-    command -v tailscale >/dev/null 2>&1 || return 1
-    if tailscale status --json 2>/dev/null | jq -e '.BackendState != null' >/dev/null 2>&1; then
+    if [ -S /var/run/tailscale/tailscaled.sock ]; then
+        [ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale enable >/dev/null 2>&1
         return 0
     fi
     [ -x /etc/init.d/tailscale ] || return 1
+    /etc/init.d/tailscale enable >/dev/null 2>&1
     /etc/init.d/tailscale start >/dev/null 2>&1 || return 1
     tries=0
     while [ "$tries" -lt 10 ]; do
-        if tailscale status --json 2>/dev/null | jq -e '.BackendState != null' >/dev/null 2>&1; then
-            return 0
-        fi
+        [ -S /var/run/tailscale/tailscaled.sock ] && return 0
         sleep 1
         tries=$((tries + 1))
     done
@@ -68,6 +67,7 @@ if [ "$ACTION" = "up" ]; then
         echo '{"status":"error","message":"Tailscale daemon could not be started. Check that the package and init service are installed."}'
         exit 0
     fi
+    [ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale enable >/dev/null 2>&1
     KEY=$(echo "$POST_DATA" | jq -r '.authkey // empty' 2>/dev/null)
     SHARE_LAN=$(echo "$POST_DATA" | jq -r '.share_lan // empty' 2>/dev/null)
     EXIT_NODE=$(echo "$POST_DATA" | jq -r '.exit_node // empty' 2>/dev/null)
@@ -87,7 +87,7 @@ if [ "$ACTION" = "up" ]; then
     esac
     [ "${#HOSTNAME}" -le 63 ] || { echo '{"status":"error","message":"Tailscale hostname is too long"}'; exit 0; }
 
-    CUR_URL=$(tailscale status --json 2>/dev/null | jq -r '.AuthURL // empty' 2>/dev/null)
+    CUR_URL=$(curl -s --max-time 2 --unix-socket /var/run/tailscale/tailscaled.sock http://local-tailscaled.sock/localapi/v0/status 2>/dev/null | jq -r '.AuthURL // empty' 2>/dev/null)
     if [ -z "$CUR_URL" ]; then
         : > /tmp/ts_up.log
         rm -f /tmp/ts_up.exit
@@ -98,7 +98,6 @@ if [ "$ACTION" = "up" ]; then
             set -- up "--authkey=$KEY" "--hostname=$HOSTNAME" "--advertise-routes=$ROUTES" "--advertise-exit-node=$EXIT_FLAG" "--accept-routes=$ACCEPT_FLAG"
             [ "$(echo "$POST_DATA" | jq -r '.ssh // empty' 2>/dev/null)" = true ] && set -- "$@" --ssh=true || set -- "$@" --ssh=false
         else
-            # Keep the router's existing Tailscale settings; the default login flow needs no reset or flag overrides.
             set -- up
         fi
         tailscale "$@" > /tmp/ts_up.log 2>&1 </dev/null &
@@ -114,6 +113,7 @@ fi
 
 if [ "$ACTION" = "down" ]; then
     tailscale down >/dev/null 2>&1
+    [ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale disable >/dev/null 2>&1
     echo '{"status": "ok", "message": "Tailscale disconnected"}'
     exit 0
 fi
@@ -121,6 +121,7 @@ fi
 if [ "$ACTION" = "logout" ]; then
     tailscale logout >/dev/null 2>&1
     tailscale down >/dev/null 2>&1
+    [ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale disable >/dev/null 2>&1
     rm -f /tmp/ts_up.log 2>/dev/null
     echo '{"status": "ok", "message": "Tailscale logged out"}'
     exit 0
@@ -137,13 +138,18 @@ if ! command -v tailscale >/dev/null 2>&1; then
     exit 0
 fi
 
-DEBUG_PREFS=$(tailscale debug prefs 2>/dev/null)
-ACTUAL_ROUTES=$(echo "$DEBUG_PREFS" | jq -r '.AdvertiseRoutes // []' 2>/dev/null)
-HAS_LAN=$(echo "$ACTUAL_ROUTES" | grep -q "10.0.0.0/24" && echo true || echo false)
-HAS_EXIT=$(echo "$DEBUG_PREFS" | jq -r '.AdvertiseExitNode // false' 2>/dev/null)
-ACCEPT_R=$(echo "$DEBUG_PREFS" | jq -r '.RouteAll // true' 2>/dev/null)
+if [ -f "$PREFS_FILE" ]; then
+    HAS_LAN=$(jq -r '.share_lan // false' "$PREFS_FILE" 2>/dev/null)
+    HAS_EXIT=$(jq -r '.exit_node // false' "$PREFS_FILE" 2>/dev/null)
+    ACCEPT_R=$(jq -r '.accept_routes // true' "$PREFS_FILE" 2>/dev/null)
+else
+    HAS_LAN="false"
+    HAS_EXIT="false"
+    ACCEPT_R="true"
+fi
 
-TS_STATUS=$(tailscale status --json 2>/dev/null)
+TS_STATUS=$(curl -s --max-time 2 --unix-socket /var/run/tailscale/tailscaled.sock http://local-tailscaled.sock/localapi/v0/status 2>/dev/null)
+[ -z "$TS_STATUS" ] && TS_STATUS=$(timeout 2 tailscale status --json 2>/dev/null)
 AUTH_URL=""
 if [ -f "/tmp/ts_up.log" ]; then
     AUTH_URL=$(grep -o 'https://login\.tailscale\.com/a/[^ "]*' /tmp/ts_up.log | head -n1)

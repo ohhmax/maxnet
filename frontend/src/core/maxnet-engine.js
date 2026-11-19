@@ -14162,10 +14162,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
 
     async function toggleWanAsLan(enabled) {
-      const toggle1 = document.getElementById('wanAsLanToggle');
-      const toggle2 = document.getElementById('netWanAsLanToggle');
-      if (toggle1) toggle1.checked = enabled;
-      if (toggle2) toggle2.checked = enabled;
+      const toggle = document.getElementById('netWanAsLanToggle');
+      if (toggle) toggle.checked = enabled;
 
       updateWanAsLanUI(enabled);
 
@@ -14189,14 +14187,12 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           if (typeof showToast === 'function') {
             showToast('Failed to switch WAN mode: ' + (resp.message || 'Error'), 'error');
           }
-          if (toggle1) toggle1.checked = !enabled;
-          if (toggle2) toggle2.checked = !enabled;
+          if (toggle) toggle.checked = !enabled;
           updateWanAsLanUI(!enabled);
         }
       } catch (err) {
         if (typeof showToast === 'function') showToast('Network error: ' + err.message, 'error');
-        if (toggle1) toggle1.checked = !enabled;
-        if (toggle2) toggle2.checked = !enabled;
+        if (toggle) toggle.checked = !enabled;
         updateWanAsLanUI(!enabled);
       }
     }
@@ -14207,17 +14203,11 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         badge.textContent = enabled ? 'BRIDGED TO LAN' : 'STANDALONE WAN';
         badge.className = 'card-badge ' + (enabled ? 'sky' : 'gray');
       }
-      const sub = document.getElementById('disp_wan_as_lan_sub');
-      if (sub) {
-        sub.textContent = enabled
-          ? 'WAN port is bridged into br-lan (10.0.0.1/24) as 5th switch port. WAN uplink routing disabled.'
-          : 'Convert physical WAN port into a 5th Gigabit LAN switch port (bridged into br-lan). Default: Disabled (WAN Uplink).';
-      }
       const netSub = document.getElementById('disp_net_wan_as_lan_sub');
       if (netSub) {
         netSub.textContent = enabled
-          ? 'WAN port is currently bridged into LAN (br-lan) as 5th Gigabit LAN port.'
-          : 'Convert physical WAN port into 5th Gigabit LAN switch port';
+          ? 'WAN port is bridged into br-lan (10.0.0.1/24) as 5th switch port. WAN uplink routing disabled.'
+          : 'Convert physical WAN port into a 5th Gigabit LAN switch port (bridged into br-lan). Default: Disabled (WAN Uplink).';
       }
       const protoBox = document.getElementById('wanProtocolSection');
       if (protoBox) {
@@ -14236,10 +14226,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const wan = data.wan || {};
 
         const isWanAsLan = !!(data.wan_as_lan || (data.wan && data.wan.as_lan));
-        const toggle1 = document.getElementById('wanAsLanToggle');
-        const toggle2 = document.getElementById('netWanAsLanToggle');
-        if (toggle1) toggle1.checked = isWanAsLan;
-        if (toggle2) toggle2.checked = isWanAsLan;
+        const toggle = document.getElementById('netWanAsLanToggle');
+        if (toggle) toggle.checked = isWanAsLan;
         updateWanAsLanUI(isWanAsLan);
 
         if (document.getElementById('wanProtoSelect')) {

@@ -2,22 +2,29 @@
 printf "Content-Type: application/json\r\n\r\n"
 
 SMB_USER=$(uci -q get samba4.pendrive.users || echo "max")
-LAN_IP=$(uci -q get network.lan.ipaddr || echo "10.0.0.1")
+LAN_IP=$(uci -q get network.lan.ipaddr | awk '{print $1}')
 [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
 SMB_IP="$LAN_IP"
 SYS_HOST=$(uci -q get system.@system[0].hostname || echo "Maxnet-Gateway")
 [ -z "$SYS_HOST" ] && SYS_HOST="Maxnet-Gateway"
 SMB_HOST="$SYS_HOST"
 
-# Check if pendrive is mounted
+# Check if pendrive is mounted or fallback storage available
 MOUNTED=false
 FREE_SPACE="--"
 TOTAL_SPACE="--"
 DEV_NAME="--"
-if grep -qs "/mnt/pendrive" /proc/mounts; then
+if grep -qs "/mnt/pendrive" /proc/mounts || grep -qs "/mnt/storage" /proc/mounts; then
     MOUNTED=true
     DF_OUT=$(df -h /mnt/pendrive 2>/dev/null | tail -n1)
+    [ -z "$DF_OUT" ] && DF_OUT=$(df -h /mnt/storage 2>/dev/null | tail -n1)
     DEV_NAME=$(echo "$DF_OUT" | awk '{print $1}')
+    TOTAL_SPACE=$(echo "$DF_OUT" | awk '{print $2}')
+    FREE_SPACE=$(echo "$DF_OUT" | awk '{print $4}')
+else
+    DF_OUT=$(df -h /mnt/pendrive 2>/dev/null | tail -n1)
+    [ -z "$DF_OUT" ] && DF_OUT=$(df -h / 2>/dev/null | tail -n1)
+    DEV_NAME="Fallback Storage"
     TOTAL_SPACE=$(echo "$DF_OUT" | awk '{print $2}')
     FREE_SPACE=$(echo "$DF_OUT" | awk '{print $4}')
 fi
@@ -34,30 +41,34 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
     if [ "$ACTION" = "toggle" ]; then
         ENABLE_REQ=$(echo "$POST_DATA" | jq -r ".enable // empty" 2>/dev/null)
         if [ "$ENABLE_REQ" = "true" ]; then
-            /etc/init.d/samba4 start >/dev/null 2>&1
             /etc/init.d/samba4 enable >/dev/null 2>&1
+            /usr/bin/maxnet_storage_manager.sh --update >/dev/null 2>&1 || true
+            /etc/init.d/samba4 start >/dev/null 2>&1
         elif [ "$ENABLE_REQ" = "false" ]; then
             /etc/init.d/samba4 stop >/dev/null 2>&1
             /etc/init.d/samba4 disable >/dev/null 2>&1
+            killall smbd 2>/dev/null || true
         else
             if pgrep smbd >/dev/null; then
                 /etc/init.d/samba4 stop >/dev/null 2>&1
                 /etc/init.d/samba4 disable >/dev/null 2>&1
+                killall smbd 2>/dev/null || true
             else
-                /etc/init.d/samba4 start >/dev/null 2>&1
                 /etc/init.d/samba4 enable >/dev/null 2>&1
+                /usr/bin/maxnet_storage_manager.sh --update >/dev/null 2>&1 || true
+                /etc/init.d/samba4 start >/dev/null 2>&1
             fi
         fi
         sleep 1
         RUNNING=false
         pgrep smbd >/dev/null && RUNNING=true
-        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state updated\"}" "$RUNNING"
+        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state updated\"}\n" "$RUNNING"
         exit 0
     fi
 
     if [ "$ACTION" = "set" ]; then
         if [ -z "$NEW_USER" ] || [ -z "$NEW_PASS" ]; then
-            printf "{\"status\":\"error\",\"message\":\"Username and password cannot be empty\"}"
+            printf "{\"status\":\"error\",\"message\":\"Username and password cannot be empty\"}\n"
             exit 0
         fi
 
@@ -74,7 +85,7 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
         uci commit samba4
         /etc/init.d/samba4 restart >/dev/null 2>&1
 
-        printf "{\"status\":\"ok\",\"message\":\"SMB credentials updated successfully for user %s\"}" "$NEW_USER"
+        printf "{\"status\":\"ok\",\"message\":\"SMB credentials updated successfully for user %s\"}\n" "$NEW_USER"
         exit 0
     fi
 fi
@@ -86,18 +97,20 @@ if [ "$REQUEST_METHOD" = "GET" ]; then
         if pgrep smbd >/dev/null; then
             /etc/init.d/samba4 stop >/dev/null 2>&1
             /etc/init.d/samba4 disable >/dev/null 2>&1
+            killall smbd 2>/dev/null || true
         else
-            /etc/init.d/samba4 start >/dev/null 2>&1
             /etc/init.d/samba4 enable >/dev/null 2>&1
+            /usr/bin/maxnet_storage_manager.sh --update >/dev/null 2>&1 || true
+            /etc/init.d/samba4 start >/dev/null 2>&1
         fi
         sleep 1
         RUNNING=false
         pgrep smbd >/dev/null && RUNNING=true
-        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state toggled\"}" "$RUNNING"
+        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state toggled\"}\n" "$RUNNING"
         exit 0
     fi
 fi
 
 # Default response
-printf "{\"status\":\"ok\",\"username\":\"%s\",\"share_name\":\"Pendrive\",\"share_path\":\"/mnt/pendrive\",\"share_ip\":\"%s\",\"hostname\":\"%s\",\"mounted\":%s,\"smb_running\":%s,\"device\":\"%s\",\"total_space\":\"%s\",\"free_space\":\"%s\"}" \
+printf "{\"status\":\"ok\",\"username\":\"%s\",\"share_name\":\"Pendrive\",\"share_path\":\"/mnt/pendrive\",\"share_ip\":\"%s\",\"hostname\":\"%s\",\"mounted\":%s,\"smb_running\":%s,\"device\":\"%s\",\"total_space\":\"%s\",\"free_space\":\"%s\"}\n" \
   "$SMB_USER" "$SMB_IP" "$SMB_HOST" "$MOUNTED" "$RUNNING" "$DEV_NAME" "$TOTAL_SPACE" "$FREE_SPACE"

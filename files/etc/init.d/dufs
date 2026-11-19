@@ -25,13 +25,11 @@ start_service() {
     USER=$(jq -r '.user // empty' "$CONF_FILE" 2>/dev/null)
     PASS=$(jq -r '.pass // empty' "$CONF_FILE" 2>/dev/null)
 
-    # Only expose an actual mounted external filesystem; never create local storage as a fallback.
+    # Use mounted external filesystem if present; fallback to local storage if manually enabled
     EXT_MOUNT=$(awk '($2 == "/mnt/pendrive" || $2 == "/mnt/storage" || $2 ~ /^\/mnt\/sd[a-z][0-9]*$/ || index($2, "/mnt/storage/") == 1) { print $2; exit }' /proc/mounts)
-    if [ -z "$EXT_MOUNT" ] || [ ! -d "$EXT_MOUNT" ]; then
-        logger -t dufs 'Not starting: no external filesystem is mounted'
-        return 0
+    if [ -n "$EXT_MOUNT" ] && [ -d "$EXT_MOUNT" ]; then
+        PATH_DIR="$EXT_MOUNT"
     fi
-    PATH_DIR="$EXT_MOUNT"
 
     [ -z "$USER" ] && [ -n "$PASS" ] && USER="root"
 
@@ -63,7 +61,7 @@ start_service() {
         cat << 'INFO' > "$PATH_DIR/README_USB_STORAGE.txt"
 MAXNET ENTERPRISE ROUTER - USB STORAGE & WEBDAV
 ================================================
-Status: No external USB flash drive or hard drive currently mounted.
+Status: Fallback local storage active (No external USB drive mounted).
 
 To use high-speed network storage:
 1. Plug any USB 3.0 Pendrive, Hard Disk, or SSD into the router USB port.
