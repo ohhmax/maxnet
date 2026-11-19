@@ -147,15 +147,7 @@ while true; do
         fi
     done
 
-    # Self-healing USB VBUS recovery: if pendrive is stuck in descriptor timeout
-    if [ -z "$DEV_LIST" ] && dmesg | tail -n 25 | grep -qs "unable to enumerate USB device"; then
-        [ -d /sys/class/gpio/gpio576 ] || echo 576 > /sys/class/gpio/export 2>/dev/null
-        echo out > /sys/class/gpio/gpio576/direction 2>/dev/null
-        echo 0 > /sys/class/gpio/gpio576/value 2>/dev/null
-        sleep 2
-        echo 1 > /sys/class/gpio/gpio576/value 2>/dev/null
-        sleep 3
-    fi
+
 
     for part in $DEV_LIST; do
         [ -b "$part" ] || continue

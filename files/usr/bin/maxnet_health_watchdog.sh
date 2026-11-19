@@ -90,16 +90,15 @@ while [ "$CYCLE" -lt "$MAX_CYCLES" ]; do
     PROC_MONITOR=$(pgrep -f maxnet_alert_monitor.sh >/dev/null && echo "OK" || echo "DOWN")
     PROC_DNSMASQ=$(pgrep dnsmasq >/dev/null && echo "OK" || echo "DOWN")
 
-    # Protect essential resident control-plane services, but never uhttpd/dropbear:
-    # their CGI/SSH children inherit oom_score_adj and must remain reclaimable.
-    for p in procd ubusd netifd dnsmasq hostapd wpa_supplicant odhcpd; do
+    # Protect essential resident control-plane services including uhttpd and dropbear
+    for p in procd ubusd netifd dnsmasq hostapd wpa_supplicant odhcpd uhttpd dropbear; do
         for pid in $(pidof "$p" 2>/dev/null); do
             echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
         done
     done
-    for p in tailscaled smbd dufs uhttpd dropbear; do
+    for p in tailscaled smbd dufs; do
         for pid in $(pidof "$p" 2>/dev/null); do
-            echo 250 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+            echo 200 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
         done
     done
 
