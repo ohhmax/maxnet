@@ -13,8 +13,9 @@ case "$ACTION" in
         esac
 
         # Ensure kernel modules are loaded
-        lsmod | grep -q usb_storage || insmod /lib/modules/6.18.60/usb-storage.ko 2>/dev/null
-        lsmod | grep -q fuse || insmod /lib/modules/6.18.60/fuse.ko 2>/dev/null
+        KVER=$(uname -r 2>/dev/null)
+        lsmod | grep -q usb_storage || insmod "/lib/modules/${KVER}/usb-storage.ko" 2>/dev/null || modprobe usb-storage 2>/dev/null || true
+        lsmod | grep -q fuse || insmod "/lib/modules/${KVER}/fuse.ko" 2>/dev/null || modprobe fuse 2>/dev/null || true
 
         mkdir -p /mnt/pendrive
 

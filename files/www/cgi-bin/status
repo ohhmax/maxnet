@@ -851,7 +851,7 @@ cat << JSON
   "router": {
     "hostname": "$(uci get system.@system[0].hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")",
     "model": "Jio AX6000 Qualcomm IPQ9574",
-    "kernel": "Linux 6.18.60 MAXNET",
+    "kernel": "Linux $(uname -r 2>/dev/null || echo "6.18") MAXNET",
     "uptime": "${UPTIME_FMT}",
     "uptime_seconds": ${UPTIME_SEC:-0},
     "load_avg": ["${LOAD_1}", "${LOAD_5}", "${LOAD_15}"],

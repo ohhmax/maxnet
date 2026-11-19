@@ -50,7 +50,8 @@ done
 ) &
 
 # Storage drivers and pendrive auto-mount
-insmod /lib/modules/6.18.60/usb-storage.ko 2>/dev/null
-insmod /lib/modules/6.18.60/fuse.ko 2>/dev/null
+KVER=$(uname -r 2>/dev/null)
+insmod "/lib/modules/${KVER}/usb-storage.ko" 2>/dev/null || modprobe usb-storage 2>/dev/null || true
+insmod "/lib/modules/${KVER}/fuse.ko" 2>/dev/null || modprobe fuse 2>/dev/null || true
 
 exit 0

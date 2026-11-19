@@ -16,7 +16,8 @@ PREV_DISKS_FILE="/tmp/storage_prev_disks.tmp"
 mkdir -p "$STORAGE_BASE" "$LEGACY_BASE"
 
 # Ensure FUSE kernel module is loaded for high-speed NTFS
-lsmod | grep -q fuse || insmod /lib/modules/6.18.60/fuse.ko 2>/dev/null || modprobe fuse 2>/dev/null
+KVER=$(uname -r 2>/dev/null)
+lsmod | grep -q fuse || insmod "/lib/modules/${KVER}/fuse.ko" 2>/dev/null || modprobe fuse 2>/dev/null || true
 
 update_samba_shares() {
     # Generate base smb.conf
