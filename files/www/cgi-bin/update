@@ -126,7 +126,8 @@ if [ "$ACTION" = "upload" ] || [ "$ACTION" = "upload_bin" ]; then
     fi
 
     CALC_SUM=$(sha256sum "$UPLOAD_DEST" 2>/dev/null | awk '{print $1}')
-    FILE_SZ=$(stat -c %s "$UPLOAD_DEST" 2>/dev/null || echo 0)
+    FILE_SZ=$(wc -c < "$UPLOAD_DEST" 2>/dev/null | tr -d ' \r\n')
+    [ -z "$FILE_SZ" ] && FILE_SZ=0
 
     # 2. Write initial status for progress poller
     rm -f /tmp/ota_status.json
@@ -152,7 +153,9 @@ fi
 # Refresh model update json if missing or older than 180s
 FETCH_NOW=1
 if [ -s "$UPDATES_FILE" ] && jq -e . "$UPDATES_FILE" >/dev/null 2>&1; then
-    AGE=$(( $(date +%s) - $(stat -c %Y "$UPDATES_FILE" 2>/dev/null || echo 0) ))
+    FILE_TIME=$(date -r "$UPDATES_FILE" +%s 2>/dev/null || stat -c %Y "$UPDATES_FILE" 2>/dev/null || echo 0)
+    [ -z "$FILE_TIME" ] && FILE_TIME=0
+    AGE=$(( $(date +%s) - FILE_TIME ))
     [ "$AGE" -lt 180 ] && FETCH_NOW=0
 fi
 
