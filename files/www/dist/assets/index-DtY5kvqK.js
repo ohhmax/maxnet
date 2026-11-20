@@ -217,18 +217,8 @@
       </div>
     </div>
   </div>
-          <a id="ramBootItbDownloadLink" href="#" target="_blank" class="mh-btn btn-ghost" style="width:100%; justify-content:center; padding:8px 14px; font-size:11.5px; font-weight:700; text-decoration:none; margin-top:4px;">
-            Download .itb Binary (<span id="ramBootItbSize">34.16 MB</span>)
-          </a>
-        </div>
-      </div>
 
-      <div class="android-modal-footer">
-        <button type="button" class="mh-btn btn-ghost" onclick="closeRamBootModal()" style="padding:7px 18px; font-size:12px; font-weight:700;">CLOSE</button>
-      </div>
-    </div>
-  </div>
-<!-- ADB SMS MESSAGES MODAL -->
+  <!-- ADB SMS MESSAGES MODAL -->
   <div id="adbSmsModalOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeAdbSmsModal()">
     <div class="android-modal-card" style="max-width:540px; width:92%; max-height:85vh; display:flex; flex-direction:column;">
       <div class="android-modal-header" style="flex-shrink:0;">
