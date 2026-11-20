@@ -108,6 +108,7 @@ import {
   handleRestoreFileChosen,
   uploadRestoreArchive,
   clearDnsAndConntrack,
+  toggleAutoUpdate,
   checkLatestFirmwareUpdate,
   onManualFirmwareSelected,
   clearSelectedFirmwareFile,
@@ -325,6 +326,7 @@ if (typeof window !== 'undefined') {
   window.handleRestoreFileChosen = handleRestoreFileChosen;
   window.uploadRestoreArchive = uploadRestoreArchive;
   window.clearDnsAndConntrack = clearDnsAndConntrack;
+  window.toggleAutoUpdate = toggleAutoUpdate;
   window.checkLatestFirmwareUpdate = checkLatestFirmwareUpdate;
   window.switchLogType = switchLogType;
   window.refreshLogViewer = refreshLogViewer;
@@ -526,6 +528,7 @@ if (typeof window !== 'undefined') {
     handleRestoreFileChosen,
     uploadRestoreArchive,
     clearDnsAndConntrack,
+    toggleAutoUpdate,
     checkLatestFirmwareUpdate,
     onManualFirmwareSelected,
     clearSelectedFirmwareFile,
@@ -660,6 +663,7 @@ export {
   handleRestoreFileChosen,
   uploadRestoreArchive,
   clearDnsAndConntrack,
+  toggleAutoUpdate,
   checkLatestFirmwareUpdate,
   onManualFirmwareSelected,
   clearSelectedFirmwareFile,

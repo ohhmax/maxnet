@@ -123,7 +123,9 @@ if [ -z "$EXPECTED_SUM" ]; then
 fi
 
 ACTUAL_SUM=$(sha256sum "$DL_FILE" 2>/dev/null | awk '{print $1}')
-if [ -z "$ACTUAL_SUM" ] || [ "$EXPECTED_SUM" != "$ACTUAL_SUM" ]; then
+EXP_LOWER=$(echo "$EXPECTED_SUM" | tr 'A-Z' 'a-z' | tr -d ' \r\n\t')
+ACT_LOWER=$(echo "$ACTUAL_SUM" | tr 'A-Z' 'a-z' | tr -d ' \r\n\t')
+if [ -z "$ACT_LOWER" ] || [ "$EXP_LOWER" != "$ACT_LOWER" ]; then
     set_status "error" 0 "Cryptographic integrity failure: SHA-256 mismatch (expected $EXPECTED_SUM, got $ACTUAL_SUM). Aborting flash." 0 0
     rm -f "$DL_FILE"
     exit 1

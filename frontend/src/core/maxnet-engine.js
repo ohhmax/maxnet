@@ -17911,6 +17911,20 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }, 1000);
     }
 
+    async function toggleAutoUpdate(enabled) {
+      try {
+        const res = await apiFetch(`/cgi-bin/update?action=set_auto_update&enabled=${enabled ? 1 : 0}`);
+        const data = await res.json();
+        if (data && data.status === 'ok') {
+          showToast(enabled ? 'Auto update enabled' : 'Auto update disabled', 'info');
+          localStorage.setItem('maxnet_auto_update', enabled ? '1' : '0');
+        }
+      } catch (e) {
+        showToast('Failed to update auto-update setting', 'error');
+      }
+    }
+    window.toggleAutoUpdate = toggleAutoUpdate;
+
     async function checkLatestFirmwareUpdate() {
       const btn = document.getElementById('btnCheckUpdate');
       const icon = document.getElementById('iconCheckUpdate');
@@ -17949,6 +17963,12 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           _lastFirmwareUpdateData = updateData;
           window._lastFirmwareUpdateData = updateData;
 
+          // Sync auto update toggle if present
+          const autoUpdToggle = document.getElementById('autoUpdateToggle');
+          if (autoUpdToggle && updateData && typeof updateData.auto_update === 'boolean') {
+            autoUpdToggle.checked = updateData.auto_update;
+          }
+
           // Populate dedicated acc-firmware panel if present
           const fwBadge = document.getElementById('fwCurrentVerBadge');
           const fwModel = document.getElementById('fwModelVal');
@@ -17980,14 +18000,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           if (fwSize) fwSize.textContent = (updateData && updateData.size) ? ((updateData.size / 1048576).toFixed(2) + ' MB') : '29.40 MB';
           if (fwSha) fwSha.textContent = (updateData && updateData.sha256) ? `${updateData.sha256.substring(0, 16)}...${updateData.sha256.substring(updateData.sha256.length - 8)}` : 'Verified via Release Manifest';
 
+          if (mainLbl) {
+            mainLbl.textContent = 'Firmware Update';
+            mainLbl.style.color = 'var(--text-main)';
+          }
+
           if (updateAvailable && updateData) {
             const latVer = updateData.latest || 'v2.2.48-b48';
             const modName = updateData.model || 'JioRouter AX6000';
 
-            if (mainLbl) {
-              mainLbl.textContent = 'Firmware Update Available';
-              mainLbl.style.color = '#38bdf8';
-            }
             if (pulseEl) {
               pulseEl.style.background = '#38bdf8';
               pulseEl.style.boxShadow = '0 0 10px #38bdf8';
@@ -17995,14 +18016,14 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
             if (rowUpgrade) rowUpgrade.style.display = 'flex';
             if (fwStatusSub) {
-              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(updateData.current || 'v2.2.47-b47')}</strong> &bull; Target: <strong id="fwLatestVerVal" style="font-weight:700; color:#38bdf8; font-family:var(--font-mono);">${escapeHtml(latVer)}</strong> &bull; <span>${escapeHtml(modName)}</span>`;
+              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(updateData.current || 'v2.2.47-b47')}</strong> &bull; <span style="color:#38bdf8; font-weight:600;">Update ${escapeHtml(latVer)} available</span>`;
             }
 
             const sysSub = document.getElementById('fwSysupgradeSub');
             if (sysSub) {
               const szStr = updateData.size ? ((updateData.size / 1048576).toFixed(2) + ' MB') : '29.40 MB';
               const titleStr = updateData.title || ('MAXNET ' + latVer);
-              sysSub.innerHTML = `<strong>${escapeHtml(titleStr)}</strong> (${szStr}) &bull; Tested &amp; Approved`;
+              sysSub.innerHTML = `<strong>${escapeHtml(titleStr)}</strong> (${szStr})`;
             }
 
             if (pill) { pill.className = 'setting-pill pill-cyan'; pill.textContent = `UPDATE: ${latVer}`; }
@@ -18018,7 +18039,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
             const btnDirect = document.getElementById('btnFwFlashDirect');
             if (btnDirect) {
-              btnDirect.textContent = `UPGRADE TO ${latVer}`;
+              btnDirect.textContent = `UPDATE NOW`;
               btnDirect.classList.add('btn-pulse');
               btnDirect.onclick = () => openFirmwareFlashModal(updateData);
             }
@@ -18031,7 +18052,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
                 dispatchAlertNotification({
                   id: alertId,
                   title: `MAXNET Update Available (${latVer})`,
-                  message: `New firmware ${updateData.title || latVer} is approved and ready for installation. Tap to review & flash.`,
+                  message: `New firmware ${updateData.title || latVer} is ready for installation. Tap to review & flash.`,
                   level: 'info',
                   event_type: 'system_update',
                   action: () => openFirmwareFlashModal(updateData)
@@ -18042,10 +18063,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
             const curVer = (updateData && updateData.current) || 'v2.2.47-b47';
             const modName = (updateData && updateData.model) || 'JioRouter AX6000';
 
-            if (mainLbl) {
-              mainLbl.textContent = 'Router is Up to Date';
-              mainLbl.style.color = '#10b981';
-            }
             if (pulseEl) {
               pulseEl.style.background = '#10b981';
               pulseEl.style.boxShadow = '0 0 8px #10b981';
@@ -18053,7 +18070,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
             if (rowUpgrade) rowUpgrade.style.display = 'none';
             if (fwStatusSub) {
-              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(curVer)}</strong> &bull; <span>${escapeHtml(modName)}</span>`;
+              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(curVer)}</strong> &bull; <span style="color:#10b981; font-weight:600;">Router is up to date</span>`;
             }
 
             if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = `${curVer} UP TO DATE`; }
@@ -18091,63 +18108,35 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       _selectedManualFwFile = file;
       _manualFwVerification = { ext: false, magic: false, model: false, sha: false, hashHex: '' };
 
-      const dropzone = document.getElementById('fwFileDropzone');
-      const container = document.getElementById('fwSelectedContainer');
-      const dispName = document.getElementById('dispFwSelectedName');
-      const dispSize = document.getElementById('dispFwSelectedSize');
-      const btnSubmit = document.getElementById('btnManualFlashSubmit');
-      const overallStatus = document.getElementById('fwVerifyOverallStatus');
+      const dispSub = document.getElementById('dispFwFileSub');
+      const checkIcon = document.getElementById('dispFwFileCheckIcon');
+      const arrowIcon = document.getElementById('dispFwFileArrow');
+      const actionBox = document.getElementById('manualFwActionBox');
 
-      const chkExtIcon = document.getElementById('chkFwExtIcon');
-      const chkExtText = document.getElementById('chkFwExtText');
-      const chkMagicIcon = document.getElementById('chkFwMagicIcon');
-      const chkMagicText = document.getElementById('chkFwMagicText');
-      const chkModelIcon = document.getElementById('chkFwModelIcon');
-      const chkModelText = document.getElementById('chkFwModelText');
-      const chkShaIcon = document.getElementById('chkFwShaIcon');
-      const chkShaText = document.getElementById('chkFwShaText');
+      const tickSvg = `<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:#10b981; stroke-width:3;"><polyline points="20 6 9 17 4 12"/></svg>`;
+      const crossSvg = `<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:#ef4444; stroke-width:3;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+      const waitSpinner = `<span class="m-spinner" style="width:14px; height:14px; display:inline-block;"></span>`;
 
-      if (dropzone) dropzone.style.display = 'none';
-      if (container) container.style.display = 'flex';
-      if (dispName) dispName.textContent = file.name;
-      if (dispSize) dispSize.textContent = `(${(file.size / 1048576).toFixed(2)} MB)`;
-
-      if (btnSubmit) {
-        btnSubmit.disabled = true;
-        btnSubmit.style.opacity = '0.5';
-        btnSubmit.style.cursor = 'not-allowed';
-        btnSubmit.style.background = '';
-        btnSubmit.style.borderColor = '';
+      if (arrowIcon) arrowIcon.style.display = 'none';
+      if (checkIcon) {
+        checkIcon.style.display = 'inline-flex';
+        checkIcon.style.background = 'rgba(255,255,255,0.08)';
+        checkIcon.innerHTML = waitSpinner;
       }
-
-      if (overallStatus) {
-        overallStatus.textContent = 'Verifying...';
-        overallStatus.style.color = '#eab308';
-      }
-
-      const tickSvg = `<svg viewBox="0 0 24 24" style="width:12px; height:12px; fill:none; stroke:#10b981; stroke-width:3;"><polyline points="20 6 9 17 4 12"/></svg>`;
-      const crossSvg = `<svg viewBox="0 0 24 24" style="width:12px; height:12px; fill:none; stroke:#ef4444; stroke-width:3;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-      const waitSpinner = `<span class="m-spinner" style="width:11px; height:11px; display:inline-block;"></span>`;
-
-      [chkExtIcon, chkMagicIcon, chkModelIcon, chkShaIcon].forEach(el => {
-        if (el) {
-          el.innerHTML = waitSpinner;
-          el.style.background = 'rgba(255,255,255,0.06)';
-          el.style.color = 'var(--text-muted)';
-        }
-      });
+      if (actionBox) actionBox.style.display = 'none';
+      if (dispSub) dispSub.textContent = `${file.name} • Verifying...`;
 
       // 1. Check extension (.bin)
       const isBin = file.name.toLowerCase().endsWith('.bin');
       if (!isBin) {
-        if (chkExtIcon) { chkExtIcon.innerHTML = crossSvg; chkExtIcon.style.background = 'rgba(239,68,68,0.18)'; }
-        if (chkExtText) chkExtText.innerHTML = '<span style="color:#ef4444; font-weight:700;">Invalid extension (must be .bin)</span>';
-        if (overallStatus) { overallStatus.textContent = '✗ Verification Failed'; overallStatus.style.color = '#ef4444'; }
+        if (checkIcon) {
+          checkIcon.style.background = 'rgba(239,68,68,0.18)';
+          checkIcon.innerHTML = crossSvg;
+        }
+        if (dispSub) dispSub.innerHTML = `<span style="color:#ef4444; font-weight:600;">Invalid file: only .bin supported</span>`;
         showToast('Only official .bin firmware files are supported', 'warning');
         return;
       }
-      if (chkExtIcon) { chkExtIcon.innerHTML = tickSvg; chkExtIcon.style.background = 'rgba(16,185,129,0.18)'; }
-      if (chkExtText) chkExtText.innerHTML = '<span style="color:#10b981; font-weight:700;">Valid MAXNET .bin format</span>';
       _manualFwVerification.ext = true;
 
       // 2. Read first 64KB for FIT Header (0xd00dfeed) & Model compatibility
@@ -18159,28 +18148,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const isFit = (magic === 0xd00dfeed || magic === 0xedfe0dd0);
 
         if (!isFit) {
-          if (chkMagicIcon) { chkMagicIcon.innerHTML = crossSvg; chkMagicIcon.style.background = 'rgba(239,68,68,0.18)'; }
-          if (chkMagicText) chkMagicText.innerHTML = '<span style="color:#ef4444; font-weight:700;">Invalid FIT Magic (not an OpenWrt image)</span>';
-          if (overallStatus) { overallStatus.textContent = '✗ Invalid Image Header'; overallStatus.style.color = '#ef4444'; }
+          if (checkIcon) {
+            checkIcon.style.background = 'rgba(239,68,68,0.18)';
+            checkIcon.innerHTML = crossSvg;
+          }
+          if (dispSub) dispSub.innerHTML = `<span style="color:#ef4444; font-weight:600;">Invalid image: FIT header missing</span>`;
           showToast('Image does not have valid 0xd00dfeed FIT header', 'error');
           return;
         }
-
-        if (chkMagicIcon) { chkMagicIcon.innerHTML = tickSvg; chkMagicIcon.style.background = 'rgba(16,185,129,0.18)'; }
-        if (chkMagicText) chkMagicText.innerHTML = '<span style="color:#10b981; font-weight:700;">0xd00dfeed FIT Image Signature</span>';
         _manualFwVerification.magic = true;
-
-        // 3. Hardware Model Compatibility Check
-        const modelId = (_lastFirmwareUpdateData?.model_id || window._lastDataCache?.system?.model_id || 'jidu6911').toLowerCase();
-        const modelName = _lastFirmwareUpdateData?.model || window._lastDataCache?.system?.model || 'JioRouter AX6000';
-        const fname = file.name.toLowerCase();
-
-        if (chkModelIcon) { chkModelIcon.innerHTML = tickSvg; chkModelIcon.style.background = 'rgba(16,185,129,0.18)'; }
-        if (chkModelText) chkModelText.innerHTML = `<span style="color:#10b981; font-weight:700;">Compatible with ${escapeHtml(modelName)}</span>`;
         _manualFwVerification.model = true;
 
-        // 4. SHA-256 Checksum Calculation
-        if (chkShaText) chkShaText.textContent = 'Computing SHA-256 hash...';
+        // 3. SHA-256 Checksum Calculation
+        if (dispSub) dispSub.textContent = `${file.name} • Computing SHA-256...`;
         const fullBuf = await file.arrayBuffer();
         let hashHex = '';
         if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
@@ -18195,29 +18175,25 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         _manualFwVerification.hashHex = hashHex || 'calculated';
         _manualFwVerification.sha = true;
 
-        if (chkShaIcon) { chkShaIcon.innerHTML = tickSvg; chkShaIcon.style.background = 'rgba(16,185,129,0.18)'; }
-        if (chkShaText) chkShaText.innerHTML = `<span style="color:#10b981; font-weight:700;" title="${hashHex}">${hashHex.substring(0, 8)}...${hashHex.substring(hashHex.length - 8)}</span>`;
-
-        // All 4 checks passed!
-        if (overallStatus) {
-          overallStatus.textContent = '✓ All Integrity Checks Passed';
-          overallStatus.style.color = '#10b981';
+        // Verified! Show green tick and Update Now button
+        if (checkIcon) {
+          checkIcon.style.background = 'rgba(16,185,129,0.15)';
+          checkIcon.innerHTML = tickSvg;
+          checkIcon.style.display = 'inline-flex';
         }
-
-        if (btnSubmit) {
-          btnSubmit.disabled = false;
-          btnSubmit.style.opacity = '1';
-          btnSubmit.style.cursor = 'pointer';
-          btnSubmit.style.background = '#10b981';
-          btnSubmit.style.borderColor = '#10b981';
+        const sizeMb = (file.size / 1048576).toFixed(2);
+        if (dispSub) {
+          dispSub.innerHTML = `<span style="color:#10b981; font-weight:600;">Verified:</span> ${escapeHtml(file.name)} (${sizeMb} MB)`;
         }
+        if (actionBox) actionBox.style.display = 'block';
 
         showToast('Firmware image verified! Ready to flash.', 'success');
       } catch (err) {
-        if (overallStatus) {
-          overallStatus.textContent = '✗ Verification Error: ' + err.message;
-          overallStatus.style.color = '#ef4444';
+        if (checkIcon) {
+          checkIcon.style.background = 'rgba(239,68,68,0.18)';
+          checkIcon.innerHTML = crossSvg;
         }
+        if (dispSub) dispSub.innerHTML = `<span style="color:#ef4444; font-weight:600;">Verification failed: ${escapeHtml(err.message)}</span>`;
         showToast('Error verifying firmware: ' + err.message, 'error');
       }
     }
@@ -18227,18 +18203,14 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       _manualFwVerification = { ext: false, magic: false, model: false, sha: false, hashHex: '' };
       const input = document.getElementById('manualFwFileInput');
       if (input) input.value = '';
-      const dropzone = document.getElementById('fwFileDropzone');
-      const container = document.getElementById('fwSelectedContainer');
-      if (dropzone) dropzone.style.display = 'flex';
-      if (container) container.style.display = 'none';
-      const btnSubmit = document.getElementById('btnManualFlashSubmit');
-      if (btnSubmit) {
-        btnSubmit.disabled = true;
-        btnSubmit.style.opacity = '0.5';
-        btnSubmit.style.cursor = 'not-allowed';
-        btnSubmit.style.background = '';
-        btnSubmit.style.borderColor = '';
-      }
+      const dispSub = document.getElementById('dispFwFileSub');
+      const checkIcon = document.getElementById('dispFwFileCheckIcon');
+      const arrowIcon = document.getElementById('dispFwFileArrow');
+      const actionBox = document.getElementById('manualFwActionBox');
+      if (checkIcon) checkIcon.style.display = 'none';
+      if (arrowIcon) arrowIcon.style.display = 'inline-block';
+      if (actionBox) actionBox.style.display = 'none';
+      if (dispSub) dispSub.textContent = 'Select local .bin firmware file';
     }
 
     function openManualFlashModal() {
@@ -18247,7 +18219,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         return;
       }
       if (!_manualFwVerification.ext || !_manualFwVerification.magic || !_manualFwVerification.sha) {
-        showToast('Please wait for all verification checks to complete', 'warning');
+        showToast('Please wait for file verification to complete', 'warning');
         return;
       }
 
@@ -18268,9 +18240,9 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
       const titleEl = document.getElementById('flashUpdateTitle');
       const chgEl = document.getElementById('flashUpdateChangelog');
-      if (titleEl) titleEl.textContent = 'Verified Manual Firmware Upgrade';
+      if (titleEl) titleEl.textContent = 'Manual Firmware Flash';
       if (chgEl) {
-        chgEl.textContent = `Target File: ${_selectedManualFwFile.name}\nSize: ${(_selectedManualFwFile.size / 1048576).toFixed(2)} MB\nSHA-256 Digest: ${_manualFwVerification.hashHex}\nImage Format: Flattened Image Tree (0xd00dfeed FIT)\nStatus: All cryptographic and compatibility checks passed.`;
+        chgEl.textContent = `Target File: ${_selectedManualFwFile.name}\nSize: ${(_selectedManualFwFile.size / 1048576).toFixed(2)} MB\nSHA-256 Digest: ${_manualFwVerification.hashHex}\nFormat: Flattened Image Tree (0xd00dfeed FIT)\nStatus: All verification checks passed.`;
       }
 
       const content = document.getElementById('flashModalContent');
@@ -20755,6 +20727,7 @@ if (typeof window !== 'undefined') {
     customConfirm,
     customPrompt,
     updateWifiDisplayLabels,
+    toggleAutoUpdate,
     checkLatestFirmwareUpdate,
     installSysupgradeUpdate,
     onManualFirmwareSelected,
@@ -21235,6 +21208,7 @@ export {
   customConfirm,
   customPrompt,
   updateWifiDisplayLabels,
+  toggleAutoUpdate,
   checkLatestFirmwareUpdate,
   installSysupgradeUpdate,
   onManualFirmwareSelected,

@@ -27,6 +27,15 @@ if [ "$ACTION" = "status" ] || [ "$ACTION" = "progress" ]; then
     exit 0
 fi
 
+# Auto-update toggle handler
+if [ "$ACTION" = "set_auto_update" ]; then
+    AUTO_UPD=$(echo "$QUERY_STRING" | sed -n 's/^.*enabled=\([^&]*\).*$/\1/p')
+    [ "$AUTO_UPD" != "0" ] && [ "$AUTO_UPD" != "false" ] && AUTO_UPD="1" || AUTO_UPD="0"
+    echo "$AUTO_UPD" > /etc/maxnet_auto_update
+    echo "{\"status\": \"ok\", \"auto_update\": $AUTO_UPD, \"message\": \"Auto-update preference saved\"}"
+    exit 0
+fi
+
 # Channel switching handler
 if [ "$ACTION" = "set_channel" ]; then
     REQ_BODY=""
@@ -215,9 +224,13 @@ fi
 STATUS_STR="up_to_date"
 [ "$IS_UPDATE_AVAIL" -eq 1 ] && STATUS_STR="update_available"
 
+AUTO_UPDATE=1
+[ -f /etc/maxnet_auto_update ] && [ "$(cat /etc/maxnet_auto_update 2>/dev/null | tr -d ' \r\n')" = "0" ] && AUTO_UPDATE=0
+
 jq -n \
     --arg status "$STATUS_STR" \
     --argjson is_update "$IS_UPDATE_AVAIL" \
+    --argjson auto_update "$AUTO_UPDATE" \
     --arg channel "$ACTIVE_CHANNEL" \
     --arg current "$CURRENT_VER" \
     --arg latest "$LATEST_VER" \
@@ -240,6 +253,7 @@ jq -n \
     '{
         status: $status,
         is_update: $is_update,
+        auto_update: ($auto_update == 1),
         channel: $channel,
         current: $current,
         latest: $latest,
