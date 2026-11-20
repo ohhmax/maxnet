@@ -252,15 +252,11 @@ if [ "$ACTION" = "login_encrypted" ]; then
     [ -z "$USER" ] && USER="root"
 
     ROOT_SHADOW=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
-    
-    # Task 3: Block empty password login path completely
-    if [ -z "$ROOT_SHADOW" ] || [ "$ROOT_SHADOW" = "*" ] || [ "$ROOT_SHADOW" = "!" ]; then
-        send_json_str '{"status": "first_boot_setup_required", "message": "Administrator password has not been configured. Initial password setup required."}'
-        exit 0
-    fi
-
     AUTH_OK=0
-    if [ -n "$PASS" ] && /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+    if [ -z "$ROOT_SHADOW" ] || [ "$ROOT_SHADOW" = "*" ] || [ "$ROOT_SHADOW" = "!" ]; then
+        # When no password has been configured in /etc/shadow, empty password allows login
+        [ -z "$PASS" ] && AUTH_OK=1
+    elif [ -n "$PASS" ] && /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
         AUTH_OK=1
     fi
 
