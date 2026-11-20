@@ -99,6 +99,12 @@ if [ -n "$POST_DATA" ]; then
     [ -n "$_U" ] && USER="$_U"
 fi
 
+PASS=""
+if [ -n "$POST_DATA" ]; then
+    PASS=$(echo "$POST_DATA" | jq -r '.pass // empty' 2>/dev/null)
+    [ -z "$PASS" ] && PASS=$(echo "$POST_DATA" | sed -n 's/.*"pass"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
+fi
+
 OLD_PASS=""
 NEW_PASS=""
 if [ -n "$POST_DATA" ]; then
@@ -283,9 +289,39 @@ SESS
     exit 0
 fi
 
-# ==================== ACTION: LOGIN (LEGACY - PERMANENTLY DISABLED) ====================
+# ==================== ACTION: LOGIN (FALLBACK / COMPATIBILITY) ====================
 if [ "$ACTION" = "login" ]; then
-    send_json_str '{"status": "error", "message": "Plain-text login endpoint is permanently disabled. Use encrypted authentication."}'
+    check_ip_rate_limit
+
+    ROOT_SHADOW=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
+    AUTH_OK=0
+    if [ -z "$ROOT_SHADOW" ] || [ "$ROOT_SHADOW" = "*" ] || [ "$ROOT_SHADOW" = "!" ]; then
+        # When no password has been configured in /etc/shadow, empty password allows login
+        [ -z "$PASS" ] && AUTH_OK=1
+    elif [ -n "$PASS" ] && /usr/bin/checkpass "$USER" "$PASS" >/dev/null 2>&1; then
+        AUTH_OK=1
+    fi
+
+    if [ "$AUTH_OK" -eq 1 ]; then
+        clear_ip_failure
+        T=$(head -c 16 /dev/urandom | md5sum | awk '{print $1}')
+        cat << SESS > "$SESS_DIR/$T"
+{
+  "token": "$T",
+  "user": "$USER",
+  "ip": "$CLIENT_IP",
+  "ua": "$UA",
+  "created": $NOW,
+  "last_active": $NOW,
+  "encrypted": false
+}
+SESS
+        chmod 600 "$SESS_DIR/$T"
+        dispatch_login_alert "Router WebUI Login: $USER" "Administrator '$USER' logged into MAXNET Gateway WebUI from IP $CLIENT_IP." "info" "router_login"
+        send_json_str "{\"status\": \"ok\", \"token\": \"$T\", \"user\": \"$USER\", \"ip\": \"$CLIENT_IP\", \"encrypted\": false}"
+    else
+        record_ip_failure
+    fi
     exit 0
 fi
 

@@ -74,6 +74,7 @@ common_packages = [
 
     # JSON processing & CLI utilities
     "CONFIG_PACKAGE_jq=y",
+    "CONFIG_PACKAGE_openssl-util=y",
 
     # CLI Management & System tools (NO LuCI WebUI)
     "CONFIG_PACKAGE_busybox=y",
