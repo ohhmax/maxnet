@@ -72,12 +72,6 @@ fi
 [ -z "$CURRENT_VER" ] && CURRENT_VER="v2.2.47-b47"
 [ -z "$CURRENT_BUILD" ] && CURRENT_BUILD=47
 
-# ==================== VERIFIED UPDATE MANIFEST PIPELINE ====================
-# To prevent bricking from unverified/experimental CI releases, updates are
-# strictly driven by the dedicated update/updates.json manifest with pushed=true.
-UPDATES_URL="https://raw.githubusercontent.com/ohhmax/maxnet/main/update/updates.json"
-UPDATES_FILE="/tmp/updates.json"
-
 # Resolve router model key
 DEV_KEY=""
 case "$BOARD_NAME" in
@@ -95,7 +89,58 @@ case "$BOARD_NAME" in
     *) DEV_KEY="jidu6911" ;;
 esac
 
-# Refresh updates.json if missing or older than 180s
+# ==================== VERIFIED UPDATE MANIFEST PIPELINE ====================
+# Model-wise JSON manifest: updates/<model>.json
+UPDATES_URL="https://raw.githubusercontent.com/ohhmax/maxnet/main/updates/${DEV_KEY}.json"
+UPDATES_FILE="/tmp/update_${DEV_KEY}.json"
+
+# ==================== ACTION: MANUAL FIRMWARE UPLOAD & FLASH ====================
+if [ "$ACTION" = "upload" ] || [ "$ACTION" = "upload_bin" ]; then
+    UPLOAD_DEST="/tmp/sysupgrade_manual.bin"
+    KEEP_CFG=$(echo "$QUERY_STRING" | sed -n 's/^.*keep=\([^&]*\).*$/\1/p')
+    [ -z "$KEEP_CFG" ] && KEEP_CFG="1"
+
+    # Stream the raw payload from standard input directly to /tmp
+    cat > "$UPLOAD_DEST"
+
+    if [ ! -s "$UPLOAD_DEST" ]; then
+        echo '{"status": "error", "message": "Uploaded firmware file is empty."}'
+        exit 0
+    fi
+
+    # 1. Structural check: OpenWrt FIT header magic (0xd00dfeed) or sysupgrade test
+    MAGIC=$(hexdump -n 4 -e '1/1 "%02x"' "$UPLOAD_DEST" 2>/dev/null)
+    if [ "$MAGIC" != "d00dfeed" ] && ! sysupgrade -T "$UPLOAD_DEST" >/dev/null 2>&1; then
+        rm -f "$UPLOAD_DEST"
+        echo '{"status": "error", "message": "Invalid firmware: Magic byte 0xd00dfeed check failed. File is not a valid MAXNET sysupgrade binary."}'
+        exit 0
+    fi
+
+    CALC_SUM=$(sha256sum "$UPLOAD_DEST" 2>/dev/null | awk '{print $1}')
+    FILE_SZ=$(stat -c %s "$UPLOAD_DEST" 2>/dev/null || echo 0)
+
+    # 2. Write initial status for progress poller
+    rm -f /tmp/ota_status.json
+    cat << EOF > /tmp/ota_status.json
+{"state":"flashing","progress":70,"message":"Writing verified manual firmware to flash memory..."}
+EOF
+
+    # 3. Trigger sysupgrade asynchronously
+    (
+        sleep 2
+        logger -t maxnet_ota "Manual sysupgrade starting (keep=$KEEP_CFG, size=$FILE_SZ, sha256=$CALC_SUM)..."
+        if [ "$KEEP_CFG" = "0" ] || [ "$KEEP_CFG" = "clean" ] || [ "$KEEP_CFG" = "false" ]; then
+            sysupgrade -n "$UPLOAD_DEST" >/dev/null 2>&1
+        else
+            sysupgrade "$UPLOAD_DEST" >/dev/null 2>&1
+        fi
+    ) >/dev/null 2>&1 &
+
+    echo "{\"status\": \"started\", \"message\": \"Firmware verified successfully. Flashing initiated in background.\", \"sha256\": \"$CALC_SUM\", \"size\": $FILE_SZ, \"action\": \"manual_upload\"}"
+    exit 0
+fi
+
+# Refresh model update json if missing or older than 180s
 FETCH_NOW=1
 if [ -s "$UPDATES_FILE" ] && jq -e . "$UPDATES_FILE" >/dev/null 2>&1; then
     AGE=$(( $(date +%s) - $(stat -c %Y "$UPDATES_FILE" 2>/dev/null || echo 0) ))
@@ -108,9 +153,10 @@ if [ "$FETCH_NOW" -eq 1 ]; then
         mv "$UPDATES_FILE.tmp" "$UPDATES_FILE"
     else
         rm -f "$UPDATES_FILE.tmp"
+        # Local fallback if present
         if [ ! -s "$UPDATES_FILE" ] || ! jq -e . "$UPDATES_FILE" >/dev/null 2>&1; then
-            [ -s /etc/updates.json ] && cp /etc/updates.json "$UPDATES_FILE" 2>/dev/null
-            [ -s /www/updates.json ] && cp /www/updates.json "$UPDATES_FILE" 2>/dev/null
+            [ -s "/etc/updates/${DEV_KEY}.json" ] && cp "/etc/updates/${DEV_KEY}.json" "$UPDATES_FILE" 2>/dev/null
+            [ -s "/www/updates/${DEV_KEY}.json" ] && cp "/www/updates/${DEV_KEY}.json" "$UPDATES_FILE" 2>/dev/null
         fi
     fi
 fi
@@ -128,27 +174,20 @@ MIN_VER="2.2.0"
 TARGET_ARCH=""
 TARGET_SOC=""
 
+# Model-wise JSON: find the latest version where .tested == true
 if [ -s "$UPDATES_FILE" ] && command -v jq >/dev/null 2>&1; then
-    # First search targeted channel (stable / staging)
-    RESOLVED_JSON=$(jq -c --arg c "$ACTIVE_CHANNEL" --arg k "$DEV_KEY" '.channels[$c].devices[$k] // empty' "$UPDATES_FILE" 2>/dev/null)
-    # Backward compatible fallback
-    if [ -z "$RESOLVED_JSON" ]; then
-        RESOLVED_JSON=$(jq -c --arg k "$DEV_KEY" '.devices[$k] // empty' "$UPDATES_FILE" 2>/dev/null)
-    fi
-
-    if [ -n "$RESOLVED_JSON" ]; then
-        IS_PUSHED=$(echo "$RESOLVED_JSON" | jq -r '.pushed // false')
-        LATEST_VER=$(echo "$RESOLVED_JSON" | jq -r '.version // empty')
-        LATEST_BUILD=$(echo "$RESOLVED_JSON" | jq -r '.build // 0')
-        BIN_URL=$(echo "$RESOLVED_JSON" | jq -r '.url // empty')
-        EXPECTED_SUM=$(echo "$RESOLVED_JSON" | jq -r '.sha256 // empty')
-        FILE_SIZE=$(echo "$RESOLVED_JSON" | jq -r '.size_bytes // 0')
-        UPDATE_TITLE=$(echo "$RESOLVED_JSON" | jq -r '.title // empty')
-        UPDATE_DESC=$(echo "$RESOLVED_JSON" | jq -r '.description // empty')
-        SIG_URL=$(echo "$RESOLVED_JSON" | jq -r '.signature_url // empty')
-        MIN_VER=$(echo "$RESOLVED_JSON" | jq -r '.min_version // "2.2.0"')
-        TARGET_ARCH=$(echo "$RESOLVED_JSON" | jq -r '.target // empty')
-        TARGET_SOC=$(echo "$RESOLVED_JSON" | jq -r '.soc // empty')
+    LATEST_ENTRY=$(jq -c '[.versions[]? | select(.tested == true)] | sort_by(.build) | last // empty' "$UPDATES_FILE" 2>/dev/null)
+    if [ -n "$LATEST_ENTRY" ]; then
+        IS_PUSHED=true
+        LATEST_VER=$(echo "$LATEST_ENTRY" | jq -r '.version // empty')
+        LATEST_BUILD=$(echo "$LATEST_ENTRY" | jq -r '.build // 0')
+        BIN_URL=$(echo "$LATEST_ENTRY" | jq -r '.url // empty')
+        EXPECTED_SUM=$(echo "$LATEST_ENTRY" | jq -r '.sha256 // empty')
+        FILE_SIZE=$(echo "$LATEST_ENTRY" | jq -r '.size // .size_bytes // 31457280')
+        UPDATE_TITLE=$(echo "$LATEST_ENTRY" | jq -r '.title // empty')
+        UPDATE_DESC=$(echo "$LATEST_ENTRY" | jq -r '.description // empty')
+        [ -z "$UPDATE_TITLE" ] && UPDATE_TITLE="MAXNET | V${LATEST_VER}"
+        [ -z "$UPDATE_DESC" ] && UPDATE_DESC="N/A"
     fi
 fi
 

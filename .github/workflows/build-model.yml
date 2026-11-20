@@ -253,11 +253,22 @@ jobs:
           path: custom/release_binaries
         continue-on-error: true
 
-      - name: Rebuild Unified Manifest
+      - name: Update Model Manifests & Auto-Record Release
         run: |
+          python3 custom/.github/scripts/record_model_updates.py \
+            custom/release_binaries \
+            "${{ needs.version.outputs.tag_name }}" \
+            "${{ needs.version.outputs.build_num }}" \
+            "${{ needs.version.outputs.semver }}" \
+            custom/updates \
+            "${{ github.repository }}"
+
           cd custom
-          python3 update/sync.py
-          ls -lh release_binaries/ || true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add updates/
+          git commit -m "chore(ota): auto-record build ${{ needs.version.outputs.build_num }} in model manifests [skip ci]" || true
+          git push origin main || true
 
       - name: Publish Staging / Stable Candidate
         env:
@@ -269,11 +280,8 @@ jobs:
           IS_PRERELEASE=""
           [ "$CHANNEL" = "staging" ] && IS_PRERELEASE="--prerelease"
 
-          gh release create "$TAG_NAME" custom/release_binaries/* custom/update/updates.json \
+          gh release create "$TAG_NAME" custom/release_binaries/* \
             --repo "${{ github.repository }}" \
             --title "MAXNET $SEMVER ($CHANNEL)" \
             $IS_PRERELEASE \
-            --notes "### MAXNET Multi-Model Verified Firmware Build
-            - Release Track: **$CHANNEL**
-            - Tag: \`$TAG_NAME\`
-            - Automated hardware compatibility and SHA-256 integrity validated."
+            --notes ""

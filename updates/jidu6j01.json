@@ -1,0 +1,13 @@
+{
+  "versions": [
+    {
+      "build": 48,
+      "version": "2.2.48",
+      "tested": false,
+      "title": "MAXNET | V2.2.48",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.48-b48/maxnet-jidu6j01-sysupgrade.bin",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
