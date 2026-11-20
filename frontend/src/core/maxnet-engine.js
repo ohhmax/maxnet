@@ -17866,6 +17866,67 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }, 1000);
     }
 
+    let _currentFirmwareChannel = localStorage.getItem('maxnet_fw_channel') || 'stable';
+
+    async function switchFirmwareChannel(channel) {
+      if (channel !== 'stable' && channel !== 'staging') channel = 'stable';
+      _currentFirmwareChannel = channel;
+      try {
+        localStorage.setItem('maxnet_fw_channel', channel);
+      } catch (e) {}
+
+      const btnStable = document.getElementById('btnChanStable');
+      const btnStaging = document.getElementById('btnChanStaging');
+      const descEl = document.getElementById('fwChannelDesc');
+      const headerBadge = document.getElementById('fwHeaderChannelBadge');
+
+      if (channel === 'stable') {
+        if (btnStable) {
+          btnStable.style.background = 'rgba(16,185,129,0.12)';
+          btnStable.style.color = '#10b981';
+          btnStable.style.borderColor = 'rgba(16,185,129,0.4)';
+        }
+        if (btnStaging) {
+          btnStaging.style.background = 'var(--card-inner, #161822)';
+          btnStaging.style.color = 'var(--text-dim)';
+          btnStaging.style.borderColor = 'var(--border-sub, rgba(255,255,255,0.08))';
+        }
+        if (descEl) descEl.textContent = 'Production Stable Releases (Highest Reliability)';
+        if (headerBadge) {
+          headerBadge.textContent = 'STABLE CHANNEL';
+          headerBadge.style.color = '#38bdf8';
+          headerBadge.style.background = 'rgba(56,189,248,0.12)';
+          headerBadge.style.borderColor = 'rgba(56,189,248,0.3)';
+        }
+      } else {
+        if (btnStaging) {
+          btnStaging.style.background = 'rgba(245,158,11,0.15)';
+          btnStaging.style.color = '#f59e0b';
+          btnStaging.style.borderColor = 'rgba(245,158,11,0.4)';
+        }
+        if (btnStable) {
+          btnStable.style.background = 'var(--card-inner, #161822)';
+          btnStable.style.color = 'var(--text-dim)';
+          btnStable.style.borderColor = 'var(--border-sub, rgba(255,255,255,0.08))';
+        }
+        if (descEl) descEl.textContent = 'Staging Candidate Track (Pre-release QA)';
+        if (headerBadge) {
+          headerBadge.textContent = 'STAGING TRACK';
+          headerBadge.style.color = '#f59e0b';
+          headerBadge.style.background = 'rgba(245,158,11,0.15)';
+          headerBadge.style.borderColor = 'rgba(245,158,11,0.4)';
+        }
+      }
+
+      try {
+        await apiFetch(`/cgi-bin/update?action=set_channel&channel=${encodeURIComponent(channel)}`, { method: 'POST' });
+        showToast(`Update channel switched to ${channel.toUpperCase()}`, 'info');
+      } catch (e) {}
+
+      checkLatestFirmwareUpdate();
+    }
+    window.switchFirmwareChannel = switchFirmwareChannel;
+
     async function checkLatestFirmwareUpdate() {
       const btn = document.getElementById('btnCheckUpdate');
       const icon = document.getElementById('iconCheckUpdate');
@@ -17885,7 +17946,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         let updateAvailable = false;
         let updateData = null;
         try {
-          const res = await apiFetch('/cgi-bin/update');
+          const res = await apiFetch(`/cgi-bin/update?channel=${encodeURIComponent(_currentFirmwareChannel)}`);
           const data = await res.json();
           if (data && data.status === 'update_available') {
             updateAvailable = true;
@@ -17920,6 +17981,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           const rowRamBoot = document.getElementById('rowFwRamBootAction');
           const fwStatusSub = document.getElementById('fwStatusSubtitle');
           const mainLbl = document.getElementById('fwStatusMainLabel');
+          const pulseEl = document.getElementById('fwStatusPulse');
+          const archEl = document.getElementById('fwTargetArch');
+          const socEl = document.getElementById('fwTargetSoc');
+          const hwRevEl = document.getElementById('fwHwRevVal');
+
+          if (updateData) {
+            if (updateData.channel && updateData.channel !== _currentFirmwareChannel) {
+              _currentFirmwareChannel = updateData.channel;
+            }
+            if (archEl && updateData.target_arch) archEl.textContent = updateData.target_arch;
+            if (socEl && updateData.target_soc) socEl.textContent = updateData.target_soc;
+            if (hwRevEl && updateData.hw_rev) hwRevEl.textContent = `${updateData.hw_rev} (Validated)`;
+          }
 
           if (fwBadge) fwBadge.textContent = (updateData && updateData.current) || 'v3.2.0';
           if (fwModel) fwModel.textContent = (updateData && updateData.model) || 'MAXNET-IPQ9574 AX6000';
@@ -17939,11 +18013,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               mainLbl.textContent = 'Firmware Update Available';
               mainLbl.style.color = '#f59e0b';
             }
+            if (pulseEl) {
+              pulseEl.style.background = '#f59e0b';
+              pulseEl.style.boxShadow = '0 0 10px #f59e0b';
+            }
 
             if (rowUpgrade) rowUpgrade.style.display = 'flex';
             if (rowRamBoot) rowRamBoot.style.display = 'flex';
             if (fwStatusSub) {
-              fwStatusSub.innerHTML = `Installed: <span id="fwCurrentVerBadge" style="font-weight:700;">${escapeHtml(updateData.current || 'v3.2.0')}</span> &bull; Latest: <span id="fwLatestVerVal" style="font-weight:700; color:#f59e0b;">${escapeHtml(latVer)}</span> &bull; <span>${escapeHtml(modName)}</span>`;
+              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(updateData.current || 'v3.2.0')}</strong> &bull; Target: <strong id="fwLatestVerVal" style="font-weight:700; color:#38bdf8; font-family:var(--font-mono);">${escapeHtml(latVer)}</strong> &bull; <span>${escapeHtml(modName)}</span>`;
             }
 
             if (pill) { pill.className = 'setting-pill pill-amber'; pill.textContent = `UPDATE: ${latVer}`; }
@@ -17988,16 +18066,20 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               mainLbl.textContent = 'Router is Up to Date';
               mainLbl.style.color = '#10b981';
             }
+            if (pulseEl) {
+              pulseEl.style.background = '#10b981';
+              pulseEl.style.boxShadow = '0 0 8px #10b981';
+            }
 
             // Router is up to date: hide Upgrade and Safe RAM Boot action rows
             if (rowUpgrade) rowUpgrade.style.display = 'none';
             if (rowRamBoot) rowRamBoot.style.display = 'none';
             if (fwStatusSub) {
-              fwStatusSub.innerHTML = `Installed: <span id="fwCurrentVerBadge" style="font-weight:700;">${escapeHtml(curVer)}</span> &bull; <span>${escapeHtml(modName)}</span> &bull; Channel: Stable`;
+              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(curVer)}</strong> &bull; <span>${escapeHtml(modName)}</span> &bull; Channel: ${(_currentFirmwareChannel === 'staging' ? 'Staging' : 'Stable')}`;
             }
 
             if (pill) { pill.className = 'setting-pill pill-green'; pill.textContent = `${curVer} UP TO DATE`; }
-            if (sub) sub.textContent = `${modName} is running the latest stable release.`;
+            if (sub) sub.textContent = `${modName} is running the latest ${_currentFirmwareChannel} release.`;
             if (fwPill) { fwPill.className = 'setting-pill pill-green'; fwPill.textContent = 'UP TO DATE'; }
             if (btn) {
               btn.className = 'round-action-btn';
@@ -20462,6 +20544,7 @@ if (typeof window !== 'undefined') {
     customPrompt,
     updateWifiDisplayLabels,
     checkLatestFirmwareUpdate,
+    switchFirmwareChannel,
     installSysupgradeUpdate,
     onSelectLocalFirmwareFile,
     uploadAndVerifyLocalFirmware,
@@ -20941,6 +21024,7 @@ export {
   customPrompt,
   updateWifiDisplayLabels,
   checkLatestFirmwareUpdate,
+  switchFirmwareChannel,
   installSysupgradeUpdate,
   onSelectLocalFirmwareFile,
   uploadAndVerifyLocalFirmware,

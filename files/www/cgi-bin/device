@@ -78,6 +78,11 @@ if [ "$ACTION" = "import_keys" ]; then
         exit 0
     fi
 
+    if ! echo "$IN_KEY" | grep -q 'BEGIN.*PRIVATE KEY'; then
+        echo '{"status": "error", "message": "Invalid ADB key format: Private key must contain -----BEGIN RSA PRIVATE KEY----- or -----BEGIN PRIVATE KEY-----"}'
+        exit 0
+    fi
+
     printf "%s\n" "$IN_KEY" > /root/.android/adbkey
     chmod 600 /root/.android/adbkey
 
@@ -87,6 +92,7 @@ if [ "$ACTION" = "import_keys" ]; then
     fi
 
     export HOME=/root
+    export ADB_VENDOR_KEYS=/root/.android
     adb kill-server >/dev/null 2>&1
     adb start-server >/dev/null 2>&1
     sleep 1

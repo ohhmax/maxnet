@@ -27,8 +27,30 @@ if [ "$ACTION" = "status" ] || [ "$ACTION" = "progress" ]; then
     exit 0
 fi
 
+# Channel switching handler
+if [ "$ACTION" = "set_channel" ]; then
+    REQ_BODY=""
+    [ "$REQUEST_METHOD" = "POST" ] && [ "$CONTENT_LENGTH" -gt 0 ] 2>/dev/null && read -n "$CONTENT_LENGTH" REQ_BODY
+    NEW_CHAN=$(echo "$QUERY_STRING" | sed -n 's/^.*channel=\([^&]*\).*$/\1/p')
+    [ -z "$NEW_CHAN" ] && [ -n "$REQ_BODY" ] && NEW_CHAN=$(echo "$REQ_BODY" | jq -r '.channel // empty' 2>/dev/null)
+    if [ "$NEW_CHAN" != "stable" ] && [ "$NEW_CHAN" != "staging" ]; then
+        echo '{"status": "error", "message": "Invalid channel. Allowed: stable, staging"}'
+        exit 0
+    fi
+    echo "$NEW_CHAN" > /etc/maxnet_ota_channel
+    rm -f /tmp/updates.json
+    echo "{\"status\": \"ok\", \"channel\": \"$NEW_CHAN\", \"message\": \"Firmware update channel switched to $NEW_CHAN\"}"
+    exit 0
+fi
+
+# Resolve active channel (staging is strictly isolated unless explicitly opted-in)
+ACTIVE_CHANNEL=$(echo "$QUERY_STRING" | sed -n 's/^.*channel=\([^&]*\).*$/\1/p')
+[ -z "$ACTIVE_CHANNEL" ] && [ -f /etc/maxnet_ota_channel ] && ACTIVE_CHANNEL=$(cat /etc/maxnet_ota_channel 2>/dev/null | tr -d '\r\n ')
+[ "$ACTIVE_CHANNEL" != "staging" ] && ACTIVE_CHANNEL="stable"
+
 BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "jiorouter,ax6000-jidu6j11-6911")
 MODEL_NAME=$(cat /tmp/sysinfo/model 2>/dev/null || echo "JioRouter AX6000")
+HW_REV=$(cat /tmp/sysinfo/board_revision 2>/dev/null || echo "default")
 
 CURRENT_BUILD=""
 CURRENT_VER=""
@@ -53,7 +75,7 @@ fi
 # ==================== VERIFIED UPDATE MANIFEST PIPELINE ====================
 # To prevent bricking from unverified/experimental CI releases, updates are
 # strictly driven by the dedicated updates.json manifest with pushed=true.
-UPDATES_URL="https://raw.githubusercontent.com/ohhmax/maxnet-main/main/updates.json"
+UPDATES_URL="https://raw.githubusercontent.com/ohhmax/maxnet/main/updates.json"
 UPDATES_FILE="/tmp/updates.json"
 
 # Resolve router model key
@@ -101,9 +123,19 @@ EXPECTED_SUM=""
 FILE_SIZE=0
 UPDATE_TITLE=""
 UPDATE_DESC=""
+SIG_URL=""
+MIN_VER="2.2.0"
+TARGET_ARCH=""
+TARGET_SOC=""
 
 if [ -s "$UPDATES_FILE" ] && command -v jq >/dev/null 2>&1; then
-    RESOLVED_JSON=$(jq -c --arg k "$DEV_KEY" '.devices[$k] // empty' "$UPDATES_FILE" 2>/dev/null)
+    # First search targeted channel (stable / staging)
+    RESOLVED_JSON=$(jq -c --arg c "$ACTIVE_CHANNEL" --arg k "$DEV_KEY" '.channels[$c].devices[$k] // empty' "$UPDATES_FILE" 2>/dev/null)
+    # Backward compatible fallback
+    if [ -z "$RESOLVED_JSON" ]; then
+        RESOLVED_JSON=$(jq -c --arg k "$DEV_KEY" '.devices[$k] // empty' "$UPDATES_FILE" 2>/dev/null)
+    fi
+
     if [ -n "$RESOLVED_JSON" ]; then
         IS_PUSHED=$(echo "$RESOLVED_JSON" | jq -r '.pushed // false')
         LATEST_VER=$(echo "$RESOLVED_JSON" | jq -r '.version // empty')
@@ -113,6 +145,10 @@ if [ -s "$UPDATES_FILE" ] && command -v jq >/dev/null 2>&1; then
         FILE_SIZE=$(echo "$RESOLVED_JSON" | jq -r '.size_bytes // 0')
         UPDATE_TITLE=$(echo "$RESOLVED_JSON" | jq -r '.title // empty')
         UPDATE_DESC=$(echo "$RESOLVED_JSON" | jq -r '.description // empty')
+        SIG_URL=$(echo "$RESOLVED_JSON" | jq -r '.signature_url // empty')
+        MIN_VER=$(echo "$RESOLVED_JSON" | jq -r '.min_version // "2.2.0"')
+        TARGET_ARCH=$(echo "$RESOLVED_JSON" | jq -r '.target // empty')
+        TARGET_SOC=$(echo "$RESOLVED_JSON" | jq -r '.soc // empty')
     fi
 fi
 
@@ -126,8 +162,8 @@ if [ "$ACTION" = "flash" ] || [ "$ACTION" = "flash_clean" ]; then
         exit 0
     fi
     rm -f /tmp/ota_status.json
-    /usr/bin/maxnet_ota_worker.sh "$ACTION" "$BIN_URL" "$EXPECTED_SUM" "$FILE_SIZE" "$LATEST_VER" "$LATEST_BUILD" </dev/null >/dev/null 2>&1 &
-    echo "{\"status\": \"started\", \"action\": \"$ACTION\", \"target\": \"$RESOLVED_FILE\", \"latest\": \"$LATEST_VER\", \"message\": \"Verified firmware upgrade started in background\"}"
+    /usr/bin/maxnet_ota_worker.sh "$ACTION" "$BIN_URL" "$EXPECTED_SUM" "$FILE_SIZE" "$LATEST_VER" "$LATEST_BUILD" "$SIG_URL" "$MIN_VER" "$DEV_KEY" </dev/null >/dev/null 2>&1 &
+    echo "{\"status\": \"started\", \"action\": \"$ACTION\", \"target\": \"$RESOLVED_FILE\", \"latest\": \"$LATEST_VER\", \"channel\": \"$ACTIVE_CHANNEL\", \"message\": \"Verified firmware upgrade started in background\"}"
     exit 0
 fi
 
@@ -143,34 +179,49 @@ STATUS_STR="up_to_date"
 jq -n \
     --arg status "$STATUS_STR" \
     --argjson is_update "$IS_UPDATE_AVAIL" \
+    --arg channel "$ACTIVE_CHANNEL" \
     --arg current "$CURRENT_VER" \
     --arg latest "$LATEST_VER" \
     --argjson latest_build "$LATEST_BUILD" \
     --argjson current_build "$CURRENT_BUILD" \
     --arg board "$BOARD_NAME" \
     --arg model "$MODEL_NAME" \
+    --arg model_id "$DEV_KEY" \
+    --arg target_arch "$TARGET_ARCH" \
+    --arg target_soc "$TARGET_SOC" \
+    --arg hw_rev "$HW_REV" \
     --arg file "$RESOLVED_FILE" \
     --arg url "$BIN_URL" \
     --arg sha256 "$EXPECTED_SUM" \
+    --arg sig_url "$SIG_URL" \
+    --arg min_ver "$MIN_VER" \
     --argjson size "$FILE_SIZE" \
     --arg title "$UPDATE_TITLE" \
     --arg description "$UPDATE_DESC" \
     '{
         status: $status,
         is_update: $is_update,
+        channel: $channel,
         current: $current,
         latest: $latest,
         latest_build: $latest_build,
         current_build: $current_build,
         board: $board,
         model: $model,
+        model_id: $model_id,
+        target_arch: $target_arch,
+        target_soc: $target_soc,
+        hw_rev: $hw_rev,
         file: $file,
         url: $url,
         sha256: $sha256,
+        signature_url: $sig_url,
+        min_supported_version: $min_ver,
         size: $size,
         title: $title,
         description: $description,
         signature_verified: true,
+        anti_rollback_ok: ($latest_build >= $current_build),
         signature_warning: ""
     }'
 exit 0

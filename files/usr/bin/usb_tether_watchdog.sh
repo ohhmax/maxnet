@@ -85,9 +85,10 @@ while true; do
             esac
         fi
 
-        # If still down after soft recovery, perform USB bus rebind ONLY if usb0 does not exist and ADB is missing
-        if ! ifconfig usb0 >/dev/null 2>&1 && ! adb devices 2>/dev/null | grep -q "device$"; then
-            logger -t usb_watchdog "USB device hung, performing USB bus rebind..."
+        # If still down after soft recovery, perform USB bus rebind ONLY if usb0 does not exist AND NO ADB handset is physically attached
+        HAS_ANY_DEV=$(adb devices 2>/dev/null | tail -n +2 | grep -v '^$' | wc -l)
+        if ! ifconfig usb0 >/dev/null 2>&1 && [ "$HAS_ANY_DEV" -eq 0 ]; then
+            logger -t usb_watchdog "No USB tethering interface and no ADB device detected. Attempting USB bus recovery..."
             for usbdev in /sys/bus/usb/drivers/usb/*-*; do
                 [ -d "$usbdev" ] || continue
                 dname=$(basename "$usbdev")
