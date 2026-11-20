@@ -155,10 +155,12 @@ send_json_str() {
     if echo "${HTTP_ACCEPT_ENCODING:-}" | grep -qi "gzip"; then
         printf "Content-Type: application/json\r\n"
         printf "Content-Encoding: gzip\r\n"
+        [ -n "${EXTRA_HEADER:-}" ] && printf "%s\r\n" "$EXTRA_HEADER"
         printf "Cache-Control: no-cache, no-store, must-revalidate\r\n\r\n"
         printf "%s\n" "$1" | gzip -c -1
     else
         printf "Content-Type: application/json\r\n"
+        [ -n "${EXTRA_HEADER:-}" ] && printf "%s\r\n" "$EXTRA_HEADER"
         printf "Cache-Control: no-cache, no-store, must-revalidate\r\n\r\n"
         printf "%s\n" "$1"
     fi
@@ -193,11 +195,11 @@ require_valid_session() {
         exit 0
     fi
 
-    # Check idle timeout (1800s = 30m)
+    # Check idle timeout (604800s = 7 days)
     _last=$(jq -r '.last_active // .created // 0' "$SESS_DIR/$TOKEN" 2>/dev/null)
     [ -z "$_last" ] && _last=0
     _idle=$((NOW - _last))
-    if [ "$_idle" -gt 1800 ] || [ "$_idle" -lt 0 ]; then
+    if [ "$_idle" -gt 604800 ]; then
         rm -f "$SESS_DIR/$TOKEN"
         send_json_str '{"status": "unauthorized", "authenticated": false, "message": "Session expired due to inactivity"}'
         exit 0
@@ -282,6 +284,7 @@ if [ "$ACTION" = "login_encrypted" ]; then
 SESS
         chmod 600 "$SESS_DIR/$T"
         dispatch_login_alert "Router WebUI Login: $USER" "Administrator '$USER' logged into MAXNET Gateway WebUI via RSA-OAEP encrypted session from IP $CLIENT_IP." "info" "router_login"
+        EXTRA_HEADER="Set-Cookie: maxnet_token=$T; Path=/; SameSite=Lax; Max-Age=604800"
         send_json_str "{\"status\": \"ok\", \"token\": \"$T\", \"user\": \"$USER\", \"ip\": \"$CLIENT_IP\", \"encrypted\": true}"
     else
         record_ip_failure
@@ -318,6 +321,7 @@ if [ "$ACTION" = "login" ]; then
 SESS
         chmod 600 "$SESS_DIR/$T"
         dispatch_login_alert "Router WebUI Login: $USER" "Administrator '$USER' logged into MAXNET Gateway WebUI from IP $CLIENT_IP." "info" "router_login"
+        EXTRA_HEADER="Set-Cookie: maxnet_token=$T; Path=/; SameSite=Lax; Max-Age=604800"
         send_json_str "{\"status\": \"ok\", \"token\": \"$T\", \"user\": \"$USER\", \"ip\": \"$CLIENT_IP\", \"encrypted\": false}"
     else
         record_ip_failure
@@ -331,7 +335,7 @@ if [ "$ACTION" = "verify" ]; then
         _last=$(jq -r '.last_active // .created // 0' "$SESS_DIR/$TOKEN" 2>/dev/null)
         [ -z "$_last" ] && _last=0
         _idle=$((NOW - _last))
-        if [ "$_idle" -gt 1800 ] || [ "$_idle" -lt 0 ]; then
+        if [ "$_idle" -gt 604800 ]; then
             rm -f "$SESS_DIR/$TOKEN"
             send_json_str '{"status": "unauthorized", "authenticated": false, "message": "Session expired due to inactivity"}'
         else

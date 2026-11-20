@@ -6,7 +6,7 @@
 # ==============================================================================
 
 SESS_DIR="${SESS_DIR:-/tmp/sessions}"
-AUTH_IDLE_TIMEOUT=1800 # 30 minutes idle timeout
+AUTH_IDLE_TIMEOUT=604800 # 7 days session idle timeout
 
 send_unauthorized() {
     printf "Status: 401 Unauthorized\r\n"
@@ -36,12 +36,19 @@ require_auth() {
         AUTH_TOKEN="$HTTP_X_SESSION_TOKEN"
     fi
 
-    # 3. Check query string (?token=...)
-    if [ -z "$AUTH_TOKEN" ] && [ -n "${QUERY_STRING:-}" ]; then
-        AUTH_TOKEN=$(printf "%s" "$QUERY_STRING" | sed -n 's/^.*token=\([^&]*\).*$/\1/p')
+    # 3. Check Cookie header (maxnet_token=... or token=...)
+    if [ -z "$AUTH_TOKEN" ] && [ -n "${HTTP_COOKIE:-}" ]; then
+        AUTH_TOKEN=$(printf "%s" "$HTTP_COOKIE" | sed -n 's/.*maxnet_token=\([a-f0-9]\{32\}\).*/\1/p')
+        [ -z "$AUTH_TOKEN" ] && AUTH_TOKEN=$(printf "%s" "$HTTP_COOKIE" | sed -n 's/.*token=\([a-f0-9]\{32\}\).*/\1/p')
     fi
 
-    # 4. Check JSON body for POST requests if token not yet found
+    # 4. Check query string (?token=... or &token=...)
+    if [ -z "$AUTH_TOKEN" ] && [ -n "${QUERY_STRING:-}" ]; then
+        AUTH_TOKEN=$(printf "%s" "$QUERY_STRING" | tr '&' '\n' | awk -F= '$1=="token"{print $2}')
+        [ -z "$AUTH_TOKEN" ] && AUTH_TOKEN=$(printf "%s" "$QUERY_STRING" | sed -n 's/.*token=\([a-f0-9]\{32\}\).*/\1/p')
+    fi
+
+    # 5. Check JSON body for POST requests if token not yet found
     if [ -z "$AUTH_TOKEN" ] && [ "${REQUEST_METHOD:-}" = "POST" ] && [ -n "${CONTENT_LENGTH:-}" ] && [ "${CONTENT_LENGTH:-0}" -gt 0 ]; then
         if [ -z "${POST_DATA:-}" ]; then
             POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
@@ -79,7 +86,7 @@ require_auth() {
     [ -z "$LAST_ACTIVE" ] && LAST_ACTIVE=0
 
     IDLE_SEC=$((NOW - LAST_ACTIVE))
-    if [ "$IDLE_SEC" -gt "$AUTH_IDLE_TIMEOUT" ] || [ "$IDLE_SEC" -lt 0 ]; then
+    if [ "$IDLE_SEC" -gt "$AUTH_IDLE_TIMEOUT" ]; then
         rm -f "$SESS_FILE"
         send_unauthorized
     fi

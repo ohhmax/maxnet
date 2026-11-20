@@ -154,6 +154,11 @@ while true; do
             fi
         fi
 
+        has_adb_detected=false
+        if [ "$has_adb_if" = "true" ] || [ "$adb_st" != "none" ]; then
+            has_adb_detected=true
+        fi
+
         # Determine Device Type
         if [ "$has_storage" = "true" ] || [ -b "/dev/sd"*"$port"* ] 2>/dev/null; then
             dev_type="storage"
@@ -340,7 +345,7 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
         fi
         safe_share=$(echo "$cur_share" | sed 's/\\/\\\\/g')
 
-        item="{\"bus\":\"$b\",\"port\":$port,\"serial\":\"$ser\",\"brand\":\"$brand\",\"model\":\"$model\",\"raw_model\":\"$prod\",\"manufacturer\":\"$mfg\",\"hostname\":\"$hostname\",\"virtual_ip\":\"$virt_ip\",\"status\":\"online\",\"status_color\":\"green\",\"last_seen_sec\":0,\"speed_mbps\":$spd,\"standard\":\"$std\",\"color\":\"$color\",\"is_wan\":$has_internet,\"ip\":\"$virt_ip\",\"dhcp_ip\":\"$real_ip\",\"lan_ip\":\"$router_lan_ip\",\"adb_enabled\":$adb_ok,\"adb_status\":\"$adb_st\",\"has_sim\":$dev_has_sim,\"operator\":\"$dev_operator\",\"network\":\"$dev_net_type\",\"band\":\"$dev_band\",\"battery_pct\":$dev_battery_pct,\"battery_temp_c\":${dev_battery_temp:-null},\"device_type\":\"$dev_type\",\"has_tethering\":$has_tether,\"has_adb\":$adb_ok,\"has_mtp\":$has_mtp,\"has_storage\":$has_storage,\"has_internet\":$has_internet,\"internet_status\":\"$internet_status\",\"net_interface\":\"$net_if\",\"mounted\":$cur_mounted,\"smb_running\":true,\"mount_point\":\"/mnt/storage\",\"total_space\":\"$cur_total\",\"free_space\":\"$cur_free\",\"share_path\":\"$safe_share\"}"
+        item="{\"bus\":\"$b\",\"port\":$port,\"serial\":\"$ser\",\"brand\":\"$brand\",\"model\":\"$model\",\"raw_model\":\"$prod\",\"manufacturer\":\"$mfg\",\"hostname\":\"$hostname\",\"virtual_ip\":\"$virt_ip\",\"status\":\"online\",\"status_color\":\"green\",\"last_seen_sec\":0,\"speed_mbps\":$spd,\"standard\":\"$std\",\"color\":\"$color\",\"is_wan\":$has_internet,\"ip\":\"$virt_ip\",\"dhcp_ip\":\"$real_ip\",\"lan_ip\":\"$router_lan_ip\",\"adb_enabled\":$adb_ok,\"adb_status\":\"$adb_st\",\"has_sim\":$dev_has_sim,\"operator\":\"$dev_operator\",\"network\":\"$dev_net_type\",\"band\":\"$dev_band\",\"battery_pct\":$dev_battery_pct,\"battery_temp_c\":${dev_battery_temp:-null},\"device_type\":\"$dev_type\",\"has_tethering\":$has_tether,\"has_adb\":$has_adb_detected,\"has_mtp\":$has_mtp,\"has_storage\":$has_storage,\"has_internet\":$has_internet,\"internet_status\":\"$internet_status\",\"net_interface\":\"$net_if\",\"mounted\":$cur_mounted,\"smb_running\":true,\"mount_point\":\"/mnt/storage\",\"total_space\":\"$cur_total\",\"free_space\":\"$cur_free\",\"share_path\":\"$safe_share\"}"
 
         [ "$first" -eq 0 ] && DEVICE_LIST_JSON="$DEVICE_LIST_JSON,"
         DEVICE_LIST_JSON="$DEVICE_LIST_JSON$item"

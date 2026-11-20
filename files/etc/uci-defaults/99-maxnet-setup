@@ -59,12 +59,12 @@ if uci get firewall.@zone[1] >/dev/null 2>&1; then
 	uci commit firewall
 fi
 
-# Setup ADB wrapper if adb is installed as real binary
-if [ -f /usr/bin/adb ] && [ ! -f /usr/bin/adb.real ]; then
-	mv /usr/bin/adb /usr/bin/adb.real
-	cp /usr/bin/adb-wrapper /usr/bin/adb
-	chmod +x /usr/bin/adb
+# Ensure adb is the native ELF binary (never wrap in shell script to prevent daemon ACK failure)
+if [ -f /usr/bin/adb.real ]; then
+	mv -f /usr/bin/adb.real /usr/bin/adb
+	chmod 755 /usr/bin/adb
 fi
+rm -f /usr/bin/adb-wrapper
 
 # Enable USB Tethering Watchdog Service
 [ -x /etc/init.d/usb_tether_watchdog ] && /etc/init.d/usb_tether_watchdog enable && /etc/init.d/usb_tether_watchdog start

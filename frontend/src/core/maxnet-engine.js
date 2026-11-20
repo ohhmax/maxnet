@@ -75,11 +75,15 @@ let timer = null;
     // Direct Zero-Cache API Fetcher (Never Cache, Realtime Fresh Data with Session Auth)
     function apiFetch(url, options = {}) {
       const sep = url.includes('?') ? '&' : '?';
-      const noCacheUrl = `${url}${sep}_t=${Date.now()}`;
       const token = localStorage.getItem('maxnet_token');
-      return fetch(noCacheUrl, {
+      let finalUrl = `${url}${sep}_t=${Date.now()}`;
+      if (token && !url.includes('token=')) {
+        finalUrl += `&token=${encodeURIComponent(token)}`;
+      }
+      return fetch(finalUrl, {
         ...options,
         cache: 'no-store',
+        credentials: 'same-origin',
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -90,6 +94,18 @@ let timer = null;
           } : {}),
           ...(options.headers || {})
         }
+      }).then(res => {
+        if (res.status === 401 && !url.includes('/cgi-bin/auth')) {
+          console.warn('apiFetch: 401 Unauthorized for', url);
+          const dash = document.getElementById('dashboardContainer');
+          if (dash && dash.style.display !== 'none') {
+            showToast('Session expired. Please log in again.', 'warning');
+            localStorage.removeItem('maxnet_token');
+            document.cookie = 'maxnet_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            showLogin();
+          }
+        }
+        return res;
       });
     }
 
@@ -299,6 +315,7 @@ let timer = null;
         const data = await res.json();
         if (data.status === 'ok') {
           localStorage.setItem('maxnet_token', data.token);
+          document.cookie = 'maxnet_token=' + encodeURIComponent(data.token) + '; path=/; SameSite=Lax; max-age=604800';
           showDashboard();
         } else {
           errMsg.innerText = data.message || 'Invalid username or password';
@@ -329,6 +346,7 @@ let timer = null;
         fetch('/cgi-bin/auth?action=logout&token=' + token).catch(() => {});
       }
       localStorage.removeItem('maxnet_token');
+      document.cookie = 'maxnet_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
       showLogin();
     }
 
@@ -1883,14 +1901,24 @@ function handleSettingsBack() {
 
             let modes = [];
             if (dev.has_tethering) modes.push('TETHERING');
-            if (dev.has_adb || dev.adb_enabled) modes.push('ADB');
+            if (dev.adb_status === 'unauthorized') {
+              modes.push('ADB (UNAUTH)');
+            } else if (dev.has_adb || dev.adb_enabled) {
+              modes.push('ADB');
+            }
             if (dev.has_mtp) modes.push('MTP');
             const modesLabel = modes.length > 0 ? modes.join(' · ') : 'Direct Link';
 
-            badgeHtml = modes.map(m => `<span style="display:inline-block; padding:2px 6px; font-size:9px; font-weight:700; font-family:var(--font-mono); border-radius:4px; background:rgba(59,130,246,0.12); color:#38bdf8; border:1px solid rgba(59,130,246,0.3); margin-right:4px;">${escapeHtml(m)}</span>`).join('');
+            badgeHtml = modes.map(m => {
+              const isUnauthBadge = m.includes('UNAUTH');
+              const bBg = isUnauthBadge ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.12)';
+              const bColor = isUnauthBadge ? '#f87171' : '#38bdf8';
+              const bBorder = isUnauthBadge ? 'rgba(239,68,68,0.35)' : 'rgba(59,130,246,0.3)';
+              return `<span style="display:inline-block; padding:2px 6px; font-size:9px; font-weight:700; font-family:var(--font-mono); border-radius:4px; background:${bBg}; color:${bColor}; border:1px solid ${bBorder}; margin-right:4px;">${escapeHtml(m)}</span>`;
+            }).join('');
 
             const virtIp = dev.virtual_ip || dev.ip || '--';
-            const battLabel = (dev.battery_pct !== null && dev.battery_pct !== undefined) ? `${dev.battery_pct}%` : (dev.adb_enabled ? '--' : 'No ADB');
+            const battLabel = (dev.battery_pct !== null && dev.battery_pct !== undefined) ? `${dev.battery_pct}%` : (dev.adb_status === 'unauthorized' ? 'Unauthorized' : (dev.adb_enabled ? '--' : 'No ADB'));
             const hasSim = dev.has_sim === true && dev.operator !== 'No SIM' && dev.operator !== '--';
             const netLabel = hasSim ? `${dev.operator || 'Cellular'} ${dev.band || ''}`.trim() : 'No SIM';
             const links = (d.multilink && Array.isArray(d.multilink.links)) ? d.multilink.links : [];
@@ -9539,14 +9567,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           const oper = d.operator || 'Vi India';
           const net = d.network || '4G LTE';
           const ip = d.virtual_ip || d.ip || '--';
-          const batt = (d.battery_pct !== null && d.battery_pct !== undefined) ? `${d.battery_pct}%` : (d.adb_enabled ? '--' : 'No ADB');
+          const isAdbUnauth = (d.adb_status === 'unauthorized');
+          const batt = (d.battery_pct !== null && d.battery_pct !== undefined) ? `${d.battery_pct}%` : (isAdbUnauth ? 'Unauthorized' : (d.adb_enabled ? '--' : 'No ADB'));
           const battTemp = d.battery_temp_c ? ` (${d.battery_temp_c}°C)` : '';
           const isWan = d.is_wan !== false;
           const spd = d.speed_mbps ? `${d.speed_mbps} Mbps` : '480 Mbps';
           subInfo = `Tethering (${d.net_interface || 'usb' + idx}) &middot; ${net} (${oper}) &middot; ${ip} &middot; Batt: ${batt}${battTemp} &middot; ${spd}`;
           
-          const badgeText = isWan ? 'ACTIVE WAN' : (d.adb_enabled ? 'STANDBY' : 'NO INTERNET');
-          const badgeCls = isWan ? 'on' : 'off';
+          const badgeText = isWan ? 'ACTIVE WAN' : (isAdbUnauth ? 'UNAUTHORIZED' : (d.adb_enabled ? 'STANDBY' : 'NO INTERNET'));
+          const badgeCls = (isWan || d.adb_enabled) ? 'on' : 'off';
           controlHtml = `
             <span class="toggle-status-badge ${badgeCls}">${badgeText}</span>
             <button class="round-action-btn" title="Reboot ${devTitle} via ADB" onclick="runDeviceReboot()">
@@ -9981,6 +10010,11 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       try {
         showToast('Exporting ADB keys package (.adbmax)...', 'info');
         const res = await apiFetch('/cgi-bin/device?action=export_keys');
+        if (res.status === 401) {
+          showToast('Session expired. Please log in again to export keys.', 'warning');
+          showLogin();
+          return;
+        }
         const data = await res.json();
         if (data.status === 'ok') {
           if (!data.has_keys && (!data.adbkey || !data.adbkey.trim())) {
@@ -12999,12 +13033,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
       try {
         let devs = [];
-        if (window._lastDataCache && Array.isArray(window._lastDataCache.usb_devices) && window._lastDataCache.usb_devices.length > 0) {
-          devs = window._lastDataCache.usb_devices;
-        } else {
+        try {
           const res = await apiFetch("/cgi-bin/device?action=devices");
           const data = await res.json();
-          devs = Array.isArray(data.devices) ? data.devices : [];
+          if (Array.isArray(data.devices)) devs = data.devices;
+        } catch (e) {
+          console.warn("fetchAdbDeviceList direct fetch error", e);
+        }
+        if ((!devs || devs.length === 0) && window._lastDataCache && Array.isArray(window._lastDataCache.usb_devices)) {
+          devs = window._lastDataCache.usb_devices;
         }
 
         activeAdbDevices = devs.filter(d => d.device_type !== 'storage' && d.device_type !== 'pendrive' && d.device_type !== 'ssd');
