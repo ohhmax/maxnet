@@ -12,6 +12,9 @@ on:
       - 'LICENSE'
       - '*.md'
       - '.gitignore'
+      - 'update/**'
+      - 'updates.json'
+      - 'models/**'
   workflow_dispatch:
     inputs:
       target:

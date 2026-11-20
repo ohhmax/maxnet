@@ -30,7 +30,9 @@ def main():
     build_num = int(sys.argv[6]) if len(sys.argv) > 6 else 1
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    model_manifest_path = os.path.join(repo_root, "models", model_id, "manifest.json")
+    model_manifest_path = os.path.join(repo_root, "update", "models", model_id, "manifest.json")
+    if not os.path.exists(model_manifest_path):
+        model_manifest_path = os.path.join(repo_root, "models", model_id, "manifest.json")
 
     if not os.path.exists(model_manifest_path):
         print(f"Error: Model manifest not found at {model_manifest_path}")
@@ -105,7 +107,7 @@ def main():
         "channel": channel_key,
         "version": semver,
         "build": build_num,
-        "pushed": True,
+        "pushed": False,  # Default OFF: Must be explicitly enabled by user in update/
         "release_date": subprocess.getoutput("date -u +'%Y-%m-%d'"),
         "download_url": download_url,
         "sha256": sha256,

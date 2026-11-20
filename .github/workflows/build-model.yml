@@ -34,15 +34,6 @@ on:
         required: true
         default: true
         type: boolean
-  push:
-    branches:
-      - staging
-    paths-ignore:
-      - 'README.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '*.md'
-      - '.gitignore'
 
 permissions:
   contents: write
@@ -239,7 +230,7 @@ jobs:
 
   release:
     name: Publish Release Candidate
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) || (github.event_name == 'push' && github.ref == 'refs/heads/staging')
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
     needs: [version, build]
     runs-on: ubuntu-22.04
     steps:
@@ -265,7 +256,7 @@ jobs:
       - name: Rebuild Unified Manifest
         run: |
           cd custom
-          python3 scripts/manage_models.py
+          python3 update/sync.py
           ls -lh release_binaries/ || true
 
       - name: Publish Staging / Stable Candidate
@@ -278,7 +269,7 @@ jobs:
           IS_PRERELEASE=""
           [ "$CHANNEL" = "staging" ] && IS_PRERELEASE="--prerelease"
 
-          gh release create "$TAG_NAME" custom/release_binaries/* custom/updates.json \
+          gh release create "$TAG_NAME" custom/release_binaries/* custom/update/updates.json \
             --repo "${{ github.repository }}" \
             --title "MAXNET $SEMVER ($CHANNEL)" \
             $IS_PRERELEASE \

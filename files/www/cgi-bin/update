@@ -74,8 +74,8 @@ fi
 
 # ==================== VERIFIED UPDATE MANIFEST PIPELINE ====================
 # To prevent bricking from unverified/experimental CI releases, updates are
-# strictly driven by the dedicated updates.json manifest with pushed=true.
-UPDATES_URL="https://raw.githubusercontent.com/ohhmax/maxnet/main/updates.json"
+# strictly driven by the dedicated update/updates.json manifest with pushed=true.
+UPDATES_URL="https://raw.githubusercontent.com/ohhmax/maxnet/main/update/updates.json"
 UPDATES_FILE="/tmp/updates.json"
 
 # Resolve router model key
