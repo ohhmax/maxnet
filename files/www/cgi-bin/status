@@ -1,4 +1,8 @@
 #!/bin/sh
+# Require administrator authentication
+. /www/cgi-bin/lib/auth_check.sh 2>/dev/null || . "$(dirname "$0")/lib/auth_check.sh" 2>/dev/null || exit 1
+require_auth
+
 send_response() {
     if echo "$HTTP_ACCEPT_ENCODING" | grep -qi "gzip"; then
         echo "Content-Type: application/json"

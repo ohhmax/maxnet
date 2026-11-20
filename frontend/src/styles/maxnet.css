@@ -9073,16 +9073,17 @@ body[data-theme="dark"] {
 .topo-quick-info-copy { min-width: 0; }
 .topo-quick-info-label {
   display: block;
-  color: var(--text-dim);
-  font-size: 10px;
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1.3;
 }
 .topo-quick-info-value {
   display: block;
   margin-top: 2px;
   overflow: hidden;
-  color: var(--text-main);
-  font: 600 11px/1.35 var(--font-mono);
+  color: #38bdf8;
+  font: 600 11.5px/1.35 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -9486,36 +9487,37 @@ select option {
 .topo-detail-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
-  padding: 8px 2px;
+  padding: 9px 4px;
   border-bottom: 1px solid var(--border-sub, rgba(148,163,184,.12));
 }
 .topo-detail-row:last-child { border-bottom: 0; }
 .topo-detail-icon {
-  flex: 0 0 17px;
-  width: 17px;
-  height: 17px;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
   fill: none;
-  stroke: var(--text-dim);
-  stroke-width: 1.7;
+  stroke: #38bdf8;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .topo-detail-copy {
-  display: grid;
-  grid-template-columns: minmax(105px, .8fr) minmax(0, 1.2fr);
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 2px 12px;
+  gap: 12px;
   width: 100%;
   min-width: 0;
 }
 .topo-detail-label {
-  overflow: hidden;
-  color: var(--text-dim);
-  font-size: 10px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
+  color: var(--text-main);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  white-space: nowrap;
 }
 .topo-detail-value {
   display: flex;
@@ -9524,19 +9526,19 @@ select option {
   gap: 4px;
   min-width: 0;
   overflow: hidden;
-  color: var(--text-main);
-  font: 600 11px/1.35 var(--font-mono);
+  color: #38bdf8;
+  font: 600 11.5px/1.35 var(--font-mono);
   text-align: right;
   overflow-wrap: anywhere;
 }
 .topo-detail-sub {
-  grid-column: 2;
   min-width: 0;
   overflow: hidden;
   color: var(--text-dim);
   font: 10px/1.35 var(--font-mono);
   text-align: right;
   text-overflow: ellipsis;
+  margin-top: 1px;
 }
 @media (max-width: 380px) {
   .topo-detail-copy { grid-template-columns: minmax(0, 1fr); gap: 2px; }

@@ -18,18 +18,11 @@ get_friendly_model() {
     ser="$1"
     mfg="$2"
     prod="$3"
-    case "$ser" in
-        *RZCW6090G4J*) echo "Galaxy S21 FE 5G"; return ;;
-        *8d7a382466f6*) echo "Mi A3"; return ;;
-        *4e1c1cf*) echo "A37"; return ;;
-    esac
-    case "$prod" in
-        *SAMSUNG*) echo "Galaxy S21 FE 5G"; return ;;
-        *Mi*|*laurel*) echo "Mi A3"; return ;;
-        *A37*) echo "A37"; return ;;
-    esac
-    if [ -n "$prod" ] && [ "$prod" != "USB Device" ]; then
-        echo "$prod"
+    clean_prod=$(echo "$prod" | sed 's/_Android//g; s/_/ /g')
+    if [ -n "$clean_prod" ] && [ "$clean_prod" != "USB Device" ]; then
+        echo "$clean_prod"
+    elif [ -n "$mfg" ] && [ "$mfg" != "Generic" ] && [ "$mfg" != "Unknown" ]; then
+        echo "$mfg Device"
     else
         echo "USB Device"
     fi
@@ -38,17 +31,7 @@ get_friendly_model() {
 get_friendly_brand() {
     ser="$1"
     mfg="$2"
-    case "$ser" in
-        *RZCW6090G4J*) echo "SAMSUNG"; return ;;
-        *8d7a382466f6*) echo "XIAOMI"; return ;;
-        *4e1c1cf*) echo "OPPO"; return ;;
-    esac
-    case "$mfg" in
-        *Samsung*|*SAMSUNG*) echo "SAMSUNG"; return ;;
-        *Xiaomi*|*XIAOMI*) echo "XIAOMI"; return ;;
-        *Oppo*|*OPPO*) echo "OPPO"; return ;;
-    esac
-    if [ -n "$mfg" ] && [ "$mfg" != "Unknown" ]; then
+    if [ -n "$mfg" ] && [ "$mfg" != "Unknown" ] && [ "$mfg" != "Generic" ]; then
         echo "$mfg" | tr 'a-z' 'A-Z'
     else
         echo "GENERIC"
@@ -74,6 +57,8 @@ PREV_DNAT_ENTRIES=""
 while true; do
     # Fetch connected ADB serials
     ATTACHED_ADB=$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1}')
+    UNAUTH_ADB=$(adb devices 2>/dev/null | awk 'NR>1 && $2=="unauthorized" {print $1}')
+    OFFLINE_ADB=$(adb devices 2>/dev/null | awk 'NR>1 && $2=="offline" {print $1}')
     
     # Read currently mounted storage status
     STORAGE_TOTAL="--"
@@ -157,8 +142,16 @@ while true; do
 
         # Check if device is in active ADB list
         adb_ok=false
-        if [ -n "$ser" ] && echo "$ATTACHED_ADB" | grep -q "$ser"; then
-            adb_ok=true
+        adb_st="none"
+        if [ -n "$ser" ]; then
+            if echo "$ATTACHED_ADB" | grep -q "$ser"; then
+                adb_ok=true
+                adb_st="device"
+            elif echo "$UNAUTH_ADB" | grep -q "$ser"; then
+                adb_st="unauthorized"
+            elif echo "$OFFLINE_ADB" | grep -q "$ser"; then
+                adb_st="offline"
+            fi
         fi
 
         # Determine Device Type
@@ -248,10 +241,8 @@ while true; do
             link_st=$(jq -r --arg id "$net_if" '.links[] | select(.id == $id) | .status' "$MULTILINK_JSON_FILE" 2>/dev/null)
             if [ "$link_st" = "CONNECTED" ]; then
                 has_internet=true
-                if [ "$ser" = "RZCW6090G4J" ] || echo "$prod" | grep -qi SAMSUNG; then
-                    internet_status="Online (Jio 5G)"
-                elif [ "$ser" = "8d7a382466f6" ] || echo "$prod" | grep -qi Mi; then
-                    internet_status="Online (Vi 4G)"
+                if [ "$has_tether" = "true" ] || [ -n "$net_if" ]; then
+                    internet_status="Online (Tethered)"
                 else
                     internet_status="Online"
                 fi
@@ -318,22 +309,11 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
                 fi
             fi
 
-            # Fallback based on internet status ONLY if ADB query was unavailable
-            if [ "$adb_ok" != "true" ] && [ "$has_internet" = "true" ] && [ "$dev_has_sim" = "false" ]; then
-                dev_has_sim=true
-                if echo "$model" | grep -qi -E 'samsung|s21'; then
-                    dev_operator="Jio"
-                    dev_net_type="5G SA"
-                    dev_band="5G NR"
-                elif echo "$model" | grep -qi -E 'mi|xiaomi'; then
-                    dev_operator="Vi India"
-                    dev_net_type="4G LTE"
-                    dev_band="LTE"
-                else
-                    dev_operator="Cellular"
-                    dev_net_type="Mobile Data"
-                    dev_band="Cellular"
-                fi
+            if [ "$adb_ok" != "true" ]; then
+                dev_has_sim=false
+                dev_operator="--"
+                [ "$has_internet" = "true" ] && dev_net_type="USB Tether" || dev_net_type="--"
+                dev_band="--"
             fi
 
             # Fallback for battery if dumpsys battery did not return level
@@ -360,7 +340,7 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
         fi
         safe_share=$(echo "$cur_share" | sed 's/\\/\\\\/g')
 
-        item="{\"bus\":\"$b\",\"port\":$port,\"serial\":\"$ser\",\"brand\":\"$brand\",\"model\":\"$model\",\"raw_model\":\"$prod\",\"manufacturer\":\"$mfg\",\"hostname\":\"$hostname\",\"virtual_ip\":\"$virt_ip\",\"status\":\"online\",\"status_color\":\"green\",\"last_seen_sec\":0,\"speed_mbps\":$spd,\"standard\":\"$std\",\"color\":\"$color\",\"is_wan\":$has_internet,\"ip\":\"$virt_ip\",\"dhcp_ip\":\"$real_ip\",\"lan_ip\":\"$router_lan_ip\",\"adb_enabled\":$adb_ok,\"has_sim\":$dev_has_sim,\"operator\":\"$dev_operator\",\"network\":\"$dev_net_type\",\"band\":\"$dev_band\",\"battery_pct\":$dev_battery_pct,\"battery_temp_c\":${dev_battery_temp:-null},\"device_type\":\"$dev_type\",\"has_tethering\":$has_tether,\"has_adb\":$adb_ok,\"has_mtp\":$has_mtp,\"has_storage\":$has_storage,\"has_internet\":$has_internet,\"internet_status\":\"$internet_status\",\"net_interface\":\"$net_if\",\"mounted\":$cur_mounted,\"smb_running\":true,\"mount_point\":\"/mnt/storage\",\"total_space\":\"$cur_total\",\"free_space\":\"$cur_free\",\"share_path\":\"$safe_share\"}"
+        item="{\"bus\":\"$b\",\"port\":$port,\"serial\":\"$ser\",\"brand\":\"$brand\",\"model\":\"$model\",\"raw_model\":\"$prod\",\"manufacturer\":\"$mfg\",\"hostname\":\"$hostname\",\"virtual_ip\":\"$virt_ip\",\"status\":\"online\",\"status_color\":\"green\",\"last_seen_sec\":0,\"speed_mbps\":$spd,\"standard\":\"$std\",\"color\":\"$color\",\"is_wan\":$has_internet,\"ip\":\"$virt_ip\",\"dhcp_ip\":\"$real_ip\",\"lan_ip\":\"$router_lan_ip\",\"adb_enabled\":$adb_ok,\"adb_status\":\"$adb_st\",\"has_sim\":$dev_has_sim,\"operator\":\"$dev_operator\",\"network\":\"$dev_net_type\",\"band\":\"$dev_band\",\"battery_pct\":$dev_battery_pct,\"battery_temp_c\":${dev_battery_temp:-null},\"device_type\":\"$dev_type\",\"has_tethering\":$has_tether,\"has_adb\":$adb_ok,\"has_mtp\":$has_mtp,\"has_storage\":$has_storage,\"has_internet\":$has_internet,\"internet_status\":\"$internet_status\",\"net_interface\":\"$net_if\",\"mounted\":$cur_mounted,\"smb_running\":true,\"mount_point\":\"/mnt/storage\",\"total_space\":\"$cur_total\",\"free_space\":\"$cur_free\",\"share_path\":\"$safe_share\"}"
 
         [ "$first" -eq 0 ] && DEVICE_LIST_JSON="$DEVICE_LIST_JSON,"
         DEVICE_LIST_JSON="$DEVICE_LIST_JSON$item"

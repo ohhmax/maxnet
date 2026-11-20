@@ -71,8 +71,6 @@ getprop gsm.sim.state
         P_SOC=$(echo "$STATIC_OUT" | sed -n '3p' | tr -d '\r\n')
         P_ANDROID=$(echo "$STATIC_OUT" | sed -n '4p' | tr -d '\r\n')
         
-        [ "$ADB_DEV" = "RZCW6090G4J" ] && P_MODEL="Galaxy S21 FE 5G (SM-G990B2)"
-        [ "$ADB_DEV" = "4e1c1cf" ] && P_MODEL="A37"
         
         [ -n "$P_BRAND" ] && P_FULL_MODEL="$(echo "$P_BRAND" | tr 'a-z' 'A-Z') $P_MODEL" || P_FULL_MODEL="$P_MODEL"
         [ -z "$P_FULL_MODEL" ] && P_FULL_MODEL="$P_MODEL"

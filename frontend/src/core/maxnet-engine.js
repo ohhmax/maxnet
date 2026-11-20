@@ -2931,21 +2931,79 @@ function handleSettingsBack() {
         return `<button type="button" class="round-action-btn" onclick="navigator.clipboard.writeText('${val}'); if(typeof showToast==='function')showToast('Copied: ${val}');" title="Copy" style="width:20px; height:20px; min-width:20px; border:none; background:transparent; cursor:pointer; color:currentColor; display:inline-flex; align-items:center; justify-content:center; opacity:0.75;"><svg viewBox="0 0 24 24" style="width:11px; height:11px; stroke:currentColor; fill:none; stroke-width:2;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`;
       }
 
-      function makeTile(label, val, subText, fullWidth) {
+      function getTileIcon(lbl) {
+        const l = String(lbl || '').toLowerCase();
+        if (l.includes('ip') || l.includes('gateway') || l.includes('subnet') || l.includes('wan') || l.includes('lan')) {
+          return '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>';
+        }
+        if (l.includes('speed') || l.includes('throughput') || l.includes('traffic') || l.includes('rate') || l.includes('bitrate')) {
+          return '<path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>';
+        }
+        if (l.includes('port') || l.includes('socket') || l.includes('link') || l.includes('bay')) {
+          return '<rect x="2" y="2" width="20" height="20" rx="4"/><path d="M7 16h10M7 8h2m6 0h2M10 8v4m4-4v4"/>';
+        }
+        if (l.includes('mac') || l.includes('hardware') || l.includes('entity') || l.includes('soc')) {
+          return '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>';
+        }
+        if (l.includes('cpu') || l.includes('processor') || l.includes('load')) {
+          return '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>';
+        }
+        if (l.includes('ram') || l.includes('mem') || l.includes('zram') || l.includes('swap')) {
+          return '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>';
+        }
+        if (l.includes('temp') || l.includes('thermal')) {
+          return '<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>';
+        }
+        if (l.includes('uptime') || l.includes('time') || l.includes('clock')) {
+          return '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>';
+        }
+        if (l.includes('wifi') || l.includes('ssid') || l.includes('wireless') || l.includes('signal') || l.includes('band')) {
+          return '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>';
+        }
+        if (l.includes('battery') || l.includes('charge') || l.includes('power')) {
+          return '<rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/><path d="M7 12h4m2-2l-2 4"/>';
+        }
+        if (l.includes('storage') || l.includes('drive') || l.includes('mount') || l.includes('capacity') || l.includes('disk')) {
+          return '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 16h.01M10 16h.01"/>';
+        }
+        if (l.includes('share') || l.includes('smb') || l.includes('file') || l.includes('webdav')) {
+          return '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>';
+        }
+        if (l.includes('client') || l.includes('device') || l.includes('user')) {
+          return '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>';
+        }
+        if (l.includes('status') || l.includes('mode') || l.includes('state') || l.includes('feature')) {
+          return '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
+        }
+        return '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5m0-8h.01"/>';
+      }
+
+      function makeTile(label, val, subText, fullWidth, customSvg) {
+        const svgContent = customSvg || getTileIcon(label);
         return `
           <div class="topo-detail-row"${fullWidth ? ' style="grid-column:1 / -1;"' : ''}>
-            <svg class="topo-detail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5m0-8h.01"/></svg>
-            <div class="topo-detail-copy">
+            <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+              <svg class="topo-detail-icon" viewBox="0 0 24 24" aria-hidden="true">${svgContent}</svg>
               <span class="topo-detail-label">${esc(label)}</span>
-              <span class="topo-detail-value">${val}</span>
-              ${subText ? `<span class="topo-detail-sub">${subText}</span>` : ''}
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:flex-end; justify-content:center; text-align:right; min-width:0; margin-left:auto;">
+              <div class="topo-detail-value">${val}</div>
+              ${subText ? `<div class="topo-detail-sub">${subText}</div>` : ''}
             </div>
           </div>
         `;
       }
 
       function makeQuickInfo(icon, label, value) {
-        return `<div class="topo-quick-info-item"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><div class="topo-quick-info-copy"><span class="topo-quick-info-label">${esc(label)}</span><strong class="topo-quick-info-value">${esc(value)}</strong></div></div>`;
+        return `
+          <div class="topo-quick-info-item">
+            <svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>
+            <div class="topo-quick-info-copy" style="display:flex; justify-content:space-between; align-items:center; width:100%; min-width:0; gap:8px;">
+              <span class="topo-quick-info-label">${esc(label)}</span>
+              <strong class="topo-quick-info-value">${esc(value)}</strong>
+            </div>
+          </div>
+        `;
       }
 
       // 1. WAN Uplink Node (USB Phone / Modem / Storage / Wi-Fi Repeater)
@@ -9797,6 +9855,24 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           const bSub = document.getElementById('dispDevBatterySub');
           const sSub = document.getElementById('dispDevSerialSub');
           const rSub = document.getElementById('dispRadioSub');
+          const uSub = document.getElementById('dispDevUptimeSub');
+
+          const isUnauth = (data.adb_status === 'unauthorized' || (!data.adb_enabled && !data.has_adb));
+          const unauthBanner = document.getElementById('adbUnauthorizedBanner');
+          const authControls = document.getElementById('adbAuthorizedControls');
+          if (unauthBanner) unauthBanner.style.display = isUnauth ? 'block' : 'none';
+          if (authControls) authControls.style.display = isUnauth ? 'none' : 'flex';
+
+          if (isUnauth) {
+            const ident = data.identity || {};
+            const brand = data.brand || ident.brand || '';
+            const model = data.model || ident.model || 'Android Handset';
+            if (mTitle) mTitle.textContent = `${brand ? brand + ' ' : ''}${model}`;
+            if (mSub) mSub.textContent = `Serial: ${selectedAdbSerial} • Status: UNAUTHORIZED • Tap Allow on phone or Import Keys`;
+            if (bSub) bSub.textContent = 'Telemetry locked • Phone authorization required';
+            if (uSub) uSub.textContent = 'Uptime locked • Phone authorization required';
+            return;
+          }
 
           // Model & Brand
           const ident = data.identity || {};
@@ -9843,7 +9919,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           }
 
           // Device System Uptime
-          const uSub = document.getElementById('dispDevUptimeSub');
           if (uSub) {
             const devUp = data.uptime || '--';
             uSub.innerHTML = `<strong>Uptime: ${escapeHtml(devUp)}</strong> &bull; Powered on &amp; operational`;
@@ -9861,6 +9936,105 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (navigator.clipboard) {
         navigator.clipboard.writeText(selectedAdbSerial);
         showToast(`Copied ADB Serial "${selectedAdbSerial}" to clipboard`, 'success');
+      }
+    }
+
+    /* ==================== ADB KEY MANAGEMENT (IMPORT / EXPORT) ==================== */
+    function openImportAdbKeysModal() {
+      const modal = document.getElementById('adbKeysModalOverlay');
+      if (modal) {
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => modal.classList.add('active'));
+      }
+    }
+
+    function closeImportAdbKeysModal() {
+      const modal = document.getElementById('adbKeysModalOverlay');
+      if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => { modal.style.display = 'none'; }, 200);
+      }
+    }
+
+    async function exportAdbKeys() {
+      try {
+        const res = await apiFetch('/cgi-bin/device?action=export_keys');
+        const data = await res.json();
+        if (data.status === 'ok') {
+          if (!data.has_keys) {
+            showToast('No ADB keys found on router yet.', 'warning');
+            return;
+          }
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = data.filename || 'maxnet_adb_keys.json';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast('ADB keys exported successfully!', 'success');
+        } else {
+          showToast(data.message || 'Failed to export ADB keys', 'danger');
+        }
+      } catch (e) {
+        showToast('Error exporting ADB keys: ' + e.message, 'danger');
+      }
+    }
+
+    function handleAdbKeyFileUpload(input) {
+      if (!input || !input.files || !input.files[0]) return;
+      const file = input.files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target.result;
+        const textarea = document.getElementById('adbKeyTextInput');
+        if (textarea) textarea.value = content;
+      };
+      reader.readAsText(file);
+    }
+
+    async function submitImportAdbKeys() {
+      const textarea = document.getElementById('adbKeyTextInput');
+      const raw = textarea ? textarea.value.trim() : '';
+      if (!raw) {
+        showToast('Please paste your ADB private key or upload a key file.', 'warning');
+        return;
+      }
+
+      let payload = {};
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.adbkey) {
+          payload = parsed;
+        } else {
+          payload = { adbkey: raw };
+        }
+      } catch (e) {
+        payload = { adbkey: raw };
+      }
+
+      try {
+        showToast('Importing ADB keys & restarting ADB server...', 'info');
+        const res = await apiFetch('/cgi-bin/device?action=import_keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          showToast('ADB keys imported! Device should now be authorized.', 'success');
+          closeImportAdbKeysModal();
+          setTimeout(() => {
+            fetchAdbDeviceList();
+            fetchData();
+          }, 1200);
+        } else {
+          showToast(data.message || 'Failed to import ADB keys', 'danger');
+        }
+      } catch (e) {
+        showToast('Error importing keys: ' + e.message, 'danger');
       }
     }
 
@@ -12707,7 +12881,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (!devs || devs.length === 0) {
         container.innerHTML = `
           <div style="padding:16px; text-align:center; color:var(--text-dim); font-size:11.5px; font-family:var(--font-mono); background:rgba(255,255,255,0.02); border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
-            No Android ADB devices detected. Connect a 5G phone via USB with USB Debugging enabled.
+            No Android ADB devices detected. Connect an Android phone via USB with USB Debugging enabled.
           </div>
         `;
         return;
@@ -12716,9 +12890,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       container.innerHTML = devs.map(d => {
         const ser = d.serial || d.bus || 'dev_adb';
         const name = escapeHtml(d.model || d.brand || 'Android Handset');
-        const net = d.network || (d.is_wan ? '5G SA Tethering' : 'Connected');
-        const oper = d.operator || d.manufacturer || '';
-        const batt = (d.battery_pct !== null && d.battery_pct !== undefined) ? `${d.battery_pct}%` : '';
+        const isUnauth = (d.adb_status === 'unauthorized' || (!d.adb_enabled && !d.has_adb));
+        const net = isUnauth ? 'Unauthorized ADB' : (d.network || (d.is_wan ? '5G SA Tethering' : 'Connected'));
+        const oper = isUnauth ? 'Action Required' : (d.operator || d.manufacturer || '');
+        const batt = (!isUnauth && d.battery_pct !== null && d.battery_pct !== undefined) ? `${d.battery_pct}%` : '';
         const ip = d.virtual_ip || d.ip || '';
 
         const metaParts = [];
@@ -12729,13 +12904,18 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (batt) metaParts.push(`Batt: ${batt}`);
         const metaStr = metaParts.join(' &bull; ');
 
+        const badgeHtml = isUnauth
+          ? '<span class="card-badge ruby" style="font-size:9px; font-weight:800; margin-left:auto; margin-right:8px; white-space:nowrap;">UNAUTHORIZED</span>'
+          : '<span class="card-badge emerald" style="font-size:9px; font-weight:800; margin-left:auto; margin-right:8px; white-space:nowrap;">AUTHORIZED</span>';
+
         return `
           <div class="setting-row-item setting-clickable-row" onclick="openAdbDeviceDetail('${escapeHtml(ser)}')">
             <div class="setting-label-col">
               <span class="setting-label-bold">${name}</span>
               <span class="setting-label-sub">${metaStr}</span>
             </div>
-            <div class="setting-arrow-col">
+            <div class="setting-arrow-col" style="display:flex; align-items:center;">
+              ${badgeHtml}
               <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
           </div>
@@ -12754,6 +12934,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const selDev = activeAdbDevices.find(d => (d.serial === serial || d.bus === serial)) || { serial: serial, model: 'Android Handset' };
       const devName = selDev.model || selDev.brand || 'Android Handset';
       const ser = selDev.serial || selDev.bus || serial || '--';
+      const isUnauth = (selDev.adb_status === 'unauthorized' || (!selDev.adb_enabled && !selDev.has_adb));
 
       // Update Subnav Title
       const navTitle = document.getElementById('settingsDetailNavTitle');
@@ -12761,17 +12942,37 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         navTitle.textContent = devName;
       }
 
+      // Handle unauthorized controls locking
+      const unauthBanner = document.getElementById('adbUnauthorizedBanner');
+      const authControls = document.getElementById('adbAuthorizedControls');
+      if (unauthBanner) unauthBanner.style.display = isUnauth ? 'block' : 'none';
+      if (authControls) authControls.style.display = isUnauth ? 'none' : 'flex';
+
       // Populate basic info immediately
       const mTitle = document.getElementById('dispDevModelTitle');
       if (mTitle) mTitle.textContent = devName;
       const mSub = document.getElementById('dispDevModelSub');
-      if (mSub) mSub.textContent = `Serial: ${ser}${selDev.ip ? ` • IP: ${selDev.ip}` : ''}`;
+      if (mSub) {
+        mSub.textContent = isUnauth
+          ? `Serial: ${ser} • Status: UNAUTHORIZED • Tap Allow on phone or Import Keys`
+          : `Serial: ${ser}${selDev.ip ? ` • IP: ${selDev.ip}` : ''}`;
+      }
       const sSub = document.getElementById('dispDevSerialSub');
       if (sSub) sSub.textContent = `Serial: ${ser} • USB High-Speed 480 Mbps`;
+      const bSub = document.getElementById('dispDevBatterySub');
+      if (bSub && isUnauth) {
+        bSub.textContent = 'Telemetry locked • Phone authorization required';
+      }
       const uSub = document.getElementById('dispDevUptimeSub');
-      if (uSub) uSub.innerHTML = 'Uptime: -- &bull; Reading system uptime...';
+      if (uSub) {
+        uSub.innerHTML = isUnauth
+          ? 'Uptime locked &bull; Phone authorization required'
+          : 'Uptime: -- &bull; Reading system uptime...';
+      }
 
-      updateSelectedAdbDeviceControls();
+      if (!isUnauth) {
+        updateSelectedAdbDeviceControls();
+      }
       fetchAdbLiveTelemetry();
 
       if (pushHistory) {
@@ -19897,6 +20098,16 @@ if (typeof window !== 'undefined') {
     updateAdbTorchUI,
     fetchAdbLiveTelemetry,
     copyAdbSerial,
+  openImportAdbKeysModal,
+  closeImportAdbKeysModal,
+  exportAdbKeys,
+  handleAdbKeyFileUpload,
+  submitImportAdbKeys,
+    openImportAdbKeysModal,
+    closeImportAdbKeysModal,
+    exportAdbKeys,
+    handleAdbKeyFileUpload,
+    submitImportAdbKeys,
     switchAdbSubView,
     fetchAdbSmsPage,
     renderAdbSmsPageList,
@@ -20370,6 +20581,11 @@ export {
   updateAdbTorchUI,
   fetchAdbLiveTelemetry,
   copyAdbSerial,
+  openImportAdbKeysModal,
+  closeImportAdbKeysModal,
+  exportAdbKeys,
+  handleAdbKeyFileUpload,
+  submitImportAdbKeys,
   switchAdbSubView,
   fetchAdbSmsPage,
   renderAdbSmsPageList,

@@ -60,6 +60,11 @@ import {
   volumePhone,
   enableWirelessAdb,
   copyAdbSerial,
+  openImportAdbKeysModal,
+  closeImportAdbKeysModal,
+  exportAdbKeys,
+  handleAdbKeyFileUpload,
+  submitImportAdbKeys,
   saveUsbWanConfig,
   restartNetworkAndMultilink,
   scheduleNetworkAutoSave,
@@ -270,6 +275,11 @@ if (typeof window !== 'undefined') {
   window.volumePhone = volumePhone;
   window.enableWirelessAdb = enableWirelessAdb;
   window.copyAdbSerial = copyAdbSerial;
+  window.openImportAdbKeysModal = openImportAdbKeysModal;
+  window.closeImportAdbKeysModal = closeImportAdbKeysModal;
+  window.exportAdbKeys = exportAdbKeys;
+  window.handleAdbKeyFileUpload = handleAdbKeyFileUpload;
+  window.submitImportAdbKeys = submitImportAdbKeys;
   window.saveUsbWanConfig = saveUsbWanConfig;
   window.restartNetworkAndMultilink = restartNetworkAndMultilink;
   window.scheduleNetworkAutoSave = scheduleNetworkAutoSave;
@@ -472,6 +482,11 @@ if (typeof window !== 'undefined') {
     volumePhone,
     enableWirelessAdb,
     copyAdbSerial,
+    openImportAdbKeysModal,
+    closeImportAdbKeysModal,
+    exportAdbKeys,
+    handleAdbKeyFileUpload,
+    submitImportAdbKeys,
     saveUsbWanConfig,
     restartNetworkAndMultilink,
     scheduleNetworkAutoSave,
@@ -593,6 +608,11 @@ export {
   volumePhone,
   enableWirelessAdb,
   copyAdbSerial,
+  openImportAdbKeysModal,
+  closeImportAdbKeysModal,
+  exportAdbKeys,
+  handleAdbKeyFileUpload,
+  submitImportAdbKeys,
   saveUsbWanConfig,
   restartNetworkAndMultilink,
   scheduleNetworkAutoSave,

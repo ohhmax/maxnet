@@ -10,11 +10,6 @@ get_friendly_name() {
     ser="$1"
     mfg="$2"
     prod="$3"
-    case "$ser" in
-        *RZCW6090G4J*) echo "Samsung Galaxy S21 FE 5G"; return ;;
-        *8d7a382466f6*) echo "Xiaomi Mi A3"; return ;;
-        *4e1c1cf*) echo "OPPO A37"; return ;;
-    esac
     case "$prod" in
         *SAMSUNG*|*Galaxy*) echo "Samsung Smartphone"; return ;;
         *Mi*|*laurel*|*Redmi*|*POCO*) echo "Xiaomi / POCO Phone"; return ;;

@@ -47,11 +47,6 @@ get_dev_model() {
         return
     fi
     ser=$(cat /sys/class/net/$dev/device/../serial 2>/dev/null || cat /sys/class/net/$dev/device/serial 2>/dev/null)
-    case "$ser" in
-        *RZCW6090G4J*) echo "Samsung Galaxy S21 FE 5G"; return ;;
-        *8d7a382466f6*) echo "Xiaomi Mi A3"; return ;;
-        *4e1c1cf*) echo "OPPO A37"; return ;;
-    esac
     prod=$(cat /sys/class/net/$dev/device/../product 2>/dev/null || cat /sys/class/net/$dev/device/product 2>/dev/null)
     manuf=$(cat /sys/class/net/$dev/device/../manufacturer 2>/dev/null || cat /sys/class/net/$dev/device/manufacturer 2>/dev/null)
     if [ -n "$prod" ]; then

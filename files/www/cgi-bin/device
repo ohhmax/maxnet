@@ -8,9 +8,10 @@ echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
 echo ""
 
-[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
 
 ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
+[ -z "$ACTION" ] && [ -n "$POST_DATA" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
 [ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | sed -n 's/.*"action"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
 [ -z "$ACTION" ] && ACTION="telemetry"
 
@@ -19,8 +20,67 @@ CMD_ARG=$(echo "$QUERY_STRING" | sed -n 's/^.*cmd=\([^&]*\).*$/\1/p')
 
 export HOME=/root
 ADB_ATTACHED=$(adb devices 2>/dev/null | awk '$2=="device"{print $1}')
+ADB_UNAUTH=$(adb devices 2>/dev/null | awk '$2=="unauthorized"{print $1}')
+ADB_OFFLINE=$(adb devices 2>/dev/null | awk '$2=="offline"{print $1}')
 TETHER_SERIAL=$(cat /sys/class/net/usb0/device/../serial 2>/dev/null)
 TETHER_IP=$(ip -4 addr show dev usb0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1)
+
+# ==================== ACTION: ADB KEY MANAGEMENT (IMPORT / EXPORT) ====================
+if [ "$ACTION" = "export_keys" ]; then
+    KEY_FILE="/root/.android/adbkey"
+    PUB_FILE="/root/.android/adbkey.pub"
+    HAS_KEYS=false
+    KEY_DATA=""
+    PUB_DATA=""
+    if [ -f "$KEY_FILE" ]; then
+        HAS_KEYS=true
+        KEY_DATA=$(cat "$KEY_FILE" 2>/dev/null)
+        [ -f "$PUB_FILE" ] && PUB_DATA=$(cat "$PUB_FILE" 2>/dev/null)
+    fi
+    jq -n \
+        --arg has "$HAS_KEYS" \
+        --arg key "$KEY_DATA" \
+        --arg pub "$PUB_DATA" \
+        '{status: "ok", has_keys: ($has == "true"), adbkey: $key, adbkey_pub: $pub, filename: "maxnet_adb_keys.json"}'
+    exit 0
+fi
+
+if [ "$ACTION" = "import_keys" ]; then
+    mkdir -p /root/.android
+    chmod 700 /root/.android
+
+    IN_KEY=""
+    IN_PUB=""
+    if [ -n "$POST_DATA" ]; then
+        IN_KEY=$(echo "$POST_DATA" | jq -r '.adbkey // empty' 2>/dev/null)
+        IN_PUB=$(echo "$POST_DATA" | jq -r '.adbkey_pub // empty' 2>/dev/null)
+        if [ -z "$IN_KEY" ] && echo "$POST_DATA" | grep -q 'PRIVATE KEY'; then
+            IN_KEY="$POST_DATA"
+        fi
+    fi
+
+    if [ -z "$IN_KEY" ]; then
+        echo '{"status": "error", "message": "Missing ADB private key content"}'
+        exit 0
+    fi
+
+    printf "%s\n" "$IN_KEY" > /root/.android/adbkey
+    chmod 600 /root/.android/adbkey
+
+    if [ -n "$IN_PUB" ]; then
+        printf "%s\n" "$IN_PUB" > /root/.android/adbkey.pub
+        chmod 644 /root/.android/adbkey.pub
+    fi
+
+    export HOME=/root
+    adb kill-server >/dev/null 2>&1
+    adb start-server >/dev/null 2>&1
+    sleep 1
+
+    NEW_DEVS=$(adb devices 2>/dev/null | tail -n +2 | tr '\t' ' ' | grep -v '^$')
+    echo "{\"status\": \"ok\", \"message\": \"ADB keys imported and ADB server restarted successfully.\", \"adb_devices\": \"$NEW_DEVS\"}"
+    exit 0
+fi
 
 # ==================== ACTION: SECURITY (GET / SET) ====================
 if [ "$ACTION" = "security" ] || [ "$ACTION" = "security_get" ]; then
@@ -197,17 +257,24 @@ if [ "$ACTION" = "devices" ]; then
         [ -z "$port" ] && port=1
 
         adb_ok=false
-        [ -n "$ser" ] && echo "$ADB_ATTACHED" | grep -q "$ser" && adb_ok=true
+        adb_st="none"
+        if [ -n "$ser" ]; then
+            if echo "$ADB_ATTACHED" | grep -q "$ser"; then
+                adb_ok=true
+                adb_st="device"
+            elif echo "$ADB_UNAUTH" | grep -q "$ser"; then
+                adb_st="unauthorized"
+            elif echo "$ADB_OFFLINE" | grep -q "$ser"; then
+                adb_st="offline"
+            fi
+        fi
 
         is_wan=false
         [ -n "$ser" ] && [ "$ser" = "$TETHER_SERIAL" ] && is_wan=true
 
-        friendly_model="$prod"
-        if [ "$ser" = "RZCW6090G4J" ]; then
-            friendly_model="Samsung Galaxy S21 FE 5G"
-        elif [ "$ser" = "4e1c1cf" ]; then
-            friendly_model="OPPO A37"
-        fi
+        clean_prod=$(echo "$prod" | sed 's/_Android//g; s/_/ /g')
+        [ -z "$clean_prod" ] || [ "$clean_prod" = "USB Device" ] && clean_prod="${mfg:-USB} Device"
+        friendly_model="$clean_prod"
 
         batt_pct=""
         if [ "$adb_ok" = "true" ]; then
@@ -215,8 +282,8 @@ if [ "$ACTION" = "devices" ]; then
         fi
         [ -z "$batt_pct" ] && batt_json="null" || batt_json="$batt_pct"
 
-        item=$(printf '{"serial":"%s","model":"%s","raw_model":"%s","manufacturer":"%s","speed_mbps":%d,"port":%d,"adb_enabled":%s,"is_wan":%s,"battery_pct":%s}' \
-            "$ser" "$friendly_model" "$prod" "$mfg" "$spd" "$port" "$adb_ok" "$is_wan" "$batt_json")
+        item=$(printf '{"serial":"%s","model":"%s","raw_model":"%s","manufacturer":"%s","speed_mbps":%d,"port":%d,"adb_enabled":%s,"adb_status":"%s","is_wan":%s,"battery_pct":%s}' \
+            "$ser" "$friendly_model" "$prod" "$mfg" "$spd" "$port" "$adb_ok" "$adb_st" "$is_wan" "$batt_json")
         [ $COUNT -gt 0 ] && DEVS_LIST="$DEVS_LIST,"
         DEVS_LIST="$DEVS_LIST$item"
         COUNT=$((COUNT + 1))
@@ -235,11 +302,23 @@ elif [ -n "$TETHER_SERIAL" ]; then
     TARGET_SERIAL="$TETHER_SERIAL"
 else
     TARGET_SERIAL=$(echo "$ADB_ATTACHED" | head -n 1)
+    [ -z "$TARGET_SERIAL" ] && TARGET_SERIAL=$(echo "$ADB_UNAUTH" | head -n 1)
+    [ -z "$TARGET_SERIAL" ] && TARGET_SERIAL=$(echo "$ADB_OFFLINE" | head -n 1)
 fi
 
 # Check whether target device has ADB enabled
 TARGET_HAS_ADB=false
-[ -n "$TARGET_SERIAL" ] && echo "$ADB_ATTACHED" | grep -q "$TARGET_SERIAL" && TARGET_HAS_ADB=true
+TARGET_ADB_STATUS="none"
+if [ -n "$TARGET_SERIAL" ]; then
+    if echo "$ADB_ATTACHED" | grep -q "$TARGET_SERIAL"; then
+        TARGET_HAS_ADB=true
+        TARGET_ADB_STATUS="device"
+    elif echo "$ADB_UNAUTH" | grep -q "$TARGET_SERIAL"; then
+        TARGET_ADB_STATUS="unauthorized"
+    elif echo "$ADB_OFFLINE" | grep -q "$TARGET_SERIAL"; then
+        TARGET_ADB_STATUS="offline"
+    fi
+fi
 
 # ==================== ADB CONTROL ACTIONS (REQUIRE ADB) ====================
 if [ "$ACTION" = "reboot" ]; then
@@ -517,11 +596,16 @@ if [ "$TARGET_HAS_ADB" != "true" ]; then
         IS_WAN=false
         [ "$TARGET_SERIAL" = "$TETHER_SERIAL" ] && IS_WAN=true
 
+        msg="ADB Debugging is not enabled on this device"
+        [ "$TARGET_ADB_STATUS" = "unauthorized" ] && msg="Device is unauthorized. Tap 'Allow USB debugging' on your phone, or Import your trusted ADB Keys."
+        [ "$TARGET_ADB_STATUS" = "offline" ] && msg="Device is offline. Check USB connection."
+
         cat << JSON
 {
   "status": "ok",
   "connected": true,
   "adb_enabled": false,
+  "adb_status": "${TARGET_ADB_STATUS}",
   "device_id": "${TARGET_SERIAL}",
   "model": "${P_MODEL}",
   "brand": "${P_BRAND}",
@@ -557,7 +641,7 @@ if [ "$TARGET_HAS_ADB" != "true" ]; then
   "radio": null,
   "screen_state": "--",
   "uptime": "--",
-  "message": "ADB Debugging is not enabled on this device"
+  "message": "${msg}"
 }
 JSON
         exit 0
@@ -605,11 +689,6 @@ P_SEC=$(echo "$RAW" | sed -n '/===PROPS===/{n;n;n;n;n;p;}' | tr -d '\r\n')
 [ -z "$P_SEC" ] && P_SEC="--"
 
 DISPLAY_MODEL="$P_MODEL"
-if [ "$TARGET_SERIAL" = "RZCW6090G4J" ] || [ "$P_MODEL" = "SM-G990B2" ]; then
-    DISPLAY_MODEL="Samsung Galaxy S21 FE 5G"
-elif [ "$TARGET_SERIAL" = "4e1c1cf" ] || [ "$P_MODEL" = "A37f" ]; then
-    DISPLAY_MODEL="OPPO A37"
-fi
 
 SOC_NAME="$P_SOC"
 case "$P_SOC" in
