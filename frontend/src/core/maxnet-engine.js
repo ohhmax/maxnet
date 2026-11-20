@@ -1,3 +1,5 @@
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+
 let timer = null;
     let blockedIps = new Set();
     let currentThemeMode = localStorage.getItem('maxnet_theme_mode') || 'night';
@@ -5211,9 +5213,19 @@ function drawStorageIconSmall(x, y, color, parent) {
         }
 
         const repInfo = d.repeater || d.topology_layers?.tree?.repeater_uplink || {};
-        const liveWanIpStr = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.wan_ip && window._lastDataCache.network.wan_ip !== "--") ||
-          (window._lastDataCache && window._lastDataCache.multilink && window._lastDataCache.multilink.links && window._lastDataCache.multilink.links[0] && window._lastDataCache.multilink.links[0].ip) ||
-          "";
+        const cacheNet = window._lastDataCache?.network || {};
+        const cacheDevs = Array.isArray(window._lastDataCache?.usb_devices) ? window._lastDataCache.usb_devices : [];
+        const uDevWan = cacheDevs[0] || {};
+        const tetheringIp = uDevWan.dhcp_ip || uDevWan.ip || window._lastDataCache?.mobile?.usb_ip || "";
+
+        let liveWanIpStr = "";
+        if (typeof cacheNet.wan_ip === 'string' && cacheNet.wan_ip && cacheNet.wan_ip !== "--") {
+          liveWanIpStr = cacheNet.wan_ip;
+        } else if (tetheringIp) {
+          liveWanIpStr = tetheringIp;
+        } else if (window._lastDataCache?.multilink?.links?.[0]?.ip) {
+          liveWanIpStr = window._lastDataCache.multilink.links[0].ip;
+        }
 
         // Clean formatting for wire speed so text never overflows wire pill box
         let formattedBitrate = repInfo.bitrate || (Number(activeUplink.speed_mbps) > 0 ? `${activeUplink.speed_mbps} Mbps` : 'Unknown');
@@ -5249,8 +5261,10 @@ function drawStorageIconSmall(x, y, color, parent) {
         }, wirePillG);
 
         const displaySsid = (repInfo.ssid && repInfo.ssid.length > 10) ? (repInfo.ssid.substring(0, 9) + '…') : (repInfo.ssid || "Wi-Fi");
-        const wanTitleStr = isUsbActiveWan ? "WAN USB" : (isRepeaterActive ? `REPEATER: ${displaySsid}` : "WAN ETHERNET");
-        const effectiveWanIp = isRepeaterActive ? (repInfo.ip || liveWanIpStr || "Connected") : (liveWanIpStr || "DHCP Online");
+        const wanTitleStr = isUsbActiveWan ? "WAN USB (TETHERING)" : (isRepeaterActive ? `REPEATER: ${displaySsid}` : "WAN ETHERNET");
+        const effectiveWanIp = isUsbActiveWan
+          ? (tetheringIp || liveWanIpStr || "Tethering Online")
+          : (isRepeaterActive ? (repInfo.ip || liveWanIpStr || "Connected") : (liveWanIpStr || "DHCP Online"));
 
         const tWireSpd = mk("text", {
           x: rtrCenterX,
@@ -9939,7 +9953,9 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
     }
 
-    /* ==================== ADB KEY MANAGEMENT (IMPORT / EXPORT) ==================== */
+    /* ==================== ADB KEY MANAGEMENT (IMPORT / EXPORT .adbmax) ==================== */
+    window._pendingAdbImport = null;
+
     function openImportAdbKeysModal() {
       const modal = document.getElementById('adbKeysModalOverlay');
       if (modal) {
@@ -9954,27 +9970,66 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         modal.classList.remove('active');
         setTimeout(() => { modal.style.display = 'none'; }, 200);
       }
+      window._pendingAdbImport = null;
+      const selector = document.getElementById('adbImportDeviceSelector');
+      if (selector) selector.style.display = 'none';
+      const fileIn = document.getElementById('adbKeyFileInput');
+      if (fileIn) fileIn.value = '';
     }
 
     async function exportAdbKeys() {
       try {
+        showToast('Exporting ADB keys package (.adbmax)...', 'info');
         const res = await apiFetch('/cgi-bin/device?action=export_keys');
         const data = await res.json();
         if (data.status === 'ok') {
-          if (!data.has_keys) {
+          if (!data.has_keys && (!data.adbkey || !data.adbkey.trim())) {
             showToast('No ADB keys found on router yet.', 'warning');
             return;
           }
-          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+
+          const connectedDevs = Array.isArray(data.devices) ? data.devices : [];
+          const manifest = {
+            format: "adbmax",
+            version: "1.0",
+            exported_at: new Date().toISOString(),
+            source_router: "MAXNET Gateway (10.0.0.1)",
+            device_count: connectedDevs.length,
+            devices: connectedDevs.map(d => ({
+              serial: d.serial || d.bus || 'unknown',
+              brand: d.brand || 'Android',
+              model: d.model || d.raw_model || 'Handset',
+              manufacturer: d.manufacturer || '',
+              adb_status: d.adb_status || (d.adb_enabled ? 'device' : 'unauthorized'),
+              has_keys: true
+            }))
+          };
+
+          const zipEntries = {
+            'manifest.json': strToU8(JSON.stringify(manifest, null, 2)),
+            'adbkey': strToU8(data.adbkey || ''),
+            'adbkey.pub': strToU8(data.adbkey_pub || '')
+          };
+
+          // Also archive per-device metadata files
+          manifest.devices.forEach(d => {
+            if (d.serial && d.serial !== 'unknown') {
+              zipEntries[`devices/${d.serial}.info`] = strToU8(JSON.stringify(d, null, 2));
+            }
+          });
+
+          const zipData = zipSync(zipEntries);
+          const blob = new Blob([zipData], { type: 'application/octet-stream' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = data.filename || 'maxnet_adb_keys.json';
+          const dt = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          a.download = `maxnet_adb_backup_${dt}.adbmax`;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
-          showToast('ADB keys exported successfully!', 'success');
+          showToast(`Exported ${manifest.devices.length || 1} device key(s) to .adbmax package!`, 'success');
         } else {
           showToast(data.message || 'Failed to export ADB keys', 'danger');
         }
@@ -9983,40 +10038,126 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
     }
 
-    function handleAdbKeyFileUpload(input) {
+    async function handleAdbKeyFileUpload(input) {
       if (!input || !input.files || !input.files[0]) return;
       const file = input.files[0];
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const content = e.target.result;
-        const textarea = document.getElementById('adbKeyTextInput');
-        if (textarea) textarea.value = content;
-      };
-      reader.readAsText(file);
+      const isZipPkg = file.name.endsWith('.adbmax') || file.name.endsWith('.zip');
+
+      if (isZipPkg) {
+        try {
+          const buf = new Uint8Array(await file.arrayBuffer());
+          const unzipped = unzipSync(buf);
+          let manifest = null;
+          if (unzipped['manifest.json']) {
+            try {
+              manifest = JSON.parse(strFromU8(unzipped['manifest.json']));
+            } catch (err) {}
+          }
+
+          const keyData = unzipped['adbkey'] ? strFromU8(unzipped['adbkey']) : '';
+          const pubData = unzipped['adbkey.pub'] ? strFromU8(unzipped['adbkey.pub']) : '';
+
+          window._pendingAdbImport = {
+            manifest,
+            keyData,
+            pubData,
+            unzipped,
+            filename: file.name
+          };
+
+          const textarea = document.getElementById('adbKeyTextInput');
+          if (textarea && keyData) textarea.value = keyData;
+
+          // Render interactive device selection checklist
+          const selectorBox = document.getElementById('adbImportDeviceSelector');
+          const countLabel = document.getElementById('adbImportDeviceCountLabel');
+          const listItems = document.getElementById('adbImportDeviceListItems');
+
+          const devices = (manifest && Array.isArray(manifest.devices) && manifest.devices.length > 0)
+            ? manifest.devices
+            : [{ serial: 'adb_master_keypair', model: 'Master RSA Keypair', brand: 'MAXNET / Android', adb_status: 'ready' }];
+
+          if (countLabel) countLabel.textContent = `Detected Devices (${devices.length})`;
+          if (listItems) {
+            listItems.innerHTML = devices.map((d, idx) => `
+              <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 10px; background:var(--card, #111319); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:6px; font-size:11.5px; cursor:pointer;">
+                <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                  <input type="checkbox" class="adb-import-dev-check" data-idx="${idx}" checked style="accent-color:#38bdf8;">
+                  <span style="font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(d.brand || 'Device')} ${escapeHtml(d.model || '')}</span>
+                  <span style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim);">(${escapeHtml(d.serial || 'serial')})</span>
+                </div>
+                <span class="card-badge emerald" style="font-size:9.5px; flex-shrink:0;">KEY INCLUDED</span>
+              </label>
+            `).join('');
+          }
+
+          if (selectorBox) selectorBox.style.display = 'flex';
+          const submitBtn = document.getElementById('btnSubmitAdbImport');
+          if (submitBtn) submitBtn.textContent = `IMPORT (${devices.length} DEVICES)`;
+          showToast(`Found ${devices.length} device(s) inside ${file.name}. Select devices to import.`, 'info');
+        } catch (e) {
+          showToast('Failed to unpack .adbmax archive: ' + e.message, 'danger');
+        }
+      } else {
+        // Plain text / JSON / PEM key file
+        const selectorBox = document.getElementById('adbImportDeviceSelector');
+        if (selectorBox) selectorBox.style.display = 'none';
+        window._pendingAdbImport = null;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const content = e.target.result;
+          const textarea = document.getElementById('adbKeyTextInput');
+          if (textarea) textarea.value = content;
+        };
+        reader.readAsText(file);
+      }
+    }
+
+    function toggleSelectAllAdbDevices(checked) {
+      const checks = document.querySelectorAll('.adb-import-dev-check');
+      checks.forEach(c => { c.checked = checked; });
+      const submitBtn = document.getElementById('btnSubmitAdbImport');
+      const selCount = checked ? checks.length : 0;
+      if (submitBtn) submitBtn.textContent = `IMPORT (${selCount} DEVICES)`;
     }
 
     async function submitImportAdbKeys() {
       const textarea = document.getElementById('adbKeyTextInput');
-      const raw = textarea ? textarea.value.trim() : '';
-      if (!raw) {
-        showToast('Please paste your ADB private key or upload a key file.', 'warning');
-        return;
-      }
+      let raw = textarea ? textarea.value.trim() : '';
 
       let payload = {};
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed.adbkey) {
-          payload = parsed;
-        } else {
+      if (window._pendingAdbImport && window._pendingAdbImport.keyData) {
+        // Check selected checkboxes
+        const checks = document.querySelectorAll('.adb-import-dev-check:checked');
+        if (checks.length === 0) {
+          showToast('Please select at least one device to import.', 'warning');
+          return;
+        }
+        payload = {
+          adbkey: window._pendingAdbImport.keyData,
+          adbkey_pub: window._pendingAdbImport.pubData || '',
+          selected_count: checks.length
+        };
+      } else {
+        if (!raw) {
+          showToast('Please paste your ADB private key or upload a .adbmax file.', 'warning');
+          return;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.adbkey) {
+            payload = parsed;
+          } else {
+            payload = { adbkey: raw };
+          }
+        } catch (e) {
           payload = { adbkey: raw };
         }
-      } catch (e) {
-        payload = { adbkey: raw };
       }
 
       try {
-        showToast('Importing ADB keys & restarting ADB server...', 'info');
+        showToast('Importing ADB keys & restarting ADB daemon...', 'info');
         const res = await apiFetch('/cgi-bin/device?action=import_keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -10024,7 +10165,13 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         });
         const data = await res.json();
         if (data.status === 'ok') {
-          showToast('ADB keys imported! Device should now be authorized.', 'success');
+          const working = Number(data.working_devices || 0);
+          const total = Number(data.total_devices || 0);
+          if (working > 0) {
+            showToast(`Success! ${working} of ${total} device(s) now authorized and perfectly working!`, 'success');
+          } else {
+            showToast(data.message || 'ADB keys imported and ADB daemon restarted.', 'success');
+          }
           closeImportAdbKeysModal();
           setTimeout(() => {
             fetchAdbDeviceList();
@@ -17503,10 +17650,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const filEl = document.getElementById('flashFileName');
       const sizEl = document.getElementById('flashFileSize');
 
-      if (curEl) curEl.textContent = d.current || 'v2.2.7-b7';
-      if (latEl) latEl.textContent = d.latest || d.current || 'v2.2.7-b7';
+      if (curEl) curEl.textContent = d.current || 'v2.2.47-b47';
+      if (latEl) latEl.textContent = d.latest || d.current || 'v2.2.48-b48';
       if (filEl) filEl.textContent = d.file || 'maxnet-jidu6911-sysupgrade.bin';
-      if (sizEl) sizEl.textContent = d.size ? ((d.size / 1048576).toFixed(2) + ' MB') : '28.60 MB';
+      if (sizEl) sizEl.textContent = d.size ? ((d.size / 1048576).toFixed(2) + ' MB') : '29.40 MB';
+
+      const titleEl = document.getElementById('flashUpdateTitle');
+      const chgEl = document.getElementById('flashUpdateChangelog');
+      if (titleEl) titleEl.textContent = d.title || (d.latest ? ('MAXNET ' + d.latest + ' Release') : 'MAXNET Security Release');
+      if (chgEl) chgEl.textContent = d.description || 'Verified stability, hardware compatibility, and security release ready for flashing.';
 
       const content = document.getElementById('flashModalContent');
       const footer = document.getElementById('flashModalFooter');
@@ -20102,11 +20254,13 @@ if (typeof window !== 'undefined') {
   closeImportAdbKeysModal,
   exportAdbKeys,
   handleAdbKeyFileUpload,
+  toggleSelectAllAdbDevices,
   submitImportAdbKeys,
     openImportAdbKeysModal,
     closeImportAdbKeysModal,
     exportAdbKeys,
     handleAdbKeyFileUpload,
+    toggleSelectAllAdbDevices,
     submitImportAdbKeys,
     switchAdbSubView,
     fetchAdbSmsPage,
@@ -20585,6 +20739,7 @@ export {
   closeImportAdbKeysModal,
   exportAdbKeys,
   handleAdbKeyFileUpload,
+  toggleSelectAllAdbDevices,
   submitImportAdbKeys,
   switchAdbSubView,
   fetchAdbSmsPage,

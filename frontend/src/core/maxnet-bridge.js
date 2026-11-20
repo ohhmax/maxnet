@@ -64,6 +64,7 @@ import {
   closeImportAdbKeysModal,
   exportAdbKeys,
   handleAdbKeyFileUpload,
+  toggleSelectAllAdbDevices,
   submitImportAdbKeys,
   saveUsbWanConfig,
   restartNetworkAndMultilink,
@@ -279,6 +280,7 @@ if (typeof window !== 'undefined') {
   window.closeImportAdbKeysModal = closeImportAdbKeysModal;
   window.exportAdbKeys = exportAdbKeys;
   window.handleAdbKeyFileUpload = handleAdbKeyFileUpload;
+  window.toggleSelectAllAdbDevices = toggleSelectAllAdbDevices;
   window.submitImportAdbKeys = submitImportAdbKeys;
   window.saveUsbWanConfig = saveUsbWanConfig;
   window.restartNetworkAndMultilink = restartNetworkAndMultilink;
@@ -612,6 +614,7 @@ export {
   closeImportAdbKeysModal,
   exportAdbKeys,
   handleAdbKeyFileUpload,
+  toggleSelectAllAdbDevices,
   submitImportAdbKeys,
   saveUsbWanConfig,
   restartNetworkAndMultilink,

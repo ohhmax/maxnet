@@ -37,11 +37,25 @@ if [ "$ACTION" = "export_keys" ]; then
         KEY_DATA=$(cat "$KEY_FILE" 2>/dev/null)
         [ -f "$PUB_FILE" ] && PUB_DATA=$(cat "$PUB_FILE" 2>/dev/null)
     fi
+
+    DEVS_JSON="[]"
+    if [ -s /tmp/usb_devices.json ]; then
+        DEVS_JSON=$(cat /tmp/usb_devices.json 2>/dev/null)
+    fi
+
     jq -n \
         --arg has "$HAS_KEYS" \
         --arg key "$KEY_DATA" \
         --arg pub "$PUB_DATA" \
-        '{status: "ok", has_keys: ($has == "true"), adbkey: $key, adbkey_pub: $pub, filename: "maxnet_adb_keys.json"}'
+        --argjson devs "$DEVS_JSON" \
+        '{
+            status: "ok",
+            has_keys: ($has == "true"),
+            adbkey: $key,
+            adbkey_pub: $pub,
+            devices: $devs,
+            filename: "maxnet_adb_keys.adbmax"
+        }'
     exit 0
 fi
 
@@ -78,7 +92,11 @@ if [ "$ACTION" = "import_keys" ]; then
     sleep 1
 
     NEW_DEVS=$(adb devices 2>/dev/null | tail -n +2 | tr '\t' ' ' | grep -v '^$')
-    echo "{\"status\": \"ok\", \"message\": \"ADB keys imported and ADB server restarted successfully.\", \"adb_devices\": \"$NEW_DEVS\"}"
+    WORKING_COUNT=$(adb devices 2>/dev/null | awk '$2=="device"{print $1}' | grep -v '^$' | wc -l)
+    UNAUTH_COUNT=$(adb devices 2>/dev/null | awk '$2=="unauthorized"{print $1}' | grep -v '^$' | wc -l)
+    TOTAL_COUNT=$(adb devices 2>/dev/null | tail -n +2 | tr '\t' ' ' | grep -v '^$' | wc -l)
+
+    echo "{\"status\": \"ok\", \"working_devices\": $WORKING_COUNT, \"unauthorized_devices\": $UNAUTH_COUNT, \"total_devices\": $TOTAL_COUNT, \"message\": \"ADB keys imported successfully. $WORKING_COUNT device(s) now authorized and working.\", \"adb_devices\": \"$NEW_DEVS\"}"
     exit 0
 fi
 

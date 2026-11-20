@@ -3,270 +3,278 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#080808">
-  <title>MAXNET // GATEWAY RESTRICTION</title>
+  <title>MAXNET // GATEWAY STATUS</title>
+  <script>
+    (function() {
+      try {
+        var mode = localStorage.getItem('maxnet_theme_mode') || localStorage.getItem('maxnet_theme');
+        var theme = 'dark';
+        if (mode === 'day' || mode === 'light') {
+          theme = 'light';
+        } else if (mode === 'auto') {
+          theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {}
+    })();
+  </script>
   <style>
     :root {
-      --bg-root: #080808;
-      --bg-card: #12131a;
-      --border-sub: rgba(255, 255, 255, 0.08);
-      --border-glow: rgba(56, 189, 248, 0.25);
-      --text-main: #f8fafc;
-      --text-dim: #94a3b8;
-      --text-muted: #64748b;
-      --accent-cyan: #38bdf8;
-      --accent-emerald: #10b981;
-      --accent-ruby: #ef4444;
-      --accent-amber: #f59e0b;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --bg: #080808;
+      --card: #111113;
+      --card-inner: #161618;
+      --border-main: rgba(255, 255, 255, 0.08);
+      --border-sub: rgba(255, 255, 255, 0.04);
+      --border-active: rgba(255, 255, 255, 0.16);
+      --text-main: #ffffff;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --badge-bg: rgba(255, 255, 255, 0.06);
+      --badge-border: rgba(255, 255, 255, 0.12);
+      --font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Inter", "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, monospace;
     }
+
+    [data-theme="light"] {
+      --bg: #f4f4f5;
+      --card: #ffffff;
+      --card-inner: #f4f4f5;
+      --border-main: #e4e4e7;
+      --border-sub: #f4f4f5;
+      --border-active: #d4d4d8;
+      --text-main: #09090b;
+      --text-muted: #52525b;
+      --text-dim: #71717a;
+      --badge-bg: rgba(0, 0, 0, 0.04);
+      --badge-border: #e4e4e7;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-      background-color: var(--bg-root);
+      background-color: var(--bg);
       color: var(--text-main);
-      font-family: var(--font-sans);
+      font-family: var(--font-family);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       padding: 20px;
-      overflow-x: hidden;
+      transition: background-color 0.2s ease, color 0.2s ease;
     }
-    .grid-bg {
-      position: fixed;
-      inset: 0;
-      background-image: 
-        radial-gradient(circle at 50% 20%, rgba(56, 189, 248, 0.07) 0%, transparent 60%),
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-      background-size: 100% 100%, 32px 32px, 32px 32px;
-      pointer-events: none;
-      z-index: 0;
-    }
+
     .error-card {
-      position: relative;
-      z-index: 1;
-      background: var(--bg-card);
-      border: 1px solid var(--border-sub);
-      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.8), 0 0 25px -5px rgba(56, 189, 248, 0.12);
-      border-radius: 16px;
-      max-width: 520px;
+      background: var(--card);
+      border: 1px solid var(--border-main);
+      border-radius: 12px;
+      max-width: 460px;
       width: 100%;
-      padding: 32px 28px;
+      padding: 28px 24px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 16px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
     }
-    .header-tag {
-      display: inline-flex;
+
+    .header-bar {
+      display: flex;
       align-items: center;
-      gap: 7px;
-      align-self: flex-start;
+      justify-content: space-between;
+    }
+
+    .status-badge {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      padding: 4px 9px;
+      border-radius: 5px;
+      background: var(--badge-bg);
+      border: 1px solid var(--badge-border);
+      color: var(--text-main);
+    }
+
+    .sys-mark {
       font-family: var(--font-mono);
       font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      color: var(--accent-ruby);
-    }
-    .header-tag.warn {
-      background: rgba(245, 158, 11, 0.12);
-      border-color: rgba(245, 158, 11, 0.3);
-      color: var(--accent-amber);
-    }
-    .header-tag .pulse-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      box-shadow: 0 0 8px currentColor;
-    }
-    .error-title {
-      font-size: 22px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
-      color: var(--text-main);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .error-desc {
-      font-size: 13.5px;
-      line-height: 1.6;
       color: var(--text-dim);
+      letter-spacing: 0.5px;
     }
+
+    .title-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .error-title {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.2px;
+      color: var(--text-main);
+    }
+
+    .error-desc {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
     .details-box {
-      background: rgba(0, 0, 0, 0.45);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 10px;
-      padding: 14px 16px;
+      background: var(--card-inner);
+      border: 1px solid var(--border-sub);
+      border-radius: 8px;
+      padding: 12px 14px;
       display: flex;
       flex-direction: column;
       gap: 8px;
       font-family: var(--font-mono);
-      font-size: 11.5px;
+      font-size: 11px;
     }
-    .details-row {
+
+    .detail-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
     }
-    .details-label {
-      color: var(--text-muted);
+
+    .detail-label {
+      color: var(--text-dim);
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
       font-size: 10.5px;
+      text-transform: uppercase;
     }
-    .details-val {
+
+    .detail-val {
       color: var(--text-main);
+      font-weight: 600;
+      white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 280px;
+      max-width: 260px;
     }
+
     .actions {
       display: flex;
-      gap: 10px;
-      margin-top: 6px;
-      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
     }
+
     .btn {
       flex: 1;
-      min-width: 140px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 10px 18px;
-      border-radius: 9px;
-      font-size: 12.5px;
+      padding: 10px 16px;
+      font-family: var(--font-family);
+      font-size: 12px;
       font-weight: 700;
-      cursor: pointer;
+      border-radius: 7px;
       text-decoration: none;
-      transition: all 0.15s ease;
-      border: none;
-    }
-    .btn-primary {
-      background: var(--accent-cyan);
-      color: #041019;
-      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
-    }
-    .btn-primary:hover {
-      background: #7dd3fc;
-      transform: translateY(-1px);
-    }
-    .btn-ghost {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--border-sub);
+      cursor: pointer;
+      border: 1px solid var(--border-main);
+      background: var(--card-inner);
       color: var(--text-main);
+      transition: all 0.15s ease;
     }
-    .btn-ghost:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.15);
+
+    .btn:hover {
+      border-color: var(--border-active);
+      background: var(--border-sub);
     }
-    .footer {
-      margin-top: 24px;
+
+    .btn-primary {
+      background: var(--text-main);
+      color: var(--bg);
+      border-color: var(--text-main);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+    }
+
+    .footer-note {
       font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--text-muted);
+      font-size: 10px;
+      color: var(--text-dim);
       text-align: center;
-      z-index: 1;
+      margin-top: 10px;
     }
   </style>
 </head>
 <body>
-  <div class="grid-bg"></div>
-
   <div class="error-card">
-    <div class="header-tag" id="errBadge">
-      <span class="pulse-dot"></span>
-      <span id="errCodeText">403 FORBIDDEN</span>
+    <div class="header-bar">
+      <span class="status-badge" id="statusBadge">403 FORBIDDEN</span>
+      <span class="sys-mark">MAXNET GATEWAY</span>
     </div>
 
-    <div class="error-title" id="errTitle">
-      <svg viewBox="0 0 24 24" style="width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; color:var(--accent-ruby);" id="errIcon">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-      </svg>
-      <span id="errHeading">Access Restricted</span>
-    </div>
-
-    <div class="error-desc" id="errDesc">
-      The requested endpoint or directory is protected, restricted, or unavailable under MAXNET Gateway security policy.
+    <div class="title-block">
+      <h1 class="error-title" id="errorTitle">Access Restricted</h1>
+      <p class="error-desc" id="errorDesc">
+        Direct directory listing and unauthenticated endpoint execution are forbidden by gateway security policy.
+      </p>
     </div>
 
     <div class="details-box">
-      <div class="details-row">
-        <span class="details-label">RESOURCE PATH</span>
-        <span class="details-val" id="dispPath">--</span>
+      <div class="detail-row">
+        <span class="detail-label">Endpoint</span>
+        <span class="detail-val" id="detailPath">/</span>
       </div>
-      <div class="details-row">
-        <span class="details-label">STATUS</span>
-        <span class="details-val" id="dispStatus" style="color:var(--accent-ruby);">403 Access Denied</span>
+      <div class="detail-row">
+        <span class="detail-label">Gateway Host</span>
+        <span class="detail-val" id="detailHost">10.0.0.1</span>
       </div>
-      <div class="details-row">
-        <span class="details-label">GATEWAY NODE</span>
-        <span class="details-val">MAXNET (10.0.0.1)</span>
+      <div class="detail-row">
+        <span class="detail-label">Client Address</span>
+        <span class="detail-val" id="detailClient">--</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Timestamp</span>
+        <span class="detail-val" id="detailTime">--</span>
       </div>
     </div>
 
     <div class="actions">
       <a href="/" class="btn btn-primary">
-        <svg viewBox="0 0 24 24" style="width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2.2;"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2.2;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Return to Dashboard
       </a>
-      <button onclick="history.back()" class="btn btn-ghost">
-        <svg viewBox="0 0 24 24" style="width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2.2;"><polyline points="15 18 9 12 15 6"/></svg>
-        Go Back
+      <button type="button" class="btn" onclick="location.reload()">
+        <svg viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2.2;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        Retry
       </button>
     </div>
   </div>
 
-  <div class="footer">
-    MAXNET CYBERNETIC GATEWAY OS &bull; QUALCOMM IPQ9574
+  <div class="footer-note">
+    MAXNET Cybernetic Gateway OS &bull; Secure Embedded Architecture
   </div>
 
   <script>
     (function() {
-      var path = window.location.pathname || '';
-      var query = window.location.search || '';
-      var dispPath = document.getElementById('dispPath');
-      var badge = document.getElementById('errBadge');
-      var codeText = document.getElementById('errCodeText');
-      var heading = document.getElementById('errHeading');
-      var desc = document.getElementById('errDesc');
-      var status = document.getElementById('dispStatus');
+      var path = window.location.pathname || '/';
+      var host = window.location.host || '10.0.0.1';
+      document.getElementById('detailPath').textContent = path;
+      document.getElementById('detailHost').textContent = host;
+      document.getElementById('detailTime').textContent = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 
-      if (dispPath) dispPath.textContent = path + query;
+      var badge = document.getElementById('statusBadge');
+      var title = document.getElementById('errorTitle');
+      var desc = document.getElementById('errorDesc');
 
-      if (path.indexOf('/cgi-bin') !== -1) {
-        // Direct /cgi-bin access
-        codeText.textContent = '403 FORBIDDEN';
-        heading.textContent = 'Directory Access Prohibited';
-        desc.textContent = 'Direct directory browsing of /cgi-bin/ is blocked. All gateway operations must be executed through the authenticated WebUI dashboard.';
-        status.textContent = '403 Forbidden';
-      } else if (path.indexOf('502') !== -1 || query.indexOf('502') !== -1) {
-        badge.className = 'header-tag warn';
-        codeText.textContent = '502 BAD GATEWAY';
-        heading.textContent = 'Gateway Service Restarting';
-        desc.textContent = 'The gateway daemon or backend CGI process is currently initializing or restarting. Please retry in a few moments.';
-        status.textContent = '502 Bad Gateway';
-        status.style.color = 'var(--accent-amber)';
+      if (path.indexOf('/cgi-bin/') === 0 || path === '/cgi-bin') {
+        badge.textContent = '403 FORBIDDEN';
+        title.textContent = 'Gateway Access Restricted';
+        desc.textContent = 'Direct directory browsing is disabled. Authenticated session token is required to execute gateway CGIs.';
       } else {
-        badge.className = 'header-tag warn';
-        codeText.textContent = '404 NOT FOUND';
-        heading.textContent = 'Endpoint Not Found';
-        desc.textContent = 'The requested resource does not exist on this MAXNET node or was relocated.';
-        status.textContent = '404 Not Found';
-        status.style.color = 'var(--accent-amber)';
+        badge.textContent = '404 NOT FOUND';
+        title.textContent = 'Resource Not Found';
+        desc.textContent = 'The requested endpoint does not exist on this gateway node or has been removed.';
       }
     })();
   </script>

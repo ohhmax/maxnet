@@ -1,0 +1,48 @@
+{
+  "channel": "stable",
+  "updated_at": "2026-11-20T17:00:00Z",
+  "devices": {
+    "jidu6911": {
+      "board": "jidu6911",
+      "model": "MAXNET Jio JIDU6911 AX6000",
+      "version": "2.2.48",
+      "build": 48,
+      "pushed": true,
+      "release_date": "2026-11-20",
+      "url": "https://github.com/ohhmax/maxnet-main/releases/download/v2.2.48-b48/maxnet-jidu6911-sysupgrade.bin",
+      "sha256": "46496c3de54db0378d6f3afec34fac1c26d138cf6abb38590c0501d0665905c4",
+      "size_bytes": 31457280,
+      "min_version": "2.2.0",
+      "title": "MAXNET 2.2.48 Security & Stability Release",
+      "description": "• Enhanced ADB multi-device key packaging (.adbmax) with auto-authorization\n• Minimalist theme-adaptive error page matching MAXNET UI\n• Fixed topology tethering IP display\n• Hardened verified OTA sysupgrade pipeline with SHA-256 pre-check"
+    },
+    "jidu6811": {
+      "board": "jidu6811",
+      "model": "MAXNET Jio JIDU6811 AX6000",
+      "version": "2.2.48",
+      "build": 48,
+      "pushed": false,
+      "release_date": "2026-11-20",
+      "url": "https://github.com/ohhmax/maxnet-main/releases/download/v2.2.48-b48/maxnet-jidu6811-sysupgrade.bin",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 31457280,
+      "min_version": "2.2.0",
+      "title": "MAXNET 2.2.48 Security Release",
+      "description": "Verified build pending release validation"
+    },
+    "jidu6401": {
+      "board": "jidu6401",
+      "model": "MAXNET Jio JIDU6401 AX6000",
+      "version": "2.2.48",
+      "build": 48,
+      "pushed": false,
+      "release_date": "2026-11-20",
+      "url": "https://github.com/ohhmax/maxnet-main/releases/download/v2.2.48-b48/maxnet-jidu6401-sysupgrade.bin",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 31457280,
+      "min_version": "2.2.0",
+      "title": "MAXNET 2.2.48 Security Release",
+      "description": "Verified build pending release validation"
+    }
+  }
+}
