@@ -1,6 +1,36 @@
 {
   "versions": [
     {
+      "build": 54,
+      "version": "2.2.54",
+      "tested": true,
+      "title": "MAXNET | V2.2.54",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.54-b54/maxnet-jidu6611-sysupgrade.bin",
+      "sha256": "18509f159e7598f8d3625d5ce213bf34af39fb2470990d9740bcc0687028209f",
+      "size": 38369616
+    },
+    {
+      "build": 53,
+      "version": "2.2.53",
+      "tested": false,
+      "title": "MAXNET | V2.2.53",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.53-b53/maxnet-jidu6611-sysupgrade.bin",
+      "sha256": "c8bb7b83578416c560a051963080cf1bc7fdebc524446f83547b449ab65dcf04",
+      "size": 38369616
+    },
+    {
+      "build": 52,
+      "version": "2.2.52",
+      "tested": false,
+      "title": "MAXNET | V2.2.52",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.52-b52/maxnet-jidu6611-sysupgrade.bin",
+      "sha256": "68e41b06fc828d8f3cc6e2ac36cb11917913740efb14706d6ef31da2038e7a3a",
+      "size": 38369616
+    },
+    {
       "build": 51,
       "version": "2.2.51",
       "tested": false,
