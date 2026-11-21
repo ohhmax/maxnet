@@ -91,8 +91,8 @@ require_auth() {
         send_unauthorized
     fi
 
-    # Refresh last_active in session file
-    TMP_SESS="$SESS_DIR/.tmp_$AUTH_TOKEN"
+    # Refresh last_active in session file (use PID to prevent concurrent rename race)
+    TMP_SESS="$SESS_DIR/.tmp_${AUTH_TOKEN}_$$"
     if command -v jq >/dev/null 2>&1; then
         jq --argjson now "$NOW" '.last_active = $now' "$SESS_FILE" > "$TMP_SESS" 2>/dev/null && mv -f "$TMP_SESS" "$SESS_FILE"
     fi

@@ -1,6 +1,16 @@
 {
   "versions": [
     {
+      "build": 51,
+      "version": "2.2.51",
+      "tested": false,
+      "title": "MAXNET | V2.2.51",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.51-b51/maxnet-jidu6101-sysupgrade.bin",
+      "sha256": "955d5bfd71d8a11033488174cab9ac4203df541a4133f58751b9fc0cd5bcf49d",
+      "size": 33382925
+    },
+    {
       "build": 48,
       "version": "2.2.48",
       "tested": true,
