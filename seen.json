@@ -1,14 +1,17 @@
 {
-  "last_seen": "2026-11-22T13:26:00Z",
-  "last_seen_formatted": "22 Nov 2026, 18:56 IST",
-  "timestamp": 1795354560,
-  "event": "manual_dispatch",
+  "last_seen": "2026-11-24T17:05:11Z",
+  "last_seen_formatted": "24 Nov 2026, 17:05 UTC",
+  "timestamp": 1795539911,
+  "event": "push",
   "actor": "ohhmax",
   "author": "Mahendra Mali (Max)",
   "repo": "ohhmax/maxnet",
   "branch": "main",
+  "commit_sha": "7a56c31e0918fd7a1797218626f97028bd672567",
+  "run_id": "45418959760",
+  "run_number": "56",
+  "latest_version": "v2.2.56",
   "status": "success",
-  "latest_version": "v2.2.54",
   "details": {
     "engine": "MAXNET Universal Engine",
     "target_models": 11
