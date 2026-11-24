@@ -24,6 +24,7 @@ const DEFAULT_MODEL = "jidu6911";
 
 // Known verified factory UBI checksums per release tag (Qualcomm IPQ9574 factory image)
 const KNOWN_FACTORY_CHECKSUMS = {
+  "v2.2.56-b56": "629eca994b31eeb9d38e2da4a9575005c83a0d9e71b6927cebffb557550c6c16",
   "v2.2.54-b54": "f89b68c6339bf1109ca1676645e7606d25980faa64d6c4278e858cc442d7f8e7",
   "v2.2.53-b53": "f0a6338826f01b81f0f3b7c81082f3497a77d5defbf8d59ba9121214ed819746",
   "v2.2.52-b52": "74ad4501af9c73644eceb43127dcc1ac0aef1881bdfa22de8a5c217abf24fc62",
