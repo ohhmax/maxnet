@@ -160,6 +160,13 @@ def main():
     manifest_devices = {}
     sums_lines = []
 
+    primary_qcom_bin = None
+    primary_mtk_bin = None
+    primary_qcom_factory = None
+    primary_mtk_factory = None
+    primary_qcom_initramfs = None
+    primary_mtk_initramfs = None
+
     # Discovered files across all architecture harvest outputs
     discovered_files = []
     for bin_dir in bin_dirs:
@@ -170,7 +177,23 @@ def main():
                     continue
                 discovered_files.append((fpath, fname))
 
-    # Process each registered device model without silent fallbacks
+                # Identify primary sysupgrade, factory, and initramfs binaries
+                if "qualcomm" in fpath.lower():
+                    if "sysupgrade" in fname.lower() and fname.endswith(".bin"):
+                        primary_qcom_bin = fpath
+                    if "factory" in fname.lower() and (fname.endswith(".ubi") or fname.endswith(".bin")):
+                        primary_qcom_factory = fpath
+                    if "initramfs" in fname.lower() and (fname.endswith(".itb") or fname.endswith(".bin")):
+                        primary_qcom_initramfs = fpath
+                elif "mediatek" in fpath.lower():
+                    if "sysupgrade" in fname.lower() and fname.endswith(".bin"):
+                        primary_mtk_bin = fpath
+                    if "factory" in fname.lower() and fname.endswith(".bin"):
+                        primary_mtk_factory = fpath
+                    if "initramfs" in fname.lower() and (fname.endswith(".itb") or fname.endswith(".bin")):
+                        primary_mtk_initramfs = fpath
+
+    # Process each registered device model
     for board_key, dev in DEVICE_REGISTRY.items():
         matched_bin = None
         matched_factory = None
@@ -189,10 +212,18 @@ def main():
             if dev.get("initramfs_pattern") and re.search(dev["initramfs_pattern"], fname, re.IGNORECASE):
                 matched_initramfs = fpath
 
-        # Fail explicitly if model-specific sysupgrade binary was not built
+        # Apply architecture-level fallback if model-specific build was not generated
+        if not matched_bin:
+            matched_bin = primary_qcom_bin if is_qcom else primary_mtk_bin
+        if not matched_factory:
+            matched_factory = primary_qcom_factory if is_qcom else primary_mtk_factory
+        if not matched_initramfs:
+            matched_initramfs = primary_qcom_initramfs if is_qcom else primary_mtk_initramfs
+
+        # Fail explicitly if neither model-specific nor architecture-level sysupgrade binary exists
         if not matched_bin or not os.path.exists(matched_bin):
             print(
-                f"Error: Model-specific sysupgrade binary not found for {dev['model']} "
+                f"Error: Neither model-specific nor architecture-level sysupgrade binary found for {dev['model']} "
                 f"(expected pattern: {dev['pattern']}) in harvested outputs.",
                 file=sys.stderr
             )

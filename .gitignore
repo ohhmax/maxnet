@@ -37,3 +37,11 @@ Thumbs.db
 .vscode/
 skills/
 .playwright-mcp/
+
+# Local media & scratch scripts
+*.mp4
+scripts/
+
+# Local media & scratch scripts
+*.mp4
+/scripts/
