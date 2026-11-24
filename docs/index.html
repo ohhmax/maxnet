@@ -3,33 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-  <title>Maxnet - Router Firmware | By Mahendra Mali (Max)</title>
-  <meta name="description" content="Maxnet is an open router operating system engineered by Mahendra Mali (Max) for Jio AirFiber IDUs and modern hardware platforms. Featuring Wi-Fi 7, NSS hardware packet offload, CAKE SQM bufferbloat control, ADBMAX management, and zero carrier telemetry.">
-  <meta name="keywords" content="Maxnet, Maxnet firmware, Jio AirFiber firmware, JIDU6911, JIDU6811, JIDU6611, JIDU6411, JIDU6111, JIDU6801, Qualcomm IPQ9574, MediaTek MT7986, Wi-Fi 7 router, ADBMAX, Mahendra Mali, Max, router flashing guide, router firmware">
+  <title>Maxnet OS — High-Performance Router Operating System & Firmware | By Mahendra Mali (Max)</title>
+  
+  <!-- Primary Meta Tags -->
+  <meta name="title" content="Maxnet OS — High-Performance Router Operating System & Firmware | By Mahendra Mali (Max)">
+  <meta name="description" content="Maxnet is a next-generation open router operating system engineered by Mahendra Mali (Max) for Qualcomm IPQ9574 and MediaTek MT7986 hardware platforms (JIDU6911, JIDU6811, JIDU6801, JIDU6101, etc.). Features Wi-Fi 7, NSS hardware packet offload, CAKE SQM bufferbloat control, ADBMAX management, and zero carrier telemetry.">
+  <meta name="keywords" content="Maxnet, Maxnet OS, Maxnet firmware, Jio AirFiber router firmware, JIDU6911, JIDU6811, JIDU6611, JIDU6411, JIDU6111, JIDU6801, JIDU6401, JIDU6101, JIDU6J01, Qualcomm IPQ9574, MediaTek MT7986, Wi-Fi 7 router, ADBMAX, Mahendra Mali, Max, router flashing guide, custom router firmware, unbrick router, router OS">
   <meta name="author" content="Mahendra Mali (Max)">
-  <meta name="robots" content="index, follow">
-  <meta name="theme-color" content="#000000">
+  <meta name="publisher" content="Mahendra Mali (Max)">
   <link rel="canonical" href="https://ohhmax.github.io/maxnet/">
 
-  <!-- Open Graph / Social Media -->
+  <!-- Search Engine & Googlebot Directives for Instant Indexing & Rich Snippets -->
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <meta name="bingbot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="theme-color" content="#030712">
+  <meta name="color-scheme" content="dark light">
+
+  <!-- Open Graph / Facebook / WhatsApp / LinkedIn / Discord -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://ohhmax.github.io/maxnet/">
-  <meta property="og:site_name" content="Maxnet Firmware">
-  <meta property="og:title" content="Maxnet - Router Firmware">
-  <meta property="og:description" content="Open router operating system developed by Mahendra Mali (Max) for Jio AirFiber IDUs and hardware routers. Features Wi-Fi 7, hardware packet offloading, and CAKE SQM.">
-  <meta property="og:image" content="./assets/images/banner.svg">
+  <meta property="og:site_name" content="Maxnet OS">
+  <meta property="og:title" content="Maxnet OS — High-Performance Router Operating System & Firmware">
+  <meta property="og:description" content="Next-generation router operating system engineered by Mahendra Mali (Max) for Qualcomm IPQ9574 & MediaTek MT7986 hardware. Features Wi-Fi 7, NSS hardware packet offload, CAKE SQM, ADBMAX engine, and zero carrier telemetry.">
+  <meta property="og:image" content="https://ohhmax.github.io/maxnet/assets/images/og-banner.png">
+  <meta property="og:image:secure_url" content="https://ohhmax.github.io/maxnet/assets/images/og-banner.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Maxnet Router OS Dashboard & Topology Visualizer">
+  <meta property="og:locale" content="en_US">
 
-  <!-- Twitter Meta Cards -->
+  <!-- Twitter / X Meta Cards -->
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@ohhmax">
+  <meta name="twitter:creator" content="@ohhmax">
   <meta name="twitter:url" content="https://ohhmax.github.io/maxnet/">
-  <meta name="twitter:title" content="Maxnet Firmware | Router Operating System">
-  <meta name="twitter:description" content="Router firmware engineered by Mahendra Mali (Max) for Jio AirFiber IDUs and hardware routers. Clean design, hardware offloading, and full local control.">
-  <meta name="twitter:image" content="./assets/images/banner.svg">
+  <meta name="twitter:title" content="Maxnet OS — High-Performance Router Operating System">
+  <meta name="twitter:description" content="Router operating system engineered by Mahendra Mali (Max) for Qualcomm IPQ9574 & MediaTek MT7986 hardware. Wi-Fi 7, NSS hardware offloading, CAKE SQM, and ADBMAX.">
+  <meta name="twitter:image" content="https://ohhmax.github.io/maxnet/assets/images/og-banner.png">
+  <meta name="twitter:image:alt" content="Maxnet Router OS Preview">
 
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="alternate icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="apple-touch-icon" href="./favicon.svg">
-  <link rel="stylesheet" href="./assets/css/style.css?v=20261124-02">
+  <link rel="stylesheet" href="./assets/css/style.css?v=20261124-03">
 
   <!-- Structured Data JSON-LD for Search Engines -->
   <script type="application/ld+json">
@@ -37,17 +56,36 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "WebSite",
+        "@id": "https://ohhmax.github.io/maxnet/#website",
+        "url": "https://ohhmax.github.io/maxnet/",
+        "name": "Maxnet OS",
+        "description": "High-performance router operating system engineered by Mahendra Mali (Max)",
+        "inLanguage": "en-US",
+        "publisher": {
+          "@type": "Person",
+          "name": "Mahendra Mali",
+          "alternateName": "Max",
+          "url": "https://github.com/ohhmax"
+        }
+      },
+      {
         "@type": "SoftwareApplication",
-        "name": "Maxnet",
+        "@id": "https://ohhmax.github.io/maxnet/#software",
+        "name": "Maxnet OS",
+        "alternateName": "Maxnet Router Firmware",
         "applicationCategory": "NetworkingApplication",
         "operatingSystem": "Linux",
+        "softwareVersion": "2.2",
+        "image": "https://ohhmax.github.io/maxnet/assets/images/og-banner.png",
+        "screenshot": "https://ohhmax.github.io/maxnet/assets/images/og-banner.png",
         "author": {
           "@type": "Person",
           "name": "Mahendra Mali",
           "alternateName": "Max",
           "url": "https://github.com/ohhmax"
         },
-        "description": "Router operating system and firmware for modern networking hardware platforms.",
+        "description": "Next-generation router operating system and firmware for Qualcomm IPQ9574 and MediaTek MT7986 hardware platforms. Featuring Wi-Fi 7, NSS hardware packet acceleration, CAKE SQM bufferbloat control, ADBMAX management, and zero telemetry.",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -56,13 +94,14 @@
       },
       {
         "@type": "FAQPage",
+        "@id": "https://ohhmax.github.io/maxnet/#faq",
         "mainEntity": [
           {
             "@type": "Question",
             "name": "What is Maxnet?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Maxnet is an independent router operating system created by Mahendra Mali (Max), built for Jio AirFiber IDU devices and expanding to support additional modern router hardware."
+              "text": "Maxnet is an independent, high-performance router operating system created by Mahendra Mali (Max), built for Qualcomm IPQ9574 and MediaTek MT7986 hardware platforms including Jio AirFiber IDU devices."
             }
           },
           {
@@ -78,7 +117,7 @@
             "name": "Which router models are supported by Maxnet?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Maxnet supports Qualcomm IPQ9574 and MediaTek Filogic MT7986 platforms, including JIDU6911, JIDU6811, JIDU6611, JIDU6411, JIDU6111, JIDU6801, JIDU6401, JIDU6601, JIDU6701, JIDU6101, JIDU6J01, with future commercial router models in active development."
+              "text": "Maxnet supports Qualcomm IPQ9574 and MediaTek Filogic MT7986 platforms, including JIDU6911, JIDU6811, JIDU6611, JIDU6411, JIDU6111, JIDU6801, JIDU6401, JIDU6601, JIDU6701, JIDU6101, and JIDU6J01."
             }
           },
           {
