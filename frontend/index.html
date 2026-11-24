@@ -20,8 +20,20 @@ GitHub: https://github.com/ohhmax | Email: max@maxnet.lan
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>MAXNET</title>
   <style>
-    :root { --bg-root: #080808; }
-    html[data-theme="light"], body[data-theme="light"] { --bg-root: #f4f4f5; }
+    :root {
+      --bg-root: #080808;
+      --text-main: #ffffff;
+      --text-muted: #a1a1aa;
+      --logo-cutout: #080808;
+      --border-sub: rgba(255, 255, 255, 0.08);
+    }
+    html[data-theme="light"], body[data-theme="light"] {
+      --bg-root: #f4f4f5;
+      --text-main: #09090b;
+      --text-muted: #52525b;
+      --logo-cutout: #f4f4f5;
+      --border-sub: #e4e4e7;
+    }
     html {
       margin: 0;
       padding: 0;
@@ -35,41 +47,181 @@ GitHub: https://github.com/ohhmax | Email: max@maxnet.lan
       min-height: 100vh;
       background-color: var(--bg-root);
       background: var(--bg-root);
+      color: var(--text-main);
     }
-    #maxnet-loader {
+
+    /* Animated Maxnet Boot / Page Loader */
+    .maxnet-page-loader {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
+      inset: 0;
+      z-index: 999999;
+      background: var(--bg-root);
       display: flex;
       align-items: center;
       justify-content: center;
-      background-color: var(--bg-root);
-      z-index: 999999;
+      transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.45s ease;
     }
-    .m-spinner {
-      width: 36px;
-      height: 36px;
-      border: 2.5px solid rgba(255,255,255,0.08);
-      border-top-color: #10b981;
-      border-radius: 50%;
-      animation: m-spin 0.75s linear infinite;
-      box-sizing: border-box;
+    .maxnet-page-loader.loaded {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
     }
-    html[data-theme="light"] .m-spinner {
-      border-color: rgba(0,0,0,0.08);
-      border-top-color: #10b981;
+    .loader-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      max-width: 260px;
+      user-select: none;
     }
-    @keyframes m-spin { to { transform: rotate(360deg); } }
+    .loader-logo-frame {
+      width: 84px;
+      height: auto;
+      filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
+    }
+    html[data-theme="light"] .loader-logo-frame {
+      filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.08));
+    }
+    .maxnet-router-mark {
+      overflow: visible;
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .mono-fill {
+      fill: var(--text-main);
+      transition: fill 0.3s ease;
+    }
+    .mono-stroke {
+      stroke: var(--text-main);
+      transition: stroke 0.3s ease;
+    }
+    .cutout-fill {
+      fill: var(--logo-cutout);
+      transition: fill 0.3s ease;
+    }
+    .data-pulse {
+      stroke: var(--logo-cutout);
+      stroke-width: 3.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      stroke-dasharray: 44 260;
+      stroke-dashoffset: 304;
+      animation: fiber-flow 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+      transition: stroke 0.3s ease;
+    }
+    .wifi-dot { animation: pulse-wave 2.4s infinite ease-in-out 0s; }
+    .wifi-arc-1 { animation: pulse-wave 2.4s infinite ease-in-out 0.2s; }
+    .wifi-arc-2 { animation: pulse-wave 2.4s infinite ease-in-out 0.4s; }
+    .wifi-arc-3 { animation: pulse-wave 2.4s infinite ease-in-out 0.6s; }
+
+    @keyframes pulse-wave {
+      0%, 100% { opacity: 0.2; }
+      45% { opacity: 1; }
+    }
+    @keyframes fiber-flow {
+      0% { stroke-dashoffset: 304; opacity: 0; }
+      15% { opacity: 0.95; }
+      80% { opacity: 0.95; }
+      100% { stroke-dashoffset: 0; opacity: 0; }
+    }
+    .led-1 { animation: router-blink 1.5s infinite alternate 0.1s; }
+    .led-2 { animation: router-blink 1.5s infinite alternate 0.4s; }
+    .led-3 { animation: router-blink 1.5s infinite alternate 0.7s; }
+    .led-pwr { animation: router-breathe 2.2s infinite ease-in-out; }
+
+    @keyframes router-blink {
+      0% { opacity: 0.25; }
+      100% { opacity: 1; }
+    }
+    @keyframes router-breathe {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+    .loader-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      text-align: center;
+    }
+    .loader-brand {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 5px;
+      color: var(--text-main);
+      text-transform: uppercase;
+    }
+    .loader-tagline {
+      font-size: 11.5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+    .loader-bar-wrap {
+      width: 130px;
+      height: 2px;
+      background: var(--border-sub);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .loader-bar-fill {
+      width: 40%;
+      height: 100%;
+      background: var(--text-main);
+      border-radius: 2px;
+      animation: loader-slide 1.3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes loader-slide {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(100%); }
+      100% { transform: translateX(300%); }
+    }
   </style>
 </head>
 <body class="maxnet-shell">
-  <div id="maxnet-root">
-    <div id="maxnet-loader">
-      <div class="m-spinner"></div>
+  <!-- Animated Maxnet System Boot/Page Loader -->
+  <div id="maxnetPageLoader" class="maxnet-page-loader" aria-hidden="true">
+    <div class="loader-content">
+      <div class="loader-logo-frame">
+        <svg class="maxnet-router-mark" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Booting">
+          <g class="router-m-group">
+            <g fill="none" stroke-linecap="round">
+              <circle class="wifi-dot mono-fill" cx="240" cy="144" r="6" />
+              <path class="wifi-arc-1 mono-stroke" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" />
+              <path class="wifi-arc-2 mono-stroke" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" />
+              <path class="wifi-arc-3 mono-stroke" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" />
+            </g>
+            <rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" />
+            <rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" />
+            <path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+            <polygon class="cutout-fill" points="107,204 152,177 150,186 105,213" />
+            <path class="data-pulse" d="M 144 126 L 240 214 L 336 126" />
+            <rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19" />
+            <rect class="cutout-fill" x="122" y="259" width="36" height="8" rx="4" />
+            <circle class="cutout-fill led-1" cx="314" cy="263" r="2.8" />
+            <circle class="cutout-fill led-2" cx="327" cy="263" r="2.8" />
+            <circle class="cutout-fill led-3" cx="340" cy="263" r="2.8" />
+            <circle class="cutout-fill led-pwr" cx="356" cy="263" r="4.2" />
+            <rect class="mono-fill" x="128" y="285" width="26" height="4" rx="2" />
+            <rect class="mono-fill" x="326" y="285" width="26" height="4" rx="2" />
+          </g>
+        </svg>
+      </div>
+      <div class="loader-meta">
+        <span class="loader-brand">MAXNET</span>
+        <span class="loader-tagline">Max out your net.</span>
+        <div class="loader-bar-wrap">
+          <div class="loader-bar-fill"></div>
+        </div>
+      </div>
     </div>
   </div>
+
+  <div id="maxnet-root"></div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

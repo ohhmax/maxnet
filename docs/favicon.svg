@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="85 50 310 245" width="64" height="64">
+  <style>
+    @media (prefers-color-scheme: light) {
+      .f-mono { fill: #09090b; stroke: #09090b; }
+      .f-cutout { fill: #ffffff; stroke: #ffffff; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .f-mono { fill: #ffffff; stroke: #ffffff; }
+      .f-cutout { fill: #080808; stroke: #080808; }
+    }
+    .f-mono { fill: #ffffff; stroke: #ffffff; }
+    .f-cutout { fill: #080808; stroke: #080808; }
+  </style>
+  <g fill="none" stroke-linecap="round">
+    <circle class="f-mono" cx="240" cy="144" r="6" />
+    <path class="f-mono" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" fill="none" />
+    <path class="f-mono" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" fill="none" />
+    <path class="f-mono" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" fill="none" />
+  </g>
+  <rect class="f-mono" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" stroke="none" />
+  <rect class="f-mono" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" stroke="none" />
+  <path class="f-mono" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" stroke="none" />
+  <polygon class="f-cutout" points="107,204 152,177 150,186 105,213" stroke="none" />
+  <path class="f-cutout" d="M 144 126 L 240 214 L 336 126" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <rect class="f-mono" x="94" y="244" width="292" height="38" rx="19" stroke="none" />
+  <rect class="f-cutout" x="122" y="259" width="36" height="8" rx="4" stroke="none" />
+  <circle class="f-cutout" cx="314" cy="263" r="2.8" stroke="none" />
+  <circle class="f-cutout" cx="327" cy="263" r="2.8" stroke="none" />
+  <circle class="f-cutout" cx="340" cy="263" r="2.8" stroke="none" />
+  <circle class="f-cutout" cx="356" cy="263" r="4.2" stroke="none" />
+  <rect class="f-mono" x="128" y="285" width="26" height="4" rx="2" stroke="none" />
+  <rect class="f-mono" x="326" y="285" width="26" height="4" rx="2" stroke="none" />
+</svg>

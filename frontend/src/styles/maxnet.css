@@ -39,6 +39,7 @@
   --text-main: #ffffff;
   --text-muted: #a1a1aa;
   --text-dim: #71717a;
+  --logo-cutout: #080808;
 
   --radius-xl: 14px;
   --radius-lg: 10px;
@@ -95,6 +96,7 @@ body[data-theme="light"] {
   --text-main: #09090b;
   --text-muted: #52525b;
   --text-dim: #71717a;
+  --logo-cutout: #ffffff;
 
   --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
   --shadow-dock: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 0 0 1px #e4e4e7;
@@ -305,6 +307,7 @@ body[data-theme="dark"] {
   --text-main: #ffffff;
   --text-muted: #a1a1aa;
   --text-dim: #71717a;
+  --logo-cutout: #080808;
 
   --radius-xl: 14px;
   --radius-lg: 10px;
@@ -361,6 +364,7 @@ body[data-theme="light"] {
   --text-main: #09090b;
   --text-muted: #52525b;
   --text-dim: #71717a;
+  --logo-cutout: #ffffff;
 
   --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
   --shadow-dock: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 0 0 1px #e4e4e7;
@@ -6379,7 +6383,7 @@ body[data-theme="dark"] {
         display: none !important;
       }
     }
-    /* TOPOLOGY CANVAS BRAND META & REALTIME STATUS INDICATOR */
+    /* TOPOLOGY CANVAS BRAND META */
     .topo-brand-meta {
       display: flex;
       flex-direction: row;
@@ -6387,54 +6391,28 @@ body[data-theme="dark"] {
       gap: 10px;
       pointer-events: auto;
     }
-    .topo-brand-icon-wrap {
-      position: relative;
-      width: 32px;
-      height: 32px;
-      border-radius: 9px;
-      background: var(--panel, #111113);
-      border: 1px solid var(--border-main, rgba(255, 255, 255, 0.1));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--accent, #10b981);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    .topo-brand-logo,
+    #topbarBrandIcon {
+      width: 28px;
+      height: auto;
       flex-shrink: 0;
-      transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+      display: block;
+      overflow: visible;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      filter: none;
+      transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    [data-theme="light"] .topo-brand-icon-wrap {
-      background: #ffffff;
-      border-color: #e2e8f0;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    .topo-brand-logo:hover,
+    #topbarBrandIcon:hover {
+      transform: translateY(-1px) scale(1.06);
     }
-    .topo-brand-icon-svg {
-      width: 17px;
-      height: 17px;
-      transition: transform 0.3s ease;
-    }
-    .topo-brand-icon-wrap.is-loading .topo-brand-icon-svg {
+    #topbarBrandIcon.is-loading {
       animation: topbarSpin 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      color: #00d2ff !important;
     }
     @keyframes topbarSpin {
       to { transform: rotate(360deg); }
-    }
-    .topo-brand-pulse-dot {
-      position: absolute;
-      bottom: -1px;
-      right: -1px;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #10b981;
-      border: 1.5px solid var(--panel, #111113);
-      box-shadow: 0 0 8px rgba(16, 185, 129, 0.85);
-      transition: all 0.2s ease;
-    }
-    .topo-brand-icon-wrap.is-loading .topo-brand-pulse-dot {
-      background: #00d2ff;
-      box-shadow: 0 0 10px rgba(0, 210, 255, 0.95);
-      animation: mlPulse 1.2s ease-in-out infinite;
     }
     .topo-brand-text-col {
       display: flex;
@@ -6459,6 +6437,190 @@ body[data-theme="dark"] {
       color: var(--accent, #10b981) !important;
       line-height: 1.2;
       display: block;
+    }
+
+    /* MAXNET ROUTER-M BRAND & ANIMATIONS */
+    .maxnet-router-mark {
+      overflow: visible;
+      display: block;
+    }
+    .mono-fill {
+      fill: var(--text-main);
+      transition: fill 0.3s ease;
+    }
+    .mono-stroke {
+      stroke: var(--text-main);
+      transition: stroke 0.3s ease;
+    }
+    .cutout-fill {
+      fill: var(--logo-cutout, var(--bg));
+      transition: fill 0.3s ease;
+    }
+    .data-pulse {
+      stroke: var(--logo-cutout, var(--bg));
+      stroke-width: 3.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      stroke-dasharray: 44 260;
+      stroke-dashoffset: 304;
+      animation: fiber-flow 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+      transition: stroke 0.3s ease;
+    }
+    .wifi-dot { animation: pulse-wave 2.4s infinite ease-in-out 0s; }
+    .wifi-arc-1 { animation: pulse-wave 2.4s infinite ease-in-out 0.2s; }
+    .wifi-arc-2 { animation: pulse-wave 2.4s infinite ease-in-out 0.4s; }
+    .wifi-arc-3 { animation: pulse-wave 2.4s infinite ease-in-out 0.6s; }
+
+    @keyframes pulse-wave {
+      0%, 100% { opacity: 0.2; }
+      45% { opacity: 1; }
+    }
+    @keyframes fiber-flow {
+      0% { stroke-dashoffset: 304; opacity: 0; }
+      15% { opacity: 0.95; }
+      80% { opacity: 0.95; }
+      100% { stroke-dashoffset: 0; opacity: 0; }
+    }
+    .led-1 { animation: router-blink 1.5s infinite alternate 0.1s; }
+    .led-2 { animation: router-blink 1.5s infinite alternate 0.4s; }
+    .led-3 { animation: router-blink 1.5s infinite alternate 0.7s; }
+    .led-pwr { animation: router-breathe 2.2s infinite ease-in-out; }
+
+    @keyframes router-blink {
+      0% { opacity: 0.25; }
+      100% { opacity: 1; }
+    }
+    @keyframes router-breathe {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .topo-brand-logo .cutout-fill {
+      fill: var(--bg);
+    }
+    .topo-brand-logo .data-pulse {
+      stroke: var(--bg);
+    }
+    [data-theme="light"] .topo-brand-logo .cutout-fill {
+      fill: var(--bg);
+    }
+    [data-theme="light"] .topo-brand-logo .data-pulse {
+      stroke: var(--bg);
+    }
+
+    /* ==================== LOGIN SCREEN CYBERNETIC DOT GRID ==================== */
+    #loginScreen,
+    .login-screen-shell {
+      position: relative;
+      min-height: 100vh;
+      width: 100%;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 28px 24px;
+      background-color: var(--bg, #06090c) !important;
+      background: var(--bg, #06090c) !important;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    #loginScreen::before,
+    .login-screen-shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9.5' height='9.5' viewBox='0 0 9.5 9.5'%3E%3Ccircle cx='4.75' cy='4.75' r='0.85' fill='rgba(255,255,255,0.085)'/%3E%3C/svg%3E");
+      background-size: 9.5px 9.5px;
+      background-position: center center;
+      z-index: 0;
+    }
+    [data-theme="light"] #loginScreen,
+    [data-theme="light"] .login-screen-shell {
+      background-color: var(--bg, #f1f4f7) !important;
+      background: var(--bg, #f1f4f7) !important;
+    }
+    [data-theme="light"] #loginScreen::before,
+    [data-theme="light"] .login-screen-shell::before {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9.5' height='9.5' viewBox='0 0 9.5 9.5'%3E%3Ccircle cx='4.75' cy='4.75' r='0.85' fill='rgba(15,25,40,0.09)'/%3E%3C/svg%3E");
+    }
+    #loginScreen > *,
+    .login-screen-shell > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ANIMATED PAGE LOADER OVERLAY */
+    .maxnet-page-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 999999;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.45s ease;
+    }
+    .maxnet-page-loader.loaded {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .loader-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      max-width: 260px;
+      user-select: none;
+    }
+    .loader-logo-frame {
+      width: 84px;
+      height: auto;
+      filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
+    }
+    [data-theme="light"] .loader-logo-frame {
+      filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.08));
+    }
+    .loader-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      text-align: center;
+    }
+    .loader-brand {
+      font-family: var(--font-mono, monospace);
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 5px;
+      color: var(--text-main);
+      text-transform: uppercase;
+    }
+    .loader-tagline {
+      font-size: 11.5px;
+      font-family: var(--font-mono, monospace);
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+    .loader-bar-wrap {
+      width: 130px;
+      height: 2px;
+      background: var(--border-main);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .loader-bar-fill {
+      width: 40%;
+      height: 100%;
+      background: var(--text-main);
+      border-radius: 2px;
+      animation: loader-slide 1.3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes loader-slide {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(100%); }
+      100% { transform: translateX(300%); }
     }
     /* TOPOLOGY CANVAS CONTROLS (ZOOM & FULLSCREEN TOOLBAR) */
     .topo-toolbar {

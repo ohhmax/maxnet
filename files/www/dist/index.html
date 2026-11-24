@@ -19,16 +19,50 @@ GitHub: https://github.com/ohhmax | Email: max@maxnet.lan
   <meta name="theme-color" content="#080808">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>MAXNET</title>
-  <style>:root{--bg-root:#080808}html[data-theme=light],body[data-theme=light]{--bg-root:#f4f4f5}html{background-color:var(--bg-root);background:var(--bg-root);min-height:100%;margin:0;padding:0}body{background-color:var(--bg-root);background:var(--bg-root);min-height:100vh;margin:0;padding:0}#maxnet-loader{background-color:var(--bg-root);z-index:999999;justify-content:center;align-items:center;width:100vw;height:100vh;display:flex;position:fixed;top:0;left:0}.m-spinner{box-sizing:border-box;border:2.5px solid #ffffff14;border-top-color:#10b981;border-radius:50%;width:36px;height:36px;animation:.75s linear infinite m-spin}html[data-theme=light] .m-spinner{border-color:#10b981 #00000014 #00000014}@keyframes m-spin{to{transform:rotate(360deg)}}</style>
-  <script type="module" crossorigin src="/assets/index-CBEuO-8M.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-D_YdfRuX.css">
+  <style>:root{--bg-root:#080808;--text-main:#fff;--text-muted:#a1a1aa;--logo-cutout:#080808;--border-sub:#ffffff14}html[data-theme=light],body[data-theme=light]{--bg-root:#f4f4f5;--text-main:#09090b;--text-muted:#52525b;--logo-cutout:#f4f4f5;--border-sub:#e4e4e7}html{background-color:var(--bg-root);background:var(--bg-root);min-height:100%;margin:0;padding:0}body{background-color:var(--bg-root);background:var(--bg-root);min-height:100vh;color:var(--text-main);margin:0;padding:0}.maxnet-page-loader{z-index:999999;background:var(--bg-root);justify-content:center;align-items:center;transition:opacity .45s cubic-bezier(.16,1,.3,1),visibility .45s;display:flex;position:fixed;top:0;bottom:0;left:0;right:0}.maxnet-page-loader.loaded{opacity:0;visibility:hidden;pointer-events:none}.loader-content{-webkit-user-select:none;user-select:none;flex-direction:column;align-items:center;gap:18px;max-width:260px;display:flex}.loader-logo-frame{filter:drop-shadow(0 10px 24px #00000073);width:84px;height:auto}html[data-theme=light] .loader-logo-frame{filter:drop-shadow(0 4px 14px #00000014)}.maxnet-router-mark{width:100%;height:auto;display:block;overflow:visible}.mono-fill{fill:var(--text-main);transition:fill .3s}.mono-stroke{stroke:var(--text-main);transition:stroke .3s}.cutout-fill{fill:var(--logo-cutout);transition:fill .3s}.data-pulse{stroke:var(--logo-cutout);stroke-width:3.5px;stroke-linecap:round;stroke-linejoin:round;fill:none;stroke-dasharray:44 260;stroke-dashoffset:304px;transition:stroke .3s;animation:3s cubic-bezier(.4,0,.2,1) infinite fiber-flow}.wifi-dot{animation:2.4s ease-in-out infinite pulse-wave}.wifi-arc-1{animation:2.4s ease-in-out .2s infinite pulse-wave}.wifi-arc-2{animation:2.4s ease-in-out .4s infinite pulse-wave}.wifi-arc-3{animation:2.4s ease-in-out .6s infinite pulse-wave}@keyframes pulse-wave{0%,to{opacity:.2}45%{opacity:1}}@keyframes fiber-flow{0%{stroke-dashoffset:304px;opacity:0}15%{opacity:.95}80%{opacity:.95}to{stroke-dashoffset:0;opacity:0}}.led-1{animation:1.5s .1s infinite alternate router-blink}.led-2{animation:1.5s .4s infinite alternate router-blink}.led-3{animation:1.5s .7s infinite alternate router-blink}.led-pwr{animation:2.2s ease-in-out infinite router-breathe}@keyframes router-blink{0%{opacity:.25}to{opacity:1}}@keyframes router-breathe{0%,to{opacity:.5}50%{opacity:1}}.loader-meta{text-align:center;flex-direction:column;align-items:center;gap:4px;display:flex}.loader-brand{letter-spacing:5px;color:var(--text-main);text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,monospace;font-size:15px;font-weight:900}.loader-tagline{color:var(--text-muted);letter-spacing:1px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,monospace;font-size:11.5px}.loader-bar-wrap{background:var(--border-sub);border-radius:2px;width:130px;height:2px;margin-top:8px;overflow:hidden}.loader-bar-fill{background:var(--text-main);border-radius:2px;width:40%;height:100%;animation:1.3s cubic-bezier(.4,0,.2,1) infinite loader-slide}@keyframes loader-slide{0%{transform:translate(-100%)}50%{transform:translate(100%)}to{transform:translate(300%)}}</style>
+  <script type="module" crossorigin src="/assets/index-DlEJA5pR.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-nhwx8ql9.css">
 </head>
 <body class="maxnet-shell">
-  <div id="maxnet-root">
-    <div id="maxnet-loader">
-      <div class="m-spinner"></div>
+  <!-- Animated Maxnet System Boot/Page Loader -->
+  <div id="maxnetPageLoader" class="maxnet-page-loader" aria-hidden="true">
+    <div class="loader-content">
+      <div class="loader-logo-frame">
+        <svg class="maxnet-router-mark" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Booting">
+          <g class="router-m-group">
+            <g fill="none" stroke-linecap="round">
+              <circle class="wifi-dot mono-fill" cx="240" cy="144" r="6" />
+              <path class="wifi-arc-1 mono-stroke" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" />
+              <path class="wifi-arc-2 mono-stroke" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" />
+              <path class="wifi-arc-3 mono-stroke" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" />
+            </g>
+            <rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" />
+            <rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" />
+            <path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+            <polygon class="cutout-fill" points="107,204 152,177 150,186 105,213" />
+            <path class="data-pulse" d="M 144 126 L 240 214 L 336 126" />
+            <rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19" />
+            <rect class="cutout-fill" x="122" y="259" width="36" height="8" rx="4" />
+            <circle class="cutout-fill led-1" cx="314" cy="263" r="2.8" />
+            <circle class="cutout-fill led-2" cx="327" cy="263" r="2.8" />
+            <circle class="cutout-fill led-3" cx="340" cy="263" r="2.8" />
+            <circle class="cutout-fill led-pwr" cx="356" cy="263" r="4.2" />
+            <rect class="mono-fill" x="128" y="285" width="26" height="4" rx="2" />
+            <rect class="mono-fill" x="326" y="285" width="26" height="4" rx="2" />
+          </g>
+        </svg>
+      </div>
+      <div class="loader-meta">
+        <span class="loader-brand">MAXNET</span>
+        <span class="loader-tagline">Max out your net.</span>
+        <div class="loader-bar-wrap">
+          <div class="loader-bar-fill"></div>
+        </div>
+      </div>
     </div>
   </div>
+
+  <div id="maxnet-root"></div>
 
 </body>
 </html>

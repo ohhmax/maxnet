@@ -114,6 +114,20 @@ let timer = null;
       document.documentElement.setAttribute('data-theme', 'light');
     }
 
+    function dismissPageLoader() {
+      const loader = document.getElementById('maxnetPageLoader');
+      if (loader && !loader.classList.contains('loaded')) {
+        loader.classList.add('loaded');
+        setTimeout(() => {
+          try {
+            if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
+          } catch (e) {}
+        }, 500);
+      }
+    }
+    window.dismissPageLoader = dismissPageLoader;
+    setTimeout(dismissPageLoader, 1400);
+
     // ON LOAD
     window.addEventListener('load', async () => {
       try {
@@ -167,6 +181,7 @@ let timer = null;
     function showLogin() {
       document.getElementById('loginScreen').style.display = 'flex';
       document.getElementById('dashboardContainer').style.display = 'none';
+      dismissPageLoader();
       
       const passInp = document.getElementById('loginPass');
       const passHint = document.getElementById('loginRootPassHint');
@@ -204,6 +219,7 @@ let timer = null;
     function showDashboard() {
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('dashboardContainer').style.display = 'block';
+      dismissPageLoader();
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
       
       fetchData();
@@ -20793,13 +20809,15 @@ if (typeof window !== 'undefined') {
     saveWebUiNotificationTriggers,
     clearAllNotificationsWebui,
     toggleNotificationTrigger,
-    loadNotificationTriggers
+    loadNotificationTriggers,
+    dismissPageLoader
   });
 }
 
 
 
 export {
+  dismissPageLoader,
   applyThemeMode,
   setThemeMode,
   updateThemeTriButtons,

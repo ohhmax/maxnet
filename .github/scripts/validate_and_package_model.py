@@ -81,6 +81,35 @@ def main():
     sha256 = calc_sha256(out_file)
     print(f"Successfully packaged {canonical_name}: {file_size} bytes, SHA256={sha256}")
 
+    # Search for and package optional initramfs (.itb)
+    found_itb = None
+    for root, _, files in os.walk(raw_bin_dir):
+        for fname in sorted(files):
+            if "initramfs" in fname.lower() and (fname.endswith(".bin") or fname.endswith(".itb")):
+                if num_suffix and num_suffix in fname:
+                    found_itb = os.path.join(root, fname)
+                    break
+                elif not found_itb:
+                    found_itb = os.path.join(root, fname)
+    if found_itb:
+        itb_out = os.path.join(out_dir, f"maxnet-{model_id}-initramfs.itb")
+        shutil.copy2(found_itb, itb_out)
+        print(f"Packaged initramfs: {itb_out} (SHA256={calc_sha256(itb_out)})")
+
+    # Search for and package optional factory image (.ubi / .bin)
+    found_factory = None
+    for root, _, files in os.walk(raw_bin_dir):
+        for fname in sorted(files):
+            if "factory" in fname.lower() and (fname.endswith(".ubi") or fname.endswith(".bin")):
+                if num_suffix and num_suffix in fname:
+                    found_factory = os.path.join(root, fname)
+                    break
+    if found_factory:
+        ext = ".ubi" if found_factory.endswith(".ubi") else ".bin"
+        factory_out = os.path.join(out_dir, f"maxnet-{model_id}-factory{ext}")
+        shutil.copy2(found_factory, factory_out)
+        print(f"Packaged factory image: {factory_out} (SHA256={calc_sha256(factory_out)})")
+
     # Sign binary with usign if secret key is available
     sec_key = os.environ.get("MAXNET_RELEASE_SEC")
     sig_file = out_file + ".sig"

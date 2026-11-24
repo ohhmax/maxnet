@@ -110,7 +110,7 @@ if args.target == "qualcommbe":
         "CONFIG_TARGET_qualcommbe_ipq95xx_DEVICE_jiorouter_ax6000-jidu6j11-6111=y",
         "CONFIG_TARGET_qualcommbe_ipq95xx_DEVICE_jio_jidu6811=y",
         "CONFIG_TARGET_qualcommbe_ipq95xx_DEVICE_jio_jidu6911=y",
-        "# CONFIG_TARGET_ROOTFS_INITRAMFS is not set",
+        "CONFIG_TARGET_ROOTFS_INITRAMFS=y",
         "CONFIG_KERNEL_GZIP=y",
         "CONFIG_DEVEL=y",
         "CONFIG_CCACHE=y",
@@ -145,7 +145,7 @@ else: # mediatek
         "CONFIG_TARGET_mediatek_filogic_DEVICE_jiorouter_ax6000-jidu6101=y",
         "CONFIG_TARGET_mediatek_filogic_DEVICE_jiorouter_ax6000-jidu6801=y",
         "CONFIG_TARGET_mediatek_filogic_DEVICE_jiorouter_ax6000-jidu6401=y",
-        "# CONFIG_TARGET_ROOTFS_INITRAMFS is not set",
+        "CONFIG_TARGET_ROOTFS_INITRAMFS=y",
         "CONFIG_DEVEL=y",
         "CONFIG_CCACHE=y",
 

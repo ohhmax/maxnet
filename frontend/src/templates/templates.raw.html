@@ -3,12 +3,37 @@
 <body>
 
   <!-- ==================== 1. FULL-PAGE MONOCHROME MINIMALIST LOGIN ==================== -->
-  <div id="loginScreen" style="display:none; min-height:100vh; width:100%; flex-direction:column; justify-content:space-between; padding:28px 24px; background:var(--bg, #090b10); box-sizing:border-box;">
+  <div id="loginScreen" class="login-screen-shell" style="display:none; min-height:100vh; width:100%; flex-direction:column; justify-content:space-between; padding:28px 24px; box-sizing:border-box;">
 
     <!-- TOP BAR -->
     <div style="display:flex; align-items:center; justify-content:space-between; width:100%; max-width:1160px; margin:0 auto;">
-      <div style="display:flex; flex-direction:column; gap:2px;">
-        <span id="loginDeviceHostTitle" style="font-size:15px; font-weight:900; letter-spacing:1.5px; font-family:var(--font-mono); color:var(--text-main); text-transform:uppercase;">MAXNET-GATEWAY</span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <svg class="topo-brand-logo maxnet-router-mark" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Router Logo" style="width:28px; height:auto; flex-shrink:0;">
+          <g class="router-m-group">
+            <g fill="none" stroke-linecap="round">
+              <circle class="wifi-dot mono-fill" cx="240" cy="144" r="6" />
+              <path class="wifi-arc-1 mono-stroke" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" />
+              <path class="wifi-arc-2 mono-stroke" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" />
+              <path class="wifi-arc-3 mono-stroke" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" />
+            </g>
+            <rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" />
+            <rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" />
+            <path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+            <polygon class="cutout-fill" points="107,204 152,177 150,186 105,213" />
+            <path class="data-pulse" d="M 144 126 L 240 214 L 336 126" />
+            <rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19" />
+            <rect class="cutout-fill" x="122" y="259" width="36" height="8" rx="4" />
+            <circle class="cutout-fill led-1" cx="314" cy="263" r="2.8" />
+            <circle class="cutout-fill led-2" cx="327" cy="263" r="2.8" />
+            <circle class="cutout-fill led-3" cx="340" cy="263" r="2.8" />
+            <circle class="cutout-fill led-pwr" cx="356" cy="263" r="4.2" />
+            <rect class="mono-fill" x="128" y="285" width="26" height="4" rx="2" />
+            <rect class="mono-fill" x="326" y="285" width="26" height="4" rx="2" />
+          </g>
+        </svg>
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <span id="loginDeviceHostTitle" style="font-size:15px; font-weight:900; letter-spacing:1.5px; font-family:var(--font-mono); color:var(--text-main); text-transform:uppercase;">MAXNET-GATEWAY</span>
+        </div>
       </div>
       <button onclick="toggleTheme()" class="btn-header-action" title="Toggle Theme">
         <svg class="svg-icon" viewBox="0 0 24 24" style="width:14px; height:14px;"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.07" x2="5.64" y2="17.66"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -17,8 +42,33 @@
 
     <!-- CENTER LOGIN MODULE -->
     <div style="width:100%; max-width:340px; margin:auto; padding:20px 0; display:flex; flex-direction:column; gap:16px;">
-      <div style="text-align:center; margin-bottom:4px;">
-        <h2 style="font-size:22px; font-weight:900; font-family:var(--font-mono); color:var(--text-main); margin:0; letter-spacing:1px; text-transform:uppercase;">Login</h2>
+      <div style="text-align:center; margin-bottom:8px; display:flex; flex-direction:column; align-items:center; gap:12px;">
+        <div style="width:64px; height:auto; filter:drop-shadow(0 8px 20px rgba(0,0,0,0.45));">
+          <svg class="maxnet-router-mark" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Gateway">
+            <g class="router-m-group">
+              <g fill="none" stroke-linecap="round">
+                <circle class="wifi-dot mono-fill" cx="240" cy="144" r="6" />
+                <path class="wifi-arc-1 mono-stroke" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" />
+                <path class="wifi-arc-2 mono-stroke" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" />
+                <path class="wifi-arc-3 mono-stroke" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" />
+              </g>
+              <rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" />
+              <rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" />
+              <path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+              <polygon class="cutout-fill" points="107,204 152,177 150,186 105,213" />
+              <path class="data-pulse" d="M 144 126 L 240 214 L 336 126" />
+              <rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19" />
+              <rect class="cutout-fill" x="122" y="259" width="36" height="8" rx="4" />
+              <circle class="cutout-fill led-1" cx="314" cy="263" r="2.8" />
+              <circle class="cutout-fill led-2" cx="327" cy="263" r="2.8" />
+              <circle class="cutout-fill led-3" cx="340" cy="263" r="2.8" />
+              <circle class="cutout-fill led-pwr" cx="356" cy="263" r="4.2" />
+              <rect class="mono-fill" x="128" y="285" width="26" height="4" rx="2" />
+              <rect class="mono-fill" x="326" y="285" width="26" height="4" rx="2" />
+            </g>
+          </svg>
+        </div>
+        <h2 style="font-size:20px; font-weight:900; font-family:var(--font-mono); color:var(--text-main); margin:0; letter-spacing:1px; text-transform:uppercase;">Login</h2>
       </div>
 
       <div id="loginErrMsg" style="background:rgba(239,68,68,0.1); border:1px solid #ef4444; color:#ef4444; font-size:11px; padding:9px 12px; border-radius:6px; text-align:center; display:none; font-family:var(--font-mono);"></div>
@@ -59,6 +109,29 @@
         <!-- TOP BAR: Host Brand Meta on Left, Canvas Controls on Right (Zero Canvas Overlap) -->
         <div class="topo-top-bar" id="persistentTopBar">
           <div class="topo-brand-meta">
+            <svg class="topo-brand-logo maxnet-router-mark" id="topbarBrandIcon" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Router Logo" style="width:28px; height:auto; flex-shrink:0;">
+              <g class="router-m-group">
+                <g fill="none" stroke-linecap="round">
+                  <circle class="wifi-dot mono-fill" cx="240" cy="144" r="6" />
+                  <path class="wifi-arc-1 mono-stroke" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" />
+                  <path class="wifi-arc-2 mono-stroke" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" />
+                  <path class="wifi-arc-3 mono-stroke" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" />
+                </g>
+                <rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" />
+                <rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" />
+                <path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+                <polygon class="cutout-fill" points="107,204 152,177 150,186 105,213" />
+                <path class="data-pulse" d="M 144 126 L 240 214 L 336 126" />
+                <rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19" />
+                <rect class="cutout-fill" x="122" y="259" width="36" height="8" rx="4" />
+                <circle class="cutout-fill led-1" cx="314" cy="263" r="2.8" />
+                <circle class="cutout-fill led-2" cx="327" cy="263" r="2.8" />
+                <circle class="cutout-fill led-3" cx="340" cy="263" r="2.8" />
+                <circle class="cutout-fill led-pwr" cx="356" cy="263" r="4.2" />
+                <rect class="mono-fill" x="128" y="285" width="26" height="4" rx="2" />
+                <rect class="mono-fill" x="326" y="285" width="26" height="4" rx="2" />
+              </g>
+            </svg>
             <div class="topo-brand-text-col">
               <span class="topo-brand-title" id="dashBrandTitle">MAXNET</span>
               <span class="topo-brand-subtitle" id="headerVer">v2.2.29</span>

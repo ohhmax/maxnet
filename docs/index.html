@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Maxnet - Router Firmware | By Mahendra Mali (Max)</title>
+  <meta name="description" content="Maxnet is an open router operating system engineered by Mahendra Mali (Max) for Jio AirFiber IDUs and modern hardware platforms. Featuring Wi-Fi 7, NSS hardware packet offload, CAKE SQM bufferbloat control, ADBMAX management, and zero carrier telemetry.">
+  <meta name="keywords" content="Maxnet, Maxnet firmware, Jio AirFiber firmware, JIDU6911, JIDU6811, JIDU6611, JIDU6411, JIDU6111, JIDU6801, Qualcomm IPQ9574, MediaTek MT7986, Wi-Fi 7 router, ADBMAX, Mahendra Mali, Max, router flashing guide, router firmware">
+  <meta name="author" content="Mahendra Mali (Max)">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#000000">
+  <link rel="canonical" href="https://ohhmax.github.io/maxnet/">
+
+  <!-- Open Graph / Social Media -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ohhmax.github.io/maxnet/">
+  <meta property="og:site_name" content="Maxnet Firmware">
+  <meta property="og:title" content="Maxnet - Router Firmware">
+  <meta property="og:description" content="Open router operating system developed by Mahendra Mali (Max) for Jio AirFiber IDUs and hardware routers. Features Wi-Fi 7, hardware packet offloading, and CAKE SQM.">
+  <meta property="og:image" content="./assets/images/banner.svg">
+
+  <!-- Twitter Meta Cards -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://ohhmax.github.io/maxnet/">
+  <meta name="twitter:title" content="Maxnet Firmware | Router Operating System">
+  <meta name="twitter:description" content="Router firmware engineered by Mahendra Mali (Max) for Jio AirFiber IDUs and hardware routers. Clean design, hardware offloading, and full local control.">
+  <meta name="twitter:image" content="./assets/images/banner.svg">
+
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="alternate icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" href="./favicon.svg">
+  <link rel="stylesheet" href="./assets/css/style.css?v=20261124-02">
+
+  <!-- Structured Data JSON-LD for Search Engines -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "Maxnet",
+        "applicationCategory": "NetworkingApplication",
+        "operatingSystem": "Linux",
+        "author": {
+          "@type": "Person",
+          "name": "Mahendra Mali",
+          "alternateName": "Max",
+          "url": "https://github.com/ohhmax"
+        },
+        "description": "Router operating system and firmware for modern networking hardware platforms.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Maxnet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Maxnet is an independent router operating system created by Mahendra Mali (Max), built for Jio AirFiber IDU devices and expanding to support additional modern router hardware."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Who developed Maxnet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Maxnet is designed, engineered, and maintained independently by Mahendra Mali (Max) under the GitHub handle ohhmax."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which router models are supported by Maxnet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Maxnet supports Qualcomm IPQ9574 and MediaTek Filogic MT7986 platforms, including JIDU6911, JIDU6811, JIDU6611, JIDU6411, JIDU6111, JIDU6801, JIDU6401, JIDU6601, JIDU6701, JIDU6101, JIDU6J01, with future commercial router models in active development."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How can I support Maxnet development?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Maxnet is an independent open-source project created full-time from home. You can support the creator via direct UPI at 9824584454@ybl or connect via Telegram at https://t.me/the_max_lab."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Animated Maxnet System Boot/Page Loader -->
+  <div id="maxnetPageLoader" class="maxnet-page-loader" aria-hidden="true">
+    <div class="loader-content">
+      <div class="loader-logo-frame">
+        <svg class="maxnet-router-mark" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Booting">
+          <g class="router-m-group">
+            <g fill="none" stroke-linecap="round">
+              <circle class="wifi-dot mono-fill" cx="240" cy="144" r="6" />
+              <path class="wifi-arc-1 mono-stroke" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" />
+              <path class="wifi-arc-2 mono-stroke" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" />
+              <path class="wifi-arc-3 mono-stroke" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" />
+            </g>
+            <rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" />
+            <rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" />
+            <path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+            <polygon class="cutout-fill" points="107,204 152,177 150,186 105,213" />
+            <path class="data-pulse" d="M 144 126 L 240 214 L 336 126" />
+            <rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19" />
+            <rect class="cutout-fill" x="122" y="259" width="36" height="8" rx="4" />
+            <circle class="cutout-fill led-1" cx="314" cy="263" r="2.8" />
+            <circle class="cutout-fill led-2" cx="327" cy="263" r="2.8" />
+            <circle class="cutout-fill led-3" cx="340" cy="263" r="2.8" />
+            <circle class="cutout-fill led-pwr" cx="356" cy="263" r="4.2" />
+            <rect class="mono-fill" x="128" y="285" width="26" height="4" rx="2" />
+            <rect class="mono-fill" x="326" y="285" width="26" height="4" rx="2" />
+          </g>
+        </svg>
+      </div>
+      <div class="loader-meta">
+        <span class="loader-brand">MAXNET</span>
+        <span class="loader-tagline">Max out your net.</span>
+        <div class="loader-bar-wrap">
+          <div class="loader-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Backdrop Architectural Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <!-- Brand + Dynamic Author Attribution -->
+      <div class="brand" role="button" tabindex="0" title="Maxnet Portal">
+        <!-- Animated Maxnet Router-M Logo -->
+        <svg class="brand-logo maxnet-router-mark" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Router Logo">
+          <g class="router-m-group">
+            <g fill="none" stroke-linecap="round">
+              <circle class="wifi-dot mono-fill" cx="240" cy="144" r="6" />
+              <path class="wifi-arc-1 mono-stroke" d="M 223 127 A 24 24 0 0 1 257 127" stroke-width="6.5" />
+              <path class="wifi-arc-2 mono-stroke" d="M 210 114 A 42 42 0 0 1 270 114" stroke-width="6.5" />
+              <path class="wifi-arc-3 mono-stroke" d="M 197 101 A 60 60 0 0 1 283 101" stroke-width="6.5" />
+            </g>
+            <rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)" />
+            <rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)" />
+            <path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+            <polygon class="cutout-fill" points="107,204 152,177 150,186 105,213" />
+            <path class="data-pulse" d="M 144 126 L 240 214 L 336 126" />
+            <rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19" />
+            <rect class="cutout-fill" x="122" y="259" width="36" height="8" rx="4" />
+            <circle class="cutout-fill led-1" cx="314" cy="263" r="2.8" />
+            <circle class="cutout-fill led-2" cx="327" cy="263" r="2.8" />
+            <circle class="cutout-fill led-3" cx="340" cy="263" r="2.8" />
+            <circle class="cutout-fill led-pwr" cx="356" cy="263" r="4.2" />
+            <rect class="mono-fill" x="128" y="285" width="26" height="4" rx="2" />
+            <rect class="mono-fill" x="326" y="285" width="26" height="4" rx="2" />
+          </g>
+        </svg>
+        <div class="brand-text">
+          <span class="brand-name">MAXNET</span>
+          <span class="brand-tagline">Max out your net.</span>
+        </div>
+      </div>
+
+      <button id="themeToggleBtn" class="btn-theme-toggle" type="button" aria-label="Toggle Theme" title="Toggle Theme">
+        <!-- Injected by JS -->
+      </button>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- Unified Controls Toolbar (Outside content boxes) -->
+    <div class="content-toolbar">
+      <div class="toolbar-controls">
+        <!-- Custom Dropdown Model Selector (No browser native select) -->
+        <div class="custom-model-dropdown" id="customModelDropdown">
+          <button type="button" class="custom-dropdown-trigger" id="customModelTrigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select Router Model">
+            <svg class="model-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+              <rect x="9" y="9" width="6" height="6"></rect>
+              <line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line>
+              <line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line>
+              <line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="15" x2="23" y2="15"></line>
+              <line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="15" x2="4" y2="15"></line>
+            </svg>
+            <span class="custom-dropdown-label" id="customModelLabel">JIDU6911 (Qualcomm)</span>
+            <svg class="custom-dropdown-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div class="custom-dropdown-menu" id="customModelMenu" role="listbox" aria-label="Router Models">
+            <!-- Populated dynamically via JS -->
+          </div>
+          <input type="hidden" id="modelSelect" value="jidu6911" />
+        </div>
+
+        <!-- 3 Primary Navigation Tabs (Overview | Firmware | Guide) -->
+        <nav class="tab-nav">
+          <button id="tabBtnWhatIs" class="tab-btn active" type="button" data-tab="overview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+              <polyline points="2 17 12 22 22 17"></polyline>
+              <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+            <span>Overview</span>
+          </button>
+          <button id="tabBtnDownloads" class="tab-btn" type="button" data-tab="downloads">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            <span>Firmware</span>
+          </button>
+          <button id="tabBtnGuide" class="tab-btn" type="button" data-tab="guide">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+            <span>Guide</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- SECTION 1: OVERVIEW (Default Active Page View - Fluid Architectural Layout) -->
+    <section id="sectionWhatIs" class="tab-content active">
+      <article class="about-maxnet-flow">
+
+        <!-- Hero Header -->
+        <header class="about-hero-header">
+          <span class="about-badge">ROUTER FIRMWARE</span>
+          <p class="about-tagline">Open Operating System for Jio AirFiber IDUs &amp; Router Hardware</p>
+          <p class="about-byline">Architected and engineered by <strong>Mahendra Mali (Max)</strong></p>
+        </header>
+
+        <!-- Deep Highlighting Intro -->
+        <div class="about-highlight-block">
+          <p class="about-lead-para">
+            <strong>Maxnet</strong> is an open router operating system for modern hardware routers. Built on a tailored Linux kernel foundation with hardware flow acceleration, Maxnet delivers line-rate 1 Gbps Gigabit throughput, dedicated USB 3.0/2.0 subsystem access, zero telemetry, and complete local root control.
+          </p>
+        </div>
+
+        <!-- Section 1: Inside Maxnet (Deep Architecture & Feature Set) -->
+        <div class="about-section-group">
+          <div class="about-subhead-row">
+            <span class="about-subhead-num">01</span>
+            <h2 class="about-section-heading">WHAT IS INSIDE MAXNET?</h2>
+          </div>
+
+          <div class="about-editorial-columns">
+            <div class="editorial-entry">
+              <h3 class="entry-title">Tailored Linux LTS Networking Core</h3>
+              <p class="entry-text">
+                Maxnet operates on an optimized modern Linux long-term kernel featuring tuned virtual memory management, BBR congestion control, multi-queue network packet scheduling, and low latency task dispatching. It eliminates bloatware, proprietary carrier logging daemons, and hidden background monitoring processes.
+              </p>
+            </div>
+
+            <div class="editorial-entry">
+              <h3 class="entry-title">Qualcomm PPE &amp; MediaTek WED Hardware Offloading</h3>
+              <p class="entry-text">
+                Stock firmware often limits routing throughput through heavy CPU-bound packet parsing. Maxnet taps directly into hardware packet engines: Qualcomm PPE (Packet Processing Engine) on IPQ9574/IPQ9554 and MediaTek WED (Wireless Ethernet Dispatcher) &amp; PPE on MT7986A, achieving line-rate 1 Gbps Gigabit packet switching with virtually zero CPU utilization.
+              </p>
+            </div>
+
+            <div class="editorial-entry">
+              <h3 class="entry-title">Dedicated USB 3.0 &amp; USB 2.0 Subsystems</h3>
+              <p class="entry-text">
+                Full driver support for peripheral connectivity: Qualcomm models feature a dedicated USB 3.0 SuperSpeed (5 Gbps) port powered by the Qualcomm QMP PHY for high-speed storage, network devices, and ADB tethering, while MediaTek models provide an integrated USB 2.0 HighSpeed (480 Mbps) port for diagnostics, modems, and smartphone control.
+              </p>
+            </div>
+
+            <div class="editorial-entry">
+              <h3 class="entry-title">CAKE &amp; FQ-CoDel Smart Queue Management (SQM)</h3>
+              <p class="entry-text">
+                Eliminate bufferbloat once and for all. Maxnet includes advanced Active Queue Management algorithms (CAKE and FQ-CoDel) that prioritize interactive traffic, voice, and competitive gaming packets over bulk downloads, guaranteeing minimal ping spikes during heavy network utilization.
+              </p>
+            </div>
+
+            <div class="editorial-entry">
+              <h3 class="entry-title">ADBMAX Integrated Device Engine</h3>
+              <p class="entry-text">
+                A native management subsystem built exclusively for Maxnet. Directly manage Android handsets and attached cellular modems through ADB, enabling automated SMS routing, call log analysis, multi-device key imports, and automated diagnostic scripting directly from your router.
+              </p>
+            </div>
+
+            <div class="editorial-entry">
+              <h3 class="entry-title">Privacy, Security &amp; 100% Zero Telemetry</h3>
+              <p class="entry-text">
+                Stock firmware maintains continuous telemetry backdoors to corporate carrier servers. Maxnet completely severs these connections: no remote firmware overwrite backdoors, no telemetry, no forced provisioning, full nftables firewall configuration, and complete root terminal SSH access.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Complete WebUI & Subsystem Desktop Showcase -->
+        <div class="about-section-group">
+          <div class="about-subhead-row">
+            <span class="about-subhead-num">02</span>
+            <h2 class="about-section-heading">WEBUI &amp; SYSTEM DESKTOP SHOWCASE</h2>
+          </div>
+          <p class="entry-text" style="margin-bottom: 24px;">
+            Authentic full-resolution desktop captures taken directly from the live Maxnet gateway (<code style="font-family: monospace; font-size: 12px; padding: 2px 5px; background: var(--bg-hover); border-radius: 4px;">10.0.0.1</code>) across all system configuration modules, daemons, and interfaces:
+          </p>
+
+          <div class="desktop-showcase-container">
+
+            <!-- Panel: Live Network Topology & Real-Time Telemetry Dock -->
+            <article class="desktop-showcase-panel" id="showcase-topology">
+              <div class="desktop-window-canvas">
+                <img src="./images/desktop_dark.png" data-dark="./images/desktop_dark.png" data-light="./images/desktop_light.png" alt="Maxnet Real-Time Network Topology and Telemetry Dock" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Live Network Topology & Real-Time Telemetry Dock</h3>
+                <p class="details-narrative">
+                  Maxnet features an interactive network canvas that maps your entire connection pipeline from external uplinks down to individual connected client devices. Real-time traffic vectors visually illustrate throughput between your primary WAN, cellular backup modems, dual-band Wi-Fi radios, and local Ethernet clients.
+                </p>
+                <p class="details-narrative">
+                  Pinned at the bottom of the interface is the live telemetry dock, streaming real-time processor utilization, memory allocations, and core router temperatures. You can click any connected node to inspect its assigned IP, MAC address, active upload/download speeds, and connection tier instantly.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Centralized Settings Hub & Instant Configuration Search -->
+            <article class="desktop-showcase-panel" id="showcase-settings">
+              <div class="desktop-window-canvas">
+                <img src="./images/settings_hub_dark.png" data-dark="./images/settings_hub_dark.png" data-light="./images/settings_hub_light.png" alt="Maxnet Centralized Settings Hub and Instant Search" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Centralized Settings Hub & Instant Configuration Search</h3>
+                <p class="details-narrative">
+                  The Settings Hub provides a clean, unified dashboard with direct access to every system control panel without digging through deep nested menus. An integrated instant search engine lets you quickly filter parameters, modules, and options as you type.
+                </p>
+                <p class="details-narrative">
+                  Subsystems are organized into logical sections covering Core Networking, Connected Smartphones, USB Storage, System Administration, and Hardware Gestures. Selecting any module opens its dedicated interface instantly without reloading the entire page.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: ADBMAX Android Engine & Cellular Telemetry Subsystem -->
+            <article class="desktop-showcase-panel" id="showcase-adb">
+              <div class="desktop-window-canvas">
+                <img src="./images/adb_device_dark.png" data-dark="./images/adb_device_dark.png" data-light="./images/adb_device_light.png" alt="Maxnet ADBMAX Android Engine and Phone Telemetry" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">ADBMAX Android Engine & Cellular Telemetry Subsystem</h3>
+                <p class="details-narrative">
+                  ADBMAX is Maxnet's native smartphone integration engine. When you connect an Android phone over USB, the router communicates directly with the handset to display battery health, charging status, carrier network details, 5G/LTE bands, and live signal quality directly in your router dashboard without requiring phone root access.
+                </p>
+                <p class="details-narrative">
+                  It also includes remote phone actions such as remote reboot, wake/sleep triggers, airplane mode toggling for instant cellular IP renewal, and an in-browser SMS inbox viewer so you can easily review incoming verification codes and OTPs without touching your phone.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: USB WAN Multi-Link Aggregation & Auto-Failover Watchdog -->
+            <article class="desktop-showcase-panel" id="showcase-usb-wan">
+              <div class="desktop-window-canvas">
+                <img src="./images/usb_wan_dark.png" data-dark="./images/usb_wan_dark.png" data-light="./images/usb_wan_light.png" alt="Maxnet USB WAN Multi-Link Aggregation and Auto Failover" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">USB WAN Multi-Link Aggregation & Auto-Failover Watchdog</h3>
+                <p class="details-narrative">
+                  Ensure non-stop internet reliability with automated multi-WAN supervision. The watchdog monitors your primary fiber connection, tethered USB smartphone, and secondary cellular modems around the clock using continuous ping probes to verify real-world internet availability.
+                </p>
+                <p class="details-narrative">
+                  If your primary broadband drops, traffic switches automatically and seamlessly to cellular backup in under a second so ongoing calls, streams, and games never disconnect. When fiber service restores, the router safely transitions back to primary WAN and can power-cycle USB ports if a tethered modem ever freezes.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Core Routing, IP Management, DHCP & Encrypted DNS -->
+            <article class="desktop-showcase-panel" id="showcase-network">
+              <div class="desktop-window-canvas">
+                <img src="./images/network_settings_dark.png" data-dark="./images/network_settings_dark.png" data-light="./images/network_settings_light.png" alt="Maxnet Core Routing IPv4 IPv6 DHCP and DNS Configuration" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Core Routing, IP Management, DHCP & Encrypted DNS</h3>
+                <p class="details-narrative">
+                  A complete networking control panel for managing your gateway IP addresses, subnet masks, upstream WAN connection modes, and DHCP address pools. You can bind permanent static IP leases for servers, printers, and smart home appliances by MAC address.
+                </p>
+                <p class="details-narrative">
+                  Includes built-in support for custom upstream encrypted DNS resolvers like Cloudflare, Google, and Quad9, alongside hardware-accelerated packet forwarding to ensure your home or office network runs at maximum Gigabit throughput with minimal latency.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Tailscale Mesh VPN & Secure Remote Subnet Router -->
+            <article class="desktop-showcase-panel" id="showcase-tailscale">
+              <div class="desktop-window-canvas">
+                <img src="./images/tailscale_dark.png" data-dark="./images/tailscale_dark.png" data-light="./images/tailscale_light.png" alt="Maxnet Tailscale Mesh VPN and Remote Subnet Router" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Tailscale Mesh VPN & Secure Remote Subnet Router</h3>
+                <p class="details-narrative">
+                  Access your home network securely from anywhere in the world without opening ports or configuring complex port-forwarding rules. Powered by modern WireGuard encryption, Tailscale connects your laptops, tablets, and phones directly to your router over an encrypted peer-to-peer mesh.
+                </p>
+                <p class="details-narrative">
+                  Maxnet can function as an advertising subnet router and secure exit node, enabling you to route public internet traffic through your trusted home gateway whenever you are connected to untrusted hotel or public Wi-Fi networks.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Wi-Fi 6 (802.11ax) Dual-Band Radios & 160 MHz Channels -->
+            <article class="desktop-showcase-panel" id="showcase-wifi">
+              <div class="desktop-window-canvas">
+                <img src="./images/wifi_settings_dark.png" data-dark="./images/wifi_settings_dark.png" data-light="./images/wifi_settings_light.png" alt="Maxnet Wi-Fi 6 802.11ax Dual Band Radio Settings" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Wi-Fi 6 (802.11ax) Dual-Band Radios & 160 MHz Channels</h3>
+                <p class="details-narrative">
+                  Take full advantage of modern Wi-Fi 6 wireless performance with independent controls for both 2.4 GHz and 5 GHz radios. Supports ultra-wide 160 MHz channel bandwidths for multi-gigabit wireless throughput, custom transmit power, and fast channel scanning.
+                </p>
+                <p class="details-narrative">
+                  Configure advanced wireless security including WPA3-SAE encryption, multi-SSID guest networks with client isolation, and fast roaming protocols so your mobile devices switch smoothly between access points without dropping connections.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Connected Wi-Fi Clients Ledger & Signal Inspector -->
+            <article class="desktop-showcase-panel" id="showcase-wifi-clients">
+              <div class="desktop-window-canvas">
+                <img src="./images/wifi_clients_dark.png" data-dark="./images/wifi_clients_dark.png" data-light="./images/wifi_clients_light.png" alt="Maxnet Wi-Fi Clients Ledger and Signal Inspector" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Connected Wi-Fi Clients Ledger & Signal Inspector</h3>
+                <p class="details-narrative">
+                  A real-time overview of every wireless device currently associated with your router across 2.4 GHz and 5 GHz bands. Each client entry displays its assigned IP address, MAC address, device hostname, connection frequency, and live signal strength meters.
+                </p>
+                <p class="details-narrative">
+                  Identify weak signal zones in your home by inspecting client signal quality in decibels. For administrative control, the dashboard lets you disconnect unwanted devices with a single click or permanently block unauthorized MAC addresses from rejoining.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Samba 4 Network Storage & DufS Web File Browser -->
+            <article class="desktop-showcase-panel" id="showcase-storage">
+              <div class="desktop-window-canvas">
+                <img src="./images/smb_storage_dark.png" data-dark="./images/smb_storage_dark.png" data-light="./images/smb_storage_light.png" alt="Maxnet Samba 4 Storage and DufS Web File Browser" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Samba 4 Network Storage & DufS Web File Browser</h3>
+                <p class="details-narrative">
+                  Transform your router into a high-speed Network Attached Storage (NAS) server by plugging in any external USB SSD or hard drive. Supports modern high-capacity filesystems including ext4, NTFS, exFAT, and FAT32 with automatic volume mounting.
+                </p>
+                <p class="details-narrative">
+                  Share files effortlessly across Windows, macOS, Linux, Android, and Smart TVs using high-performance Samba 4 network sharing. You can also browse, upload, download, and organize files directly through any web browser using the lightweight built-in file manager.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Root Web Shell & Interactive Command-Line Terminal -->
+            <article class="desktop-showcase-panel" id="showcase-terminal">
+              <div class="desktop-window-canvas">
+                <img src="./images/terminal_dark.png" data-dark="./images/terminal_dark.png" data-light="./images/terminal_light.png" alt="Maxnet In-Browser Root Web Terminal and Shell" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Root Web Shell & Interactive Command-Line Terminal</h3>
+                <p class="details-narrative">
+                  An integrated full-screen terminal emulator running directly inside your web browser. Delivers full command-line access with true-color ANSI support, smooth keystroke responsiveness, and clipboard copy-paste convenience without requiring external SSH desktop clients.
+                </p>
+                <p class="details-narrative">
+                  Advanced users and network administrators can monitor running processes, inspect kernel statistics, script custom network behaviors, and run Linux diagnostic utilities with zero installation or extra setup.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Automated Discord & Telegram Webhook Notifications -->
+            <article class="desktop-showcase-panel" id="showcase-webhooks">
+              <div class="desktop-window-canvas">
+                <img src="./images/webhooks_dark.png" data-dark="./images/webhooks_dark.png" data-light="./images/webhooks_light.png" alt="Maxnet Automated Discord and Telegram Webhook Alerts" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Automated Discord & Telegram Webhook Notifications</h3>
+                <p class="details-narrative">
+                  Keep track of your network 24/7 with autonomous instant notifications sent directly to your private Discord channel or Telegram chat. The alert engine sends real-time updates whenever internet failovers occur or when your primary connection restores.
+                </p>
+                <p class="details-narrative">
+                  You can also configure proactive alerts for hardware events such as high operating temperatures, USB phone tethering attachments, and automatic forwarding of SMS verification codes so you are always informed no matter where you are.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: System Maintenance, Event Logs & Backup Management -->
+            <article class="desktop-showcase-panel" id="showcase-maintenance">
+              <div class="desktop-window-canvas">
+                <img src="./images/maintenance_dark.png" data-dark="./images/maintenance_dark.png" data-light="./images/maintenance_light.png" alt="Maxnet System Diagnostics Logs and Backup Restoration" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">System Maintenance, Event Logs & Backup Management</h3>
+                <p class="details-narrative">
+                  A centralized administration hub designed for smooth router upkeep, diagnosis, and disaster recovery. Features live log viewers with instant keyword search and filtering to troubleshoot connection drops, hardware events, and system activities.
+                </p>
+                <p class="details-narrative">
+                  Safeguard your customized setup with one-click full configuration backups that can be exported or restored in seconds. It also includes safe restart controls and factory reset routines protected by safety-confirmation countdowns to prevent accidental data loss.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Firmware Management & One-Click System Updates -->
+            <article class="desktop-showcase-panel" id="showcase-firmware">
+              <div class="desktop-window-canvas">
+                <img src="./images/firmware_upgrade_dark.png" data-dark="./images/firmware_upgrade_dark.png" data-light="./images/firmware_upgrade_light.png" alt="Maxnet Firmware Upgrade and OTA Update Center" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Firmware Management & One-Click System Updates</h3>
+                <p class="details-narrative">
+                  Keep your router operating system current with streamlined firmware updates. The system displays your active software release, build timestamp, and kernel version with an option to preserve your custom network settings, passwords, and user data across updates.
+                </p>
+                <p class="details-narrative">
+                  Every firmware package is validated for image compatibility and cryptographic SHA-256 integrity before flashing begins, safeguarding your router against corrupted files or incomplete downloads.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Network Diagnostics Suite & Connectivity Tools -->
+            <article class="desktop-showcase-panel" id="showcase-diagnostics">
+              <div class="desktop-window-canvas">
+                <img src="./images/diagnostics_dark.png" data-dark="./images/diagnostics_dark.png" data-light="./images/diagnostics_light.png" alt="Maxnet Network Diagnostics Suite Ping and Traceroute" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Network Diagnostics Suite & Connectivity Tools</h3>
+                <p class="details-narrative">
+                  A built-in diagnostic workbench for testing internet connectivity, gateway latency, and packet routes. Run instant ICMP ping tests against domain names or specific IP addresses to measure average, minimum, and maximum round-trip response times.
+                </p>
+                <p class="details-narrative">
+                  Includes visual traceroute mapping to identify network hops between your router and remote servers, alongside DNS lookup tools to verify name resolution speeds and troubleshoot routing bottlenecks quickly.
+                </p>
+              </div>
+            </article>
+
+            <!-- Panel: Physical Button Gestures & Smart LED Status -->
+            <article class="desktop-showcase-panel" id="showcase-hardware">
+              <div class="desktop-window-canvas">
+                <img src="./images/hardware_gestures_dark.png" data-dark="./images/hardware_gestures_dark.png" data-light="./images/hardware_gestures_light.png" alt="Maxnet Hardware Button Gestures and LED Automation" class="desktop-screen-img" loading="lazy" width="1280" height="720">
+              </div>
+              <div class="desktop-screen-details">
+                <h3 class="details-title">Physical Button Gestures & Smart LED Status</h3>
+                <p class="details-narrative">
+                  Customize the physical buttons on your router chassis with gesture-based actions. You can map short presses, double presses, or long presses to toggle Wi-Fi on and off, reset USB port power to revive a connected phone, or trigger a clean reboot without needing to log in to the web interface.
+                </p>
+                <p class="details-narrative">
+                  Front-panel LEDs provide intuitive real-time feedback on internet status, glowing green when online and switching colors during failovers. A scheduled night quiet mode lets you automatically dim or turn off bright LEDs during sleeping hours.
+                </p>
+              </div>
+            </article>
+
+
+          </div>
+        </div>
+
+        <!-- Section 3: Supported Hardware & Verified Specifications -->
+        <div class="about-section-group">
+          <div class="about-subhead-row">
+            <span class="about-subhead-num">03</span>
+            <h2 class="about-section-heading">SUPPORTED HARDWARE &amp; VERIFIED SPECIFICATIONS</h2>
+          </div>
+          <p class="entry-text" style="margin-bottom: 16px;">
+            Every router profile in Maxnet is custom-crafted and verified against the hardware's exact Device Tree (DTS) and driver subsystem:
+          </p>
+
+          <div class="hardware-specs-grid">
+            <div class="spec-tile">
+              <div class="spec-head">Qualcomm IPQ9574 / IPQ9554 Series</div>
+              <div class="spec-models">JIDU6911 &bull; JIDU6811 &bull; JIDU6611 &bull; JIDU6411 &bull; JIDU6111</div>
+              <div class="spec-desc">Quad-core ARM Cortex-A73, 512MB DDR4 RAM, 1x 1Gbps WAN + 4x 1Gbps LAN (QCA8075 switch), USB 3.0 SuperSpeed (5 Gbps), Qualcomm PPE hardware flow acceleration, SPI-NAND UBI flash.</div>
+            </div>
+            <div class="spec-tile">
+              <div class="spec-head">MediaTek Filogic MT7986A Series</div>
+              <div class="spec-models">JIDU6801 &bull; JIDU6401 &bull; JIDU6101 &bull; JIDU6J01 &bull; JIDU6601 &bull; JIDU6701</div>
+              <div class="spec-desc">Quad-core ARM Cortex-A53 @ 2.0 GHz, 512MB DDR3/DDR4 RAM, 1x 1Gbps WAN + 3x/4x 1Gbps LAN (MT7531 switch), USB 2.0 HighSpeed (480 Mbps), MediaTek WED/PPE hardware offload, 256MB SPI-NAND dual UBI.</div>
+            </div>
+            <div class="spec-tile">
+              <div class="spec-head">Future Multi-Vendor Platform Support</div>
+              <div class="spec-models">Qualcomm &bull; MediaTek &bull; Realtek &bull; Aquantia</div>
+              <div class="spec-desc">Active development to bring Maxnet firmware to additional commercial router models, custom boards, and OEM access points.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 4: Deep Technical Q&A -->
+        <div class="about-section-group">
+          <div class="about-subhead-row">
+            <span class="about-subhead-num">04</span>
+            <h2 class="about-section-heading">QUESTIONS &amp; ANSWERS</h2>
+          </div>
+
+          <div class="qa-stack">
+            <div class="qa-entry">
+              <div class="qa-q">Q: What is Maxnet and why was it created?</div>
+              <div class="qa-a">
+                Maxnet was created by Mahendra Mali (Max) to give users true ownership of their networking hardware. Stock carrier firmware locks down routers, prevents root access, collects user telemetry, and disables advanced routing features. Maxnet restores the full performance, freedom, and reliability that high-end Qualcomm and MediaTek silicon can deliver.
+              </div>
+            </div>
+
+            <div class="qa-entry">
+              <div class="qa-q">Q: Who developed Maxnet?</div>
+              <div class="qa-a">
+                Maxnet is architected, developed, and maintained independently by <strong>Mahendra Mali (Max)</strong> under the GitHub repository <a href="https://github.com/ohhmax/maxnet" target="_blank" rel="noopener">ohhmax/maxnet</a>.
+              </div>
+            </div>
+
+            <div class="qa-entry">
+              <div class="qa-q">Q: What Ethernet ports and speeds are supported?</div>
+              <div class="qa-a">
+                All supported router models feature <strong>1 Gbps Gigabit Ethernet</strong> on both the WAN port and LAN ports. On Qualcomm models, Ethernet is powered by the Qualcomm QCA8075 Gigabit switch PHY (1 WAN + 4 LAN). On MediaTek models, Ethernet is powered by the MediaTek MT7531 switch (1 WAN + 3 LAN or 4 LAN). Hardware flow offloading ensures wire-speed 1 Gbps NAT without packet drops.
+              </div>
+            </div>
+
+            <div class="qa-entry">
+              <div class="qa-q">Q: What are the USB capabilities between Qualcomm and MediaTek models?</div>
+              <div class="qa-a">
+                Qualcomm models (JIDU6911, JIDU6811, JIDU6611, JIDU6411, JIDU6111) are equipped with <strong>USB 3.0 SuperSpeed (5 Gbps)</strong> powered by Qualcomm's QMP PHY, suitable for high-speed drives and fast modem interfaces. MediaTek models (JIDU6801, JIDU6401, JIDU6101, JIDU6J01, JIDU6601, JIDU6701) are equipped with <strong>USB 2.0 HighSpeed (480 Mbps)</strong>, supporting ADB device management, USB storage, and cellular connectivity.
+              </div>
+            </div>
+
+            <div class="qa-entry">
+              <div class="qa-q">Q: Can I test Maxnet without risking a brick?</div>
+              <div class="qa-a">
+                <strong>Yes, 100% risk-free.</strong> Qualcomm models support safe RAM booting via U-Boot TFTP. You download the initramfs boot image to your PC, send it to the router over Ethernet, and boot Maxnet purely into RAM. If you power off or reboot, the router returns to its exact original stock state untouched. Only when you are completely satisfied do you run the permanent installation command.
+              </div>
+            </div>
+
+            <div class="qa-entry">
+              <div class="qa-q">Q: What is the ADBMAX subsystem?</div>
+              <div class="qa-a">
+                ADBMAX is a custom management engine embedded directly into Maxnet. It connects with connected Android devices over USB ADB, enabling cellular modem tethering, automated SMS inbox monitoring, call history access, and bulk device authorization from the router web interface.
+              </div>
+            </div>
+
+            <div class="qa-entry">
+              <div class="qa-q">Q: How do updates and releases work?</div>
+              <div class="qa-a">
+                Updates are released as tested sysupgrade images with cryptographic SHA-256 checksums. You can update seamlessly via the web portal or SSH terminal without needing to reopen the router casing.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 5: Support Independent Open-Source Development -->
+        <div class="about-section-group">
+          <div class="about-subhead-row">
+            <span class="about-subhead-num">05</span>
+            <h2 class="about-section-heading">SUPPORT INDEPENDENT DEVELOPMENT</h2>
+          </div>
+
+          <div class="support-story-block">
+            <p class="entry-text" style="font-size: 14px; line-height: 1.7; color: var(--text-main); margin-bottom: 12px;">
+              Maxnet is an independent, full-time engineering effort created without corporate sponsorship. Rather than pursuing a conventional corporate job, I have chosen to dedicate my full focus from home into building open-source firmware, unlocking carrier-restricted hardware, and giving users complete control over their routers without paywalls.
+            </p>
+            <p class="entry-text" style="font-size: 13.5px; line-height: 1.7; color: var(--text-muted); margin-bottom: 16px;">
+              Currently, all kernel compilations, build pipelines, and firmware packaging are performed on a modest, low-budget laptop. If Maxnet has been valuable to you, small community contributions help support personal living expenses and fund a proper development machine to accelerate kernel builds, multi-platform testing, and ongoing device porting.
+            </p>
+
+            <!-- UPI ID & Copy Card -->
+            <div class="support-channels-row">
+              <div class="support-card upi-card">
+                <div class="support-card-header">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="support-icon"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+                  <span class="support-card-title">DIRECT UPI CONTRIBUTION</span>
+                </div>
+                <div class="support-card-body">
+                  <code class="upi-code-text" id="upiValue">9824584454@ybl</code>
+                  <button class="btn-copy-upi" onclick="copySnippetText('9824584454@ybl', this)" title="Copy UPI ID">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span>Copy UPI</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Telegram Direct Contact Card -->
+              <div class="support-card telegram-card">
+                <div class="support-card-header">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="support-icon"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  <span class="support-card-title">COMMUNITY &amp; DIRECT ASSISTANCE</span>
+                </div>
+                <div class="support-card-body">
+                  <span class="telegram-handle">@the_max_lab</span>
+                  <a href="https://t.me/the_max_lab" target="_blank" rel="noopener" class="btn-telegram-link" title="Contact on Telegram">
+                    <span>Join on Telegram</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Call to Action Banner -->
+        <div class="about-action-bar">
+          <button class="about-btn-action primary" onclick="switchTab('downloads')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            <span>DOWNLOAD FIRMWARE</span>
+          </button>
+          <button class="about-btn-action secondary" onclick="switchTab('guide')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+            <span>VIEW FLASHING GUIDE</span>
+          </button>
+        </div>
+
+      </article>
+    </section>
+
+    <!-- SECTION 2: FIRMWARE DOWNLOADS -->
+    <section id="sectionDownloads" class="tab-content">
+      <div id="firmwareContainer">
+        <!-- Rendered dynamically by app.js based on selected model -->
+      </div>
+    </section>
+
+    <!-- SECTION 3: FLASHING GUIDE -->
+    <section id="sectionGuide" class="tab-content">
+      <div id="guideContentArea">
+        <!-- Rendered dynamically by app.js based on selected model -->
+      </div>
+    </section>
+  </main>
+
+  <!-- Maxnet Site Footer -->
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-primary-row">
+        <div class="footer-meta-group">
+          <span class="footer-copy">&copy; <span id="footerYear">2026</span> <svg class="footer-brand-icon maxnet-router-mark" viewBox="85 50 310 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MAXNET Icon"><g><rect class="mono-fill" x="126" y="56" width="17" height="48" rx="8.5" transform="rotate(-9 134.5 104)"/><rect class="mono-fill" x="337" y="56" width="17" height="48" rx="8.5" transform="rotate(9 345.5 104)"/><path class="mono-fill" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z"/><rect class="mono-fill" x="94" y="244" width="292" height="38" rx="19"/></g></svg>MAXNET</span>
+          <span class="footer-dot">&bull;</span>
+          <span class="footer-version" id="footerVersion" title="Latest Tested Firmware">v2.2.54</span>
+          <span class="footer-dot">&bull;</span>
+          <span class="footer-time"><span id="lastSeenValue">1 day ago</span></span>
+        </div>
+
+        <div class="footer-social-group">
+          <a href="https://t.me/the_max_lab" target="_blank" rel="noopener noreferrer" class="footer-icon-link" title="Telegram Channel" aria-label="Telegram">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </a>
+          <a href="https://github.com/ohhmax/maxnet" target="_blank" rel="noopener noreferrer" class="footer-icon-link" title="GitHub Repository" aria-label="GitHub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="footer-secondary-row">
+        <p class="footer-disclaimer">
+          <span>Not affiliated with Jio. Flash at your own risk.</span>
+          <span class="footer-dot">&bull;</span>
+          <button type="button" class="footer-legal-btn" id="legalModalTrigger">Legal &amp; Policy</button>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Legal & Liability Policy Modal Dialog -->
+  <dialog id="legalModal" class="legal-modal">
+    <div class="legal-modal-card">
+      <div class="legal-modal-header">
+        <div class="legal-title-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="legal-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          <h3>Legal Notice &amp; Disclaimer</h3>
+        </div>
+        <button type="button" class="legal-close-btn" id="legalModalCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="legal-modal-body">
+        <h4>1. Non-Affiliation Statement</h4>
+        <p>Maxnet is an independent, community-driven open-source operating system project. Maxnet is <strong>not affiliated with, authorized, maintained, sponsored, or endorsed by Jio Platforms Limited, Reliance Industries, or any of their subsidiaries or affiliates</strong>.</p>
+        
+        <h4>2. Nominative Trademark Use</h4>
+        <p>All trademarks, brand names, product names, and company logos referenced on this website (including but not limited to "Jio", "JioFiber", "AirFiber", "Qualcomm", and "MediaTek") are the property of their respective trademark holders. Reference to these trademarks is purely for hardware compatibility, technical interoperability, and nominal identification purposes under nominative fair use doctrine.</p>
+
+        <h4>3. Warranty &amp; Liability Disclaimer (As-Is Basis)</h4>
+        <p>THE SOFTWARE, FIRMWARE IMAGES, SCRIPTS, AND FLASHING DOCUMENTATION ARE PROVIDED <strong>"AS IS" WITHOUT WARRANTY OF ANY KIND</strong>, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS, MAINTAINERS, OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING HARDWARE BRICKING, DATA LOSS, INTERNET OUTAGES, OR VOIDED MANUFACTURER WARRANTIES) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE OR FLASHING PROCEDURES.</p>
+
+        <h4>4. User Assumption of Risk</h4>
+        <p>Modifying router firmware requires specialized hardware access (such as serial UART consoles and TFTP networking) and involves intrinsic risks of irreversible hardware failure. You assume complete responsibility and all associated risks when downloading, flashing, or operating Maxnet firmware.</p>
+      </div>
+      <div class="legal-modal-footer">
+        <button type="button" class="btn-3d btn-3d-secondary" id="legalModalUnderstoodBtn">Understood</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="./assets/js/app.js?v=20261124-02"></script>
+</body>
+</html>

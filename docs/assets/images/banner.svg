@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#141419" />
+      <stop offset="100%" stop-color="#050507" />
+    </radialGradient>
+
+    <!-- Subtle Grid Pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255, 255, 255, 0.035)" stroke-width="1" />
+    </pattern>
+
+    <!-- Linear Accents -->
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgba(255, 255, 255, 0)" />
+      <stop offset="50%" stop-color="rgba(255, 255, 255, 0.4)" />
+      <stop offset="100%" stop-color="rgba(255, 255, 255, 0)" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="1200" height="630" fill="url(#bgGrad)" />
+  <rect width="1200" height="630" fill="url(#grid)" />
+
+  <!-- Outer Architectural Framing -->
+  <rect x="30" y="30" width="1140" height="570" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1" rx="8" />
+
+  <!-- Corner Brackets (HUD style) -->
+  <path d="M 30 70 L 30 30 L 70 30" fill="none" stroke="#ffffff" stroke-width="3" />
+  <path d="M 1130 30 L 1170 30 L 1170 70" fill="none" stroke="#ffffff" stroke-width="3" />
+  <path d="M 30 560 L 30 600 L 70 600" fill="none" stroke="#ffffff" stroke-width="3" />
+  <path d="M 1130 600 L 1170 600 L 1170 560" fill="none" stroke="#ffffff" stroke-width="3" />
+
+  <!-- Center Content Container -->
+  <g transform="translate(600, 240)" text-anchor="middle">
+    <!-- Maxnet Router-M Mark -->
+    <g transform="translate(-163, -195) scale(0.68)">
+      <g fill="none" stroke-linecap="round">
+        <circle cx="240" cy="144" r="6" fill="#ffffff" />
+        <path d="M 223 127 A 24 24 0 0 1 257 127" stroke="#ffffff" stroke-width="6.5" />
+        <path d="M 210 114 A 42 42 0 0 1 270 114" stroke="#ffffff" stroke-width="6.5" />
+        <path d="M 197 101 A 60 60 0 0 1 283 101" stroke="#ffffff" stroke-width="6.5" />
+      </g>
+      <rect x="126" y="56" width="17" height="48" rx="8.5" fill="#ffffff" transform="rotate(-9 134.5 104)" />
+      <rect x="337" y="56" width="17" height="48" rx="8.5" fill="#ffffff" transform="rotate(9 345.5 104)" />
+      <path fill="#ffffff" d="M 108 248 L 130 112 L 160 112 L 240 196 L 320 112 L 350 112 L 372 248 L 340 248 L 324 148 L 240 230 L 156 148 L 140 248 Z" />
+      <polygon fill="#141419" points="107,204 152,177 150,186 105,213" />
+      <path stroke="#141419" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M 144 126 L 240 214 L 336 126" />
+      <rect fill="#ffffff" x="94" y="244" width="292" height="38" rx="19" />
+      <rect fill="#141419" x="122" y="259" width="36" height="8" rx="4" />
+      <circle fill="#141419" cx="314" cy="263" r="2.8" />
+      <circle fill="#141419" cx="327" cy="263" r="2.8" />
+      <circle fill="#141419" cx="340" cy="263" r="2.8" />
+      <circle fill="#141419" cx="356" cy="263" r="4.2" />
+      <rect fill="#ffffff" x="128" y="285" width="26" height="4" rx="2" />
+      <rect fill="#ffffff" x="326" y="285" width="26" height="4" rx="2" />
+    </g>
+
+    <!-- Main Title -->
+    <text y="0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="76" font-weight="900" fill="#ffffff" letter-spacing="12">MAXNET</text>
+
+    <!-- Thin Divider -->
+    <line x1="-320" y1="25" x2="320" y2="25" stroke="url(#lineGrad)" stroke-width="1.5" />
+
+    <!-- Subtitle -->
+    <text y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="21" font-weight="700" fill="#a1a1aa" letter-spacing="6">HIGH-PERFORMANCE NEXT-GEN ROUTER FIRMWARE</text>
+
+    <!-- Target Hardware Specs -->
+    <text y="106" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14.5" font-weight="600" fill="#71717a" letter-spacing="3.5">JIO AIRFIBER IDU • QUALCOMM IPQ9574 • MEDIATEK FILOGIC • WI-FI 7 • ADBMAX</text>
+
+    <!-- Architect / Author Credit -->
+    <g transform="translate(0, 160)">
+      <rect x="-170" y="-18" width="340" height="36" fill="rgba(255, 255, 255, 0.05)" stroke="rgba(255, 255, 255, 0.15)" rx="18" />
+      <text y="5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12.5" font-weight="700" fill="#ffffff" letter-spacing="2">ARCHITECTED BY MAHENDRA MALI (MAX)</text>
+    </g>
+  </g>
+
+  <!-- Bottom Technical Badges -->
+  <g transform="translate(60, 568)">
+    <text font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="600" fill="#52525b" letter-spacing="1">ZERO BLOAT • ZERO BACKDOOR • 100% UNRESTRICTED HARDWARE CONTROL</text>
+  </g>
+  <g transform="translate(1140, 568)" text-anchor="end">
+    <text font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="600" fill="#52525b" letter-spacing="1">github.com/ohhmax/maxnet</text>
+  </g>
+</svg>

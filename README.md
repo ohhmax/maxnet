@@ -45,7 +45,6 @@ Official enterprise-grade OpenWrt **Linux 6.18 (AArch64 64-bit)** firmware engin
    - [Step 4.5: Permanent U-Boot Autoboot Configuration](#step-45-permanent-u-boot-autoboot-configuration)
 5. [Flashing & Installation Guide for MediaTek Devices (MT7986A Filogic 830)](#5-flashing--installation-guide-for-mediatek-devices-mt7986a-filogic-830)
    - [Method 1: Web Failsafe Recovery (No Serial Cable Required)](#method-1-web-failsafe-recovery-no-serial-cable-required)
-   - [Method 2: Serial UART TFTP RAM Boot](#method-2-serial-uart-tftp-ram-boot)
    - [Permanent U-Boot Autoboot Configuration (MediaTek)](#permanent-u-boot-autoboot-configuration-mediatek)
 6. [Core Engineering & Subsystem Innovations](#6-core-engineering--subsystem-innovations)
    - [SuperSpeed USB 3.0 Multi-Packet Aggregation](#superspeed-usb-30-multi-packet-aggregation)
@@ -107,8 +106,8 @@ MAXNET includes custom Device Trees, pinout configurations, and board profiles t
 | **JIDU6611** | `jiorouter,ax6000-jidu6j11-6611` | `maxnet-jidu6611-sysupgrade.bin` | `maxnet-jidu6611-factory.ubi` |
 | **JIDU6411** | `jiorouter,ax6000-jidu6j11-6411` | `maxnet-jidu6411-sysupgrade.bin` | `maxnet-jidu6411-factory.ubi` |
 | **JIDU6111** | `jiorouter,ax6000-jidu6j11-6111` | `maxnet-jidu6111-sysupgrade.bin` | `maxnet-jidu6111-factory.ubi` |
-| **JIO JIDU6811** | `jio,jidu6811` | `maxnet-jidu6811-sysupgrade.bin` | `maxnet-jidu6811-factory.ubi` |
-| **JIO JIDU6911** | `jio,jidu6911` | `maxnet-jidu6911-sysupgrade.bin` | `maxnet-jidu6911-factory.ubi` |
+| **JIO JIDU6811** | `jio,jidu6811` (Alias) | `maxnet-jidu6811-sysupgrade.bin` | `maxnet-jidu6811-factory.ubi` |
+| **JIO JIDU6911** | `jio,jidu6911` (Alias) | `maxnet-jidu6911-sysupgrade.bin` | `maxnet-jidu6911-factory.ubi` |
 
 ### MediaTek Filogic 830 Family (ARM Cortex-A53)
 
@@ -118,15 +117,19 @@ MAXNET includes custom Device Trees, pinout configurations, and board profiles t
 - **Switch Hardware**: 1x 2.5G WAN + 4x Gigabit LAN via MT7531 Gigabit Switch with Hardware Flow Offload
 - **USB Subsystem**: USB 3.0 / USB 2.0 Host controller
 
-| Model Name | Board ID / DTS Target | Canonical Sysupgrade Binary | Production Factory Image |
+| Model Name | Board ID / DTS Target | Canonical Sysupgrade Binary | Image Type / Method |
 | :--- | :--- | :--- | :--- |
-| **JIDU6801** | `jiorouter,ax6000-jidu6801` | `maxnet-jidu6801-sysupgrade.bin` | `maxnet-jidu6801-factory.bin` |
-| **JIDU6401** | `jiorouter,ax6000-jidu6401` | `maxnet-jidu6401-sysupgrade.bin` | `maxnet-jidu6401-factory.bin` |
-| **JIDU6101** | `jiorouter,ax6000-jidu6101` | `maxnet-jidu6101-sysupgrade.bin` | `maxnet-jidu6101-factory.bin` |
-| **JIDU6601** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
-| **JIDU6701** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
-| **JIDU6201** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
-| **JIDU6J01** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | `maxnet-jidu6j01-factory.bin` |
+| **JIDU6801** | `jiorouter,ax6000-jidu6801` | `maxnet-jidu6801-sysupgrade.bin` | Sysupgrade / Web Failsafe |
+| **JIDU6401** | `jiorouter,ax6000-jidu6401` | `maxnet-jidu6401-sysupgrade.bin` | Sysupgrade / Web Failsafe |
+| **JIDU6101** | `jiorouter,ax6000-jidu6101` | `maxnet-jidu6101-sysupgrade.bin` | Sysupgrade / Web Failsafe |
+| **JIDU6J01** | `jiorouter,ax6000-jidu6j01` | `maxnet-jidu6j01-sysupgrade.bin` | Sysupgrade / Web Failsafe |
+| **JIDU6601** | `jiorouter,ax6000-jidu6j01` (Alias) | `maxnet-jidu6j01-sysupgrade.bin` | Sysupgrade / Web Failsafe |
+| **JIDU6701** | `jiorouter,ax6000-jidu6j01` (Alias) | `maxnet-jidu6j01-sysupgrade.bin` | Sysupgrade / Web Failsafe |
+| **JIDU6201** | `jiorouter,ax6000-jidu6j01` (Alias) | `maxnet-jidu6j01-sysupgrade.bin` | Sysupgrade / Web Failsafe |
+
+> [!WARNING]
+> **DANGER: Forcing sysupgrade with `-F` across mismatched hardware models will permanently BRICK the router!**
+> Always verify and match the exact router model before flashing (`jidu6811`, `jidu6911`, `jidu6611`, `jidu6411`, `jidu6111`, `jidu6801`, `jidu6401`, `jidu6101`, or `jidu6j01`). Running `sysupgrade -F` with a wrong-board image bypasses hardware safety checks and will flash incompatible device-tree structures and memory timings, leading to an unrecoverable hard brick.
 
 ### Default Firmware Settings & Access
 
@@ -318,6 +321,9 @@ If your router is already running an earlier version of OpenWrt or MAXNET:
 curl -sL https://github.com/ohhmax/maxnet/releases/latest/download/maxnet-jidu6911-sysupgrade.bin -o /tmp/sysupgrade.bin
 ```
 
+> [!WARNING]
+> **Warning**: Never run `sysupgrade -F` with a binary built for a different router model. Using `-F` bypasses board compatibility validation and will brick your device if the image does not match your exact hardware model. Always confirm your model (`cat /tmp/sysinfo/board_name`).
+
 2. Execute the flash command (keeping current configuration):
 
 ```bash
@@ -461,59 +467,8 @@ MediaTek Filogic 830 features a built-in HTTP recovery server embedded inside U-
 http://192.168.1.1
 ```
 
-7. The MediaTek Web Failsafe Recovery interface will load. Click **Browse / Choose File**, select `maxnet-jidu6801-sysupgrade.bin`, and click **Upload & Update Firmware**.
+7. The MediaTek Web Failsafe Recovery interface will load. Click **Browse / Choose File**, select your model's sysupgrade binary (e.g., `maxnet-jidu6801-sysupgrade.bin`, `maxnet-jidu6401-sysupgrade.bin`, `maxnet-jidu6101-sysupgrade.bin`, or `maxnet-jidu6j01-sysupgrade.bin`), and click **Upload & Update Firmware**.
 8. Wait ~90 seconds while the image is written to flash. The router reboots automatically into MAXNET.
-
----
-
-### Method 2: Serial UART TFTP RAM Boot
-
-If you prefer UART console access or need to test RAM boot first:
-
-1. Connect UART (3.3V TTL, 115200 8N1) and interrupt autoboot at the `MT7986#` (or `Filogic#`) prompt.
-2. Configure network and verify TFTP reachability:
-
-Command 1: Set router IP:
-
-```text
-setenv ipaddr 192.168.1.1
-```
-
-Command 2: Set TFTP server IP:
-
-```text
-setenv serverip 192.168.1.2
-```
-
-Command 3: Verify ping:
-
-```text
-ping 192.168.1.2
-```
-
-Command 4: Download RAM boot image into memory (**DO NOT run `dcache off` on MediaTek**):
-
-```text
-tftpboot 0x46000000 maxnet-jidu6801-initramfs.itb
-```
-
-Command 5: Boot image:
-
-```text
-bootm 0x46000000
-```
-
-Command 6: Once booted into RAM (`10.0.0.1` reachable), transfer sysupgrade:
-
-```bash
-cat maxnet-jidu6801-sysupgrade.bin | ssh root@10.0.0.1 "cat > /tmp/sysupgrade.bin"
-```
-
-Command 7: Execute permanent sysupgrade:
-
-```bash
-ssh root@10.0.0.1 "sysupgrade -F -v -n /tmp/sysupgrade.bin"
-```
 
 ---
 
@@ -743,7 +698,7 @@ Compiled images are generated at:
 The GitHub Actions workflow [.github/workflows/maxnet.yml](.github/workflows/maxnet.yml) runs on every push:
 1. Compiles modern Vite frontend and generates gzip pre-compressed assets.
 2. Compiles OpenWrt images for both `qualcommbe` and `mediatek` targets in parallel.
-3. Harvests `.bin` sysupgrades and `.itb` ram-boot images.
+3. Harvests model-specific `.bin` sysupgrades and Qualcomm `.ubi` factory images.
 4. Generates `manifest.json` with cryptographic SHA-256 checksums.
 5. Publishes a multi-architecture GitHub Release automatically.
 
@@ -761,7 +716,9 @@ The GitHub Actions workflow [.github/workflows/maxnet.yml](.github/workflows/max
 3. Verify TFTP service status: `sudo systemctl status tftpd-hpa`.
 
 #### Q: LuCI reports `invalid sysupgrade file Image check failed`?
-**A**: When migrating from stock firmware or initial RAM boot, OpenWrt metadata does not find existing board profiles in flash. Check the **Force upgrade** (`-F`) checkbox or pass `-F` via CLI.
+**A**: When migrating from stock firmware, OpenWrt metadata does not find existing board profiles in flash. Check the **Force upgrade** (`-F`) checkbox or pass `-F` via CLI.
+> [!CAUTION]
+> **Warning**: Ensure the image strictly matches your router model before passing `-F`. Forcing an image from another model will brick the router.
 
 #### Q: Can I change the router LAN IP?
 **A**: Edit `/etc/config/network`:

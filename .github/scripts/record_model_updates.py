@@ -56,6 +56,17 @@ def main():
         file_sha = calc_sha256(bin_path) if os.path.isfile(bin_path) else ""
         download_url = f"https://github.com/{repo}/releases/download/{tag_name}/{bin_name}"
 
+        # Check for optional initramfs.itb and factory image
+        itb_name = f"maxnet-{model}-initramfs.itb"
+        itb_path = os.path.join(release_dir, itb_name)
+        itb_url = f"https://github.com/{repo}/releases/download/{tag_name}/{itb_name}" if os.path.isfile(itb_path) else None
+        itb_sha = calc_sha256(itb_path) if os.path.isfile(itb_path) else None
+
+        factory_name = f"maxnet-{model}-factory.ubi" if os.path.isfile(os.path.join(release_dir, f"maxnet-{model}-factory.ubi")) else f"maxnet-{model}-factory.bin"
+        factory_path = os.path.join(release_dir, factory_name)
+        factory_url = f"https://github.com/{repo}/releases/download/{tag_name}/{factory_name}" if os.path.isfile(factory_path) else None
+        factory_sha = calc_sha256(factory_path) if os.path.isfile(factory_path) else None
+
         new_entry = {
             "build": build_num,
             "version": clean_version,
@@ -65,6 +76,12 @@ def main():
             "url": download_url,
             "sha256": file_sha
         }
+        if itb_url:
+            new_entry["itb_url"] = itb_url
+            new_entry["itb_sha256"] = itb_sha
+        if factory_url:
+            new_entry["factory_url"] = factory_url
+            new_entry["factory_sha256"] = factory_sha
 
         existing_data = {"versions": []}
         if os.path.isfile(json_path):
@@ -86,6 +103,12 @@ def main():
                 item["url"] = download_url
                 if file_sha:
                     item["sha256"] = file_sha
+                if itb_url:
+                    item["itb_url"] = itb_url
+                    item["itb_sha256"] = itb_sha
+                if factory_url:
+                    item["factory_url"] = factory_url
+                    item["factory_sha256"] = factory_sha
                 updated = True
                 break
 
