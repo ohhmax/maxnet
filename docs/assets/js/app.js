@@ -413,6 +413,12 @@ async function updateFirmwareView() {
   const ubiUrl = version.factory_url || `${baseReleaseUrl}/${factoryName}`;
   const hasFactory = Boolean(model.hasFactory && version.url);
 
+  const itbName = `maxnet-${model.id}-initramfs.itb`;
+  const itbSourceVersion = version.itb_url ? version : testedVersions.find(v => v.itb_url);
+  const itbUrl = version.itb_url || (itbSourceVersion ? itbSourceVersion.itb_url : (baseReleaseUrl && version.build >= 56 ? `${baseReleaseUrl}/${itbName}` : ""));
+  const itbSha = version.itb_sha256 || (itbSourceVersion ? itbSourceVersion.itb_sha256 : "");
+  const hasItb = Boolean(itbUrl);
+
   container.innerHTML = `
     <div class="firmware-open-flow">
 
@@ -502,6 +508,33 @@ async function updateFirmwareView() {
           </div>
         </div>
         ` : ''}
+
+        <!-- File 3: RAM Boot Recovery Image (ITB) -->
+        <div class="firmware-file-block">
+          <div class="firmware-file-main">
+            <div class="firmware-file-meta">
+              <span class="firmware-file-title">RAM Boot Recovery Image (ITB)</span>
+              <span class="firmware-file-name">${escapeHtml(itbName)}</span>
+              <span class="firmware-file-size">${hasItb ? (itbSourceVersion && itbSourceVersion.version !== version.version ? `TFTP RAM Boot (v${escapeHtml(itbSourceVersion.version)})` : "TFTP RAM Boot") : "Unavailable"}</span>
+            </div>
+            <div class="firmware-file-actions">
+              ${hasItb ? `
+                ${itbSha ? `
+                <button type="button" class="btn-file-action-icon btn-icon-sha" onclick="copyChecksum('${escapeHtml(itbSha)}', this)" title="Copy SHA-256 Checksum" aria-label="Copy SHA-256 Checksum">
+                  ${ICONS.sha256}
+                </button>
+                ` : ''}
+                <a href="${itbUrl}" class="btn-file-action-icon btn-file-dl-icon" download title="Download ${escapeHtml(itbName)}" aria-label="Download ${escapeHtml(itbName)}">
+                  ${ICONS.download}
+                </a>
+              ` : `
+                <button type="button" class="btn-file-action-icon btn-file-dl-icon" disabled style="opacity: 0.35; cursor: not-allowed;" title="Not available for this model" aria-label="Download ${escapeHtml(itbName)} (Unavailable)">
+                  ${ICONS.download}
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
 
       </div>
     </div>
