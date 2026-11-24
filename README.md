@@ -70,9 +70,9 @@ Official enterprise-grade OpenWrt **Linux 6.18 (AArch64 64-bit)** firmware engin
 | :--- | :--- | :--- | :--- |
 | **Linux Kernel** | 5.4 / 4.4 (Outdated, proprietary) | 6.6 LTS (Generic) | **Linux 6.18 (AArch64)** tuned for IPQ9574 & MT7986A |
 | **WebUI Architecture** | Slow closed-source portal | Heavy server-rendered Lua (LuCI) | **Ultra-Fast Single Page App (Vanilla JS/CSS, <80ms load)** |
-| **UI Load Latency** | 2500 ms – 4000 ms | 800 ms – 1500 ms | **< 80 ms (Zero Lua overhead, pure JSON micro-endpoints)** |
+| **UI Load Latency** | 2500 ms - 4000 ms | 800 ms - 1500 ms | **< 80 ms (Zero Lua overhead, pure JSON micro-endpoints)** |
 | **Wi-Fi 6 Performance** | Locked channels, no 160MHz | Standard cfg80211, complex setup | **Dual-band 160MHz 4x4 MU-MIMO, WPA3-SAE, zero-collision kconfig** |
-| **Free RAM on 512MB** | ~80 MB – 110 MB (< 25% free) | ~140 MB – 170 MB (~35% free) | **~180 MB – 240 MB (> 50% available memory)** |
+| **Free RAM on 512MB** | ~80 MB - 110 MB (< 25% free) | ~140 MB - 170 MB (~35% free) | **~180 MB - 240 MB (> 50% available memory)** |
 | **Memory Optimization** | Generic Linux defaults (OOM risk) | Stock page cache settings | **`vfs_cache_pressure=200`, `min_free_kbytes=24576`, ath11k FW mode 2** |
 | **Process Memory Ceiling** | No process isolation | Unbounded memory per daemon | **Tailscale Go ceiling `GOMEMLIMIT=16MiB`, dynamic on-demand Samba** |
 | **USB 3.0 5G Tethering** | Disabled / Non-functional | Suffers `EVENT_RX_KILL` at >45 MB/s | **SuperSpeed 5000 Mbps with Multi-Packet Aggregation patches** |
@@ -95,7 +95,7 @@ MAXNET includes custom Device Trees, pinout configurations, and board profiles t
 - **CPU**: Qualcomm IPQ9574 / IPQ9554 (Quad-Core ARM Cortex-A73 @ 2.2 GHz, 64-bit AArch64)
 - **RAM**: 512 MB DDR4 @ 1600 MHz
 - **Flash Storage**: 256 MB Winbond SPI Serial NAND (`W25N02KWZEIR`) with UBI / UBIFS
-- **Switch Hardware**: 1x 2.5G/1G WAN (Blue Port) + 4x Gigabit LAN (Yellow Ports, `lan1`–`lan4`) with Qualcomm PPE Hardware Offload
+- **Switch Hardware**: 1x 2.5G/1G WAN (Blue Port) + 4x Gigabit LAN (Yellow Ports, `lan1`-`lan4`) with Qualcomm PPE Hardware Offload
 - **USB 3.0 Subsystem**: SuperSpeed 5000 Mbps (`dwc3-qcom`), MTU 1500, Multi-Packet Aggregation enabled
 - **Wi-Fi Radios**: Qualcomm QCN9074 (5 GHz 4x4 160MHz) + IPQ9574 internal radio (2.4 GHz 4x4) via `ath11k`
 
@@ -530,7 +530,7 @@ Routers equipped with 512MB RAM often face out-of-memory (OOM) kernel panics whe
 
 ### Qualcomm PPE Hardware Acceleration & Multi-Core Packet Steering
 
-- **Qualcomm PPE (Packet Processing Engine)**: Hardware NAT offload for IPQ9574 routing all 4 yellow LAN ports (`lan1`–`lan4`) and the 2.5G blue WAN port at wire speed with `< 1%` CPU utilization.
+- **Qualcomm PPE (Packet Processing Engine)**: Hardware NAT offload for IPQ9574 routing all 4 yellow LAN ports (`lan1`-`lan4`) and the 2.5G blue WAN port at wire speed with `< 1%` CPU utilization.
 - **Packet Steering across 4 Cores**: Network IRQs and softirqs are distributed across all 4 ARM Cortex-A73 cores (`uci set network.@globals[0].packet_steering='1'`).
 - **Conntrack Capacity**: Scaled to 65,536 entries with optimized connection timeouts (`net.netfilter.nf_conntrack_max = 65536`).
 - **TCP Acceleration**: TCP Fast Open enabled (`net.ipv4.tcp_fastopen = 3`) with socket buffer auto-tuning up to 16 MB (`net.core.rmem_max = 16777216`).

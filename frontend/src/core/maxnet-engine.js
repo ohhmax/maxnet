@@ -207,7 +207,7 @@ let timer = null;
         const hint = document.getElementById('loginRootPassHint');
         const input = document.getElementById('loginPass');
         if (hint) hint.style.display = isUnset ? 'block' : 'none';
-        if (input) input.placeholder = isUnset ? 'No password set — leave blank' : 'Enter administrator password';
+        if (input) input.placeholder = isUnset ? 'No password set - leave blank' : 'Enter administrator password';
       } catch (e) {
         const hint = document.getElementById('loginRootPassHint');
         const input = document.getElementById('loginPass');
