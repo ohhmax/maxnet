@@ -223,18 +223,8 @@ let timer = null;
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
       
       fetchData();
-      fetchNetworkConfig();
-      fetchTopologyLayers();
-      fetchBlockedList();
-      fetchTailscale();
-      fetchAdbDeviceList();
-      loadSslCertificateStatus();
-      loadDufsConfig();
-      loadWanInterfaceConfig();
-      loadPppoeConfig();
-      if (typeof loadNotificationsPage === 'function') loadNotificationsPage();
       setupTimer();
-      setTimeout(checkUpdateStatus, 1000);
+      setTimeout(checkUpdateStatus, 2000);
       if (window.location.hash && window.location.hash.startsWith('#setting=')) {
         const sId = decodeURIComponent(window.location.hash.replace('#setting=', '')).split('&')[0];
         if (sId) {
@@ -623,6 +613,7 @@ let timer = null;
 
       window._currentSettingPage = id;
       updateSettingsPageActions(id);
+      if (typeof setupTimer === 'function') setupTimer();
 
       if (id === 'acc-packages') {
         document.body.classList.remove('terminal-active');
@@ -679,6 +670,7 @@ let timer = null;
         if (typeof fetchTailscale === 'function') fetchTailscale();
       } else if (id === 'acc-lan-clients') {
         document.body.classList.remove('terminal-active');
+        if (typeof fetchBlockedList === 'function') fetchBlockedList();
         if (typeof renderClientsCards === 'function') renderClientsCards(cachedClients);
         const curHash = window.location.hash || '';
         if (curHash.includes('&client=')) {
@@ -1077,6 +1069,7 @@ function handleSettingsBack() {
 
       window._currentSettingPage = null;
       updateSettingsPageActions(null);
+      if (typeof setupTimer === 'function') setupTimer(true);
       if (typeof updateRebootTopbarBadge === 'function') updateRebootTopbarBadge();
       if (typeof updateStagedChangesTopbar === 'function') updateStagedChangesTopbar();
 
@@ -1294,12 +1287,7 @@ function handleSettingsBack() {
       const menuBtn = document.getElementById('btnTopoMenu');
 
       if (tabId === 'settings') {
-        fetchAdbDeviceList();
-        fetchDeviceTelemetry();
-        fetchSmbConfig();
-        fetchNetworkConfig();
-        fetchTailscale();
-        fetchPackages();
+        if (typeof setupTimer === 'function') setupTimer();
 
         if (isDesktop) {
           // On Desktop: Keep Topology visible on left, open Settings on right side
@@ -1354,6 +1342,7 @@ function handleSettingsBack() {
         if (window._currentSettingPage) {
           closeSettingPage(false);
         }
+        if (typeof setupTimer === 'function') setupTimer(true);
         if (pushHistory && window.location.hash !== '' && window.location.hash !== '#overview') {
           try {
             history.pushState({ tab: 'overview' }, '', window.location.pathname);
@@ -1400,15 +1389,18 @@ function handleSettingsBack() {
     // REALTIME GATEWAY DATA
     async function fetchData() {
       if (window._isFetchingData) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
       window._isFetchingData = true;
       try {
-        const res = await apiFetch('/cgi-bin/status');
+        const isQuick = !!window._currentSettingPage && window._currentSettingPage !== 'acc-lan-clients' && window._currentSettingPage !== 'acc-topo-layers';
+        const endpoint = isQuick ? '/cgi-bin/status?mode=quick' : '/cgi-bin/status';
+        const res = await apiFetch(endpoint);
         const data = await res.json();
         renderData(data);
         if (typeof checkSystemAlerts === 'function') {
           checkSystemAlerts(data);
         }
-        if (!window._lastNotifBadgePoll || (Date.now() - window._lastNotifBadgePoll > 15000)) {
+        if (!window._lastNotifBadgePoll || (Date.now() - window._lastNotifBadgePoll > 30000)) {
           window._lastNotifBadgePoll = Date.now();
           fetch('/cgi-bin/webhooks?action=get_notifications')
             .then(r => r.json())
@@ -6934,12 +6926,17 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (window._txHistory.length > 20) {
         window._txHistory.shift();
       }
-      renderTopologyFlow(d, rxMbps, txMbps);
-      drawTrafficSparkline(window._rxHistory, window._txHistory);
+      const tabOv = document.getElementById('tabOverview');
+      const isOverviewVisible = tabOv && tabOv.style.display !== 'none';
 
-      // Render Plexo-Inspired Multi-Link Bandwidth Merger
-      renderMultiLinkMerger(d.multilink, d.mobile, (parseFloat(rxMbps) || 0) + (parseFloat(txMbps) || 0));
-      renderFleetMatrix(d.multilink, d.adb_devices, d.mobile);
+      if (isOverviewVisible) {
+        renderTopologyFlow(d, rxMbps, txMbps);
+        drawTrafficSparkline(window._rxHistory, window._txHistory);
+
+        // Render Plexo-Inspired Multi-Link Bandwidth Merger
+        renderMultiLinkMerger(d.multilink, d.mobile, (parseFloat(rxMbps) || 0) + (parseFloat(txMbps) || 0));
+        renderFleetMatrix(d.multilink, d.adb_devices, d.mobile);
+      }
 
       const mob = d.mobile || {};
       const isMobConnected = !!mob.connected;
@@ -7189,7 +7186,9 @@ function drawStorageIconSmall(x, y, color, parent) {
       }
 
       // 7. Ethernet Switch Ports
-      renderMiniPorts(net.ports || []);
+      if (isOverviewVisible) {
+        renderMiniPorts(net.ports || []);
+      }
 
       // 8. Lifetime Data Counter (Persistent Across Years & Reboots)
       if (d.lifetime_traffic) {
@@ -7213,7 +7212,9 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       // 10. Clients caching & rendering
       cachedClients = d.clients || [];
-      renderClientsCards(cachedClients);
+      if (window._currentSettingPage === 'acc-lan-clients') {
+        renderClientsCards(cachedClients);
+      }
     }
 
     function renderMiniPorts(ports) {
@@ -20161,12 +20162,55 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     function toggleAutoRefresh(enabled) {
       try { localStorage.setItem('maxnet_auto_refresh', enabled ? '1' : '0'); } catch(e){}
       if (timer) clearInterval(timer);
-      if (enabled) setupTimer();
+      if (enabled) setupTimer(true);
     }
 
-    function setupTimer() {
-      if (timer) clearInterval(timer);
-      timer = setInterval(fetchData, 3000);
+    function getPollingInterval() {
+      if (typeof document !== 'undefined' && document.hidden) return 0;
+      if (window._currentSettingPage === 'acc-terminal-cli') return 0;
+      if (window._currentSettingPage) return 20000;
+      const tabSet = document.getElementById('tabSettings');
+      const isSettingsVisible = tabSet && tabSet.style.display !== 'none';
+      const isDesktop = window.innerWidth >= 900;
+      const dashContainer = document.getElementById('dashboardContainer');
+      const isSideOpen = dashContainer && dashContainer.classList.contains('settings-side-open');
+      if (isSettingsVisible && (!isDesktop || !isSideOpen)) {
+        return 15000;
+      }
+      return 5000;
+    }
+
+    function setupTimer(forceImmediate = false) {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      try {
+        const autoRefreshPref = localStorage.getItem('maxnet_auto_refresh');
+        if (autoRefreshPref === '0') return;
+      } catch (e) {}
+
+      const interval = getPollingInterval();
+      if (interval > 0) {
+        timer = setInterval(fetchData, interval);
+        if (forceImmediate && !window._isFetchingData) {
+          fetchData();
+        }
+      }
+    }
+
+    if (typeof document !== 'undefined' && !window._visibilityListenerAdded) {
+      window._visibilityListenerAdded = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+        } else {
+          setupTimer(true);
+        }
+      });
     }
 
     function updateToggleBadge(checkboxEl, badgeId) {

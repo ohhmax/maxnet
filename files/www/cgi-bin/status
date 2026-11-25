@@ -18,6 +18,34 @@ send_response() {
     fi
 }
 
+CACHE_FILE="/tmp/maxnet_status_cache.json"
+CACHE_TIME="/tmp/maxnet_status_cache.time"
+
+UPTIME_RAW=$(cat /proc/uptime 2>/dev/null || echo "0 0")
+UPTIME_SEC=$(echo "$UPTIME_RAW" | awk '{print int($1)}')
+
+# High-speed RAM cache shield: avoids flooding CPU with rapid repeated requests
+if [ -s "$CACHE_FILE" ]; then
+    LAST_TIME=$(cat "$CACHE_TIME" 2>/dev/null || echo 0)
+    DIFF=$((UPTIME_SEC - LAST_TIME))
+    case "$QUERY_STRING" in
+        *mode=quick*|*quick=1*)
+            if [ "$DIFF" -ge 0 ] && [ "$DIFF" -lt 15 ]; then
+                send_response < "$CACHE_FILE"
+                exit 0
+            fi
+            ;;
+        *)
+            if [ "$DIFF" -ge 0 ] && [ "$DIFF" -lt 2 ]; then
+                send_response < "$CACHE_FILE"
+                exit 0
+            fi
+            ;;
+    esac
+fi
+
+TMP_CACHE="/tmp/maxnet_status_cache.tmp.$$"
+
 (
 
 # 1. Firmware version from the release metadata written during build/OTA.
@@ -908,4 +936,16 @@ cat << JSON
   "mobile": ${MOBILE_JSON}
 }
 JSON
-) | send_response
+) > "$TMP_CACHE"
+
+if [ -s "$TMP_CACHE" ]; then
+    mv -f "$TMP_CACHE" "$CACHE_FILE"
+    echo "$UPTIME_SEC" > "$CACHE_TIME"
+    send_response < "$CACHE_FILE"
+else
+    rm -f "$TMP_CACHE"
+    # Fallback to direct output if tmp write failed
+    cat <<EOF
+{"error":"status_generation_failed"}
+EOF
+fi
