@@ -670,17 +670,17 @@ function renderFlashingGuide(modelId) {
           <p class="step-desc-mono">Header Pin Connections (Mobile-Fit Matrix):</p>
           <div class="uart-pin-matrix">
             <div class="pin-pair">
-              <span class="pin-badge usb">USB GND</span>
+              <span class="pin-badge uart">UART GND</span>
               <span class="pin-connector">&harr;</span>
               <span class="pin-badge router">ROUTER GND</span>
             </div>
             <div class="pin-pair">
-              <span class="pin-badge usb">USB TX</span>
+              <span class="pin-badge uart">UART TX</span>
               <span class="pin-connector">&rarr;</span>
               <span class="pin-badge router">ROUTER RX</span>
             </div>
             <div class="pin-pair">
-              <span class="pin-badge usb">USB RX</span>
+              <span class="pin-badge uart">UART RX</span>
               <span class="pin-connector">&larr;</span>
               <span class="pin-badge router">ROUTER TX</span>
             </div>
