@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "build": 58,
+      "version": "2.2.58",
+      "tested": false,
+      "title": "MAXNET | V2.2.58",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.58-b58/maxnet-jidu6111-sysupgrade.bin",
+      "sha256": "b80f00fc42bf67b540c82abec6c09329e5e9486c7be0ca1c345fa8f2f7e797ac",
+      "itb_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.58-b58/maxnet-jidu6111-initramfs.itb",
+      "itb_sha256": "ab7efdc717f28c01ed7cbf2e2087f950b2392ad3b8c6d0c86ae2a4ed87118cfe",
+      "factory_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.58-b58/maxnet-jidu6111-factory.ubi",
+      "factory_sha256": "9875306038c8ae9594c0dc2f915f2e11de73256d28831b3dce2ccd89237504b5"
+    },
+    {
       "build": 56,
       "version": "2.2.56",
       "tested": true,
