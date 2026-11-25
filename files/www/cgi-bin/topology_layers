@@ -59,9 +59,9 @@ EOF
 }
 
 if [ "$REQUEST_METHOD" = "POST" ]; then
-  POST_DATA=$(cat)
+  [ -z "$POST_DATA" ] && POST_DATA=$(cat)
   if [ -n "$POST_DATA" ]; then
-    echo "$POST_DATA" | jq . > "$CONF_FILE" 2>/dev/null
+    printf '%s\n' "$POST_DATA" | jq . > "$CONF_FILE" 2>/dev/null
     if [ $? -eq 0 ]; then
       sync
       echo '{"status":"ok","message":"Topology layer configuration saved successfully"}'
@@ -80,7 +80,7 @@ case "$QS" in
   *action=auto_scan*|*action=auto*)
     SAVED_WAN_MODE=$(jq -r '.tree.wan_mode // "disconnected"' "$CONF_FILE" 2>/dev/null)
     [ -n "$SAVED_WAN_MODE" ] || SAVED_WAN_MODE=disconnected
-    STATUS_JSON=$(HTTP_ACCEPT_ENCODING= QUERY_STRING="action=status" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
+    STATUS_JSON=$(HTTP_COOKIE="${HTTP_COOKIE:-}" HTTP_AUTHORIZATION="${HTTP_AUTHORIZATION:-}" HTTP_X_SESSION_TOKEN="${HTTP_X_SESSION_TOKEN:-}" HTTP_ACCEPT_ENCODING= QUERY_STRING="action=status&token=${CURRENT_AUTH_TOKEN:-}" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
     AUTO_TREE=$(echo "$STATUS_JSON" | jq --arg saved_wan_mode "$SAVED_WAN_MODE" '
       .clients as $all
       | ($all | map(select(.is_self != true and .connected == true))) as $active
@@ -221,7 +221,7 @@ else
   printf '%s\n' "$SAVED" > "$CONF_FILE"
   sync
 fi
-STATUS_JSON=$(HTTP_ACCEPT_ENCODING= QUERY_STRING="action=status" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
+STATUS_JSON=$(HTTP_COOKIE="${HTTP_COOKIE:-}" HTTP_AUTHORIZATION="${HTTP_AUTHORIZATION:-}" HTTP_X_SESSION_TOKEN="${HTTP_X_SESSION_TOKEN:-}" HTTP_ACCEPT_ENCODING= QUERY_STRING="action=status&token=${CURRENT_AUTH_TOKEN:-}" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
 DYNAMIC_TREE=
 if [ -n "$STATUS_JSON" ]; then
   DYNAMIC_TREE=$(printf '%s' "$SAVED" | jq --argjson status "$STATUS_JSON" '

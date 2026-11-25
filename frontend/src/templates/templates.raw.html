@@ -140,10 +140,6 @@
 
           <!-- TOPOLOGY CANVAS CONTROLS (RESET + NOTIFICATIONS + MENU BUTTON) -->
           <div class="topo-toolbar" role="toolbar" aria-label="Topology Controls">
-            <button type="button" id="topbarPendingRebootBtn" class="topo-tool-btn topo-reboot-warning-btn" onclick="promptPendingRebootModal()" title="Reboot Required: Some settings need a restart to take effect" style="display:none;" aria-label="Reboot Required">
-              <svg viewBox="0 0 24 24" class="topo-reboot-icon"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span id="topbarRebootBtnText">REBOOT REQUIRED</span>
-            </button>
             <button class="topo-tool-btn" onclick="resetTopologyZoom()" id="btnResetTopoView" title="Reset Topology to Default View" aria-label="Reset Topology View">
               <svg viewBox="0 0 24 24" class="topo-tool-icon"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             </button>
@@ -217,7 +213,7 @@
           Some settings were changed that need a system restart to take effect.
         </div>
         <p style="margin:0 0 14px 0; color:var(--text-muted); font-size:12px;">
-          You can choose to restart MAXNET Gateway immediately, or continue configuring other settings and reboot later. A warning badge will remain in the top bar.
+          You can choose to restart MAXNET Gateway immediately, or continue configuring other settings and reboot later. A reboot notice will remain in Settings until restarted.
         </p>
         <div style="display:flex; gap:8px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
           <button type="button" class="mh-btn btn-ghost" onclick="closeRebootRequiredModal(true)" style="padding:7px 12px; font-size:11.5px; color:var(--text-dim);" title="Clear reboot warning if already restarted">
@@ -925,13 +921,25 @@
               <svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             </button>
             <div class="settings-subnav-divider"></div>
-            <button type="button" id="settingsPendingRebootBtn" class="topo-reboot-warning-btn settings-reboot-warning-btn" onclick="promptPendingRebootModal()" title="Reboot Required: Some settings need a restart" style="display:none;" aria-label="Reboot Required">
-              <svg viewBox="0 0 24 24" class="topo-reboot-icon"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>REBOOT REQUIRED</span>
-            </button>
             <svg class="svg-icon settings-search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" id="settingsSearchInput" class="settings-search-input" placeholder="Search" oninput="filterSettingsSearch(this.value)">
             <button type="button" id="settingsSearchClear" class="settings-search-clear" onclick="clearSettingsSearch()" style="display:none;">✕</button>
+          </div>
+        </div>
+
+        <!-- SETTINGS REBOOT REQUIRED BANNER -->
+        <div id="settingsRebootBanner" class="settings-reboot-banner" style="display:none;">
+          <div class="settings-reboot-banner-left">
+            <div class="settings-reboot-banner-icon">
+              <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="settings-reboot-banner-info">
+              <div class="settings-reboot-banner-title">Restart Required</div>
+              <div class="settings-reboot-banner-sub" id="settingsRebootReason">Some configuration changes require a gateway restart.</div>
+            </div>
+          </div>
+          <div class="settings-reboot-banner-actions">
+            <button type="button" class="settings-reboot-now-btn" onclick="promptPendingRebootModal()">REBOOT NOW</button>
           </div>
         </div>
 
@@ -1333,7 +1341,8 @@
                 <span class="snc-desc">System reboot, USB power cycle, backup, and factory reset</span>
               </div>
             </div>
-            <div class="snc-right">
+            <div class="snc-right" style="display:flex; align-items:center; gap:8px;">
+              <span id="maintenanceRebootBadge" class="card-badge red" style="display:none; font-size:10px; font-weight:800; padding:2px 8px; border-radius:6px; animation:rebootPulse 2s infinite ease-in-out;">REBOOT</span>
               <svg class="snc-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
           </div>
@@ -1386,6 +1395,21 @@
             </div>
           </div>
         </div>
+
+        <!-- DOCKED FLOATING BAR FOR STAGED CHANGES IN SETTINGS HOME -->
+        <div id="settingsStagedBar" class="settings-staged-docked-bar" style="display:none;">
+          <div class="settings-staged-bar-left">
+            <div class="settings-staged-badge"><span id="settingsStagedCount">0</span></div>
+            <div class="settings-staged-bar-info">
+              <span class="settings-staged-bar-title">Unsaved Changes</span>
+              <span class="settings-staged-bar-sub" id="settingsStagedSummary">Modified settings ready to apply</span>
+            </div>
+          </div>
+          <div class="settings-staged-bar-actions">
+            <button type="button" class="settings-staged-discard-btn" onclick="discardStagedChanges()">Discard</button>
+            <button type="button" class="settings-staged-apply-btn" onclick="applyStagedChanges()">Apply Changes</button>
+          </div>
+        </div>
       </div>
 
       <!-- VIEW 2: DEDICATED SETTING DETAIL PAGE VIEW -->
@@ -1433,6 +1457,22 @@
 
         <!-- SETTINGS DETAIL PANELS CONTAINER -->
         <div class="settings-shell" id="settingsDetailContainer">
+
+          <!-- SETTINGS DETAIL REBOOT REQUIRED BANNER -->
+          <div id="settingsDetailRebootBanner" class="settings-reboot-banner settings-detail-reboot-banner" style="display:none;">
+            <div class="settings-reboot-banner-left">
+              <div class="settings-reboot-banner-icon">
+                <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div class="settings-reboot-banner-info">
+                <div class="settings-reboot-banner-title">Restart Required</div>
+                <div class="settings-reboot-banner-sub" id="settingsDetailRebootReason">Some configuration changes require a gateway restart.</div>
+              </div>
+            </div>
+            <div class="settings-reboot-banner-actions">
+              <button type="button" class="settings-reboot-now-btn" onclick="promptPendingRebootModal()">REBOOT NOW</button>
+            </div>
+          </div>
         <!-- 1. NETWORK & DHCP CONFIGURATION (FULL FEATURED) -->
         <div class="settings-card settings-detail-panel accordion-item" id="acc-network">
           <div class="settings-card-header accordion-header" onclick="toggleAccordion('acc-network')">
@@ -5399,6 +5439,21 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- DOCKED FLOATING BAR FOR STAGED CHANGES IN SETTINGS DETAIL -->
+        <div id="settingsDetailStagedBar" class="settings-staged-docked-bar" style="display:none;">
+          <div class="settings-staged-bar-left">
+            <div class="settings-staged-badge"><span id="settingsDetailStagedCount">0</span></div>
+            <div class="settings-staged-bar-info">
+              <span class="settings-staged-bar-title">Unsaved Changes</span>
+              <span class="settings-staged-bar-sub" id="settingsDetailStagedSummary">Modified settings ready to apply</span>
+            </div>
+          </div>
+          <div class="settings-staged-bar-actions">
+            <button type="button" class="settings-staged-discard-btn" onclick="discardStagedChanges()">Discard</button>
+            <button type="button" class="settings-staged-apply-btn" onclick="applyStagedChanges()">Apply Changes</button>
           </div>
         </div>
 

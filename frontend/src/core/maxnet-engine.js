@@ -729,6 +729,8 @@ let timer = null;
       } else {
         window.scrollTo({ top: 0, behavior: 'instant' });
       }
+      if (typeof updateRebootTopbarBadge === 'function') updateRebootTopbarBadge();
+      if (typeof updateStagedChangesTopbar === 'function') updateStagedChangesTopbar();
     }
 
     
@@ -1075,6 +1077,8 @@ function handleSettingsBack() {
 
       window._currentSettingPage = null;
       updateSettingsPageActions(null);
+      if (typeof updateRebootTopbarBadge === 'function') updateRebootTopbarBadge();
+      if (typeof updateStagedChangesTopbar === 'function') updateStagedChangesTopbar();
 
       if (window.location.hash.startsWith('#setting=')) {
         try {
@@ -4711,7 +4715,6 @@ function drawStorageIconSmall(x, y, color, parent) {
       const ports = node.ports || [];
       ports.forEach(p => {
         if (p.role !== 'empty' && p.child) {
-          p.child._parentRouter = node;
           computeLayeredSubtreeBounds(p.child, screenW);
           children.push({
             type: 'lan',
@@ -4734,7 +4737,6 @@ function drawStorageIconSmall(x, y, color, parent) {
         const clientCardH = 30;
         const clientGapY = 38;
         const totalH = isExpanded ? (wClients.length * clientGapY) : 0;
-        wClients.forEach(wc => { wc._parentRouter = node; });
         const subW = isExpanded ? (clientCardW + 36) : 0;
         if (isExpanded) {
           children.push({
@@ -4771,7 +4773,6 @@ function drawStorageIconSmall(x, y, color, parent) {
             connected_count: d.usb_hub.connected_count || 0,
             ports_list: d.usb_hub.ports_list || [],
             speed_mbps: Number(d.usb_hub.speed_mbps) || 0,
-            _parentRouter: node,
             children: []
           };
 
@@ -4792,8 +4793,7 @@ function drawStorageIconSmall(x, y, color, parent) {
               size: storSize,
               free: storageDev?.free_space || d.usb_storage?.free || '--',
               mount_point: storageDev?.mount_point || d.usb_storage?.mount_point || '',
-              share_path: storageDev?.share_path || '',
-              _parentRouter: hubNode
+              share_path: storageDev?.share_path || ''
             };
             hubNode.children = [{
               type: 'usb_storage',
@@ -4823,8 +4823,7 @@ function drawStorageIconSmall(x, y, color, parent) {
             size: storSize,
             free: storageDev?.free_space || d.usb_storage?.free || '--',
             mount_point: storageDev?.mount_point || d.usb_storage?.mount_point || '',
-            share_path: storageDev?.share_path || '',
-            _parentRouter: node
+            share_path: storageDev?.share_path || ''
           };
           computeLayeredSubtreeBounds(storageNode, screenW);
           children.push({
@@ -5402,8 +5401,8 @@ function drawStorageIconSmall(x, y, color, parent) {
 
         // Draw Hotspot Tethering Icon & Android ADB Icon in WAN card if mobile (compact, right next to WAN label)
         if (isUsbActiveWan && !isStorageDev) {
-          const iconTetherX = textStartX + 26;
-          const iconAdbX = textStartX + 38;
+          const iconTetherX = textStartX + 30;
+          const iconAdbX = textStartX + 44;
           const iconCenterY = wanY + 11.5;
           drawTetheringIconSmall(iconTetherX, iconCenterY, "#10b981", wanG, 0.65);
           drawAdbIconSmall(iconAdbX, iconCenterY, "#38bdf8", wanG, 0.65);
@@ -6680,6 +6679,10 @@ function drawStorageIconSmall(x, y, color, parent) {
           portClients = pCfg.layer3_devices || [];
           count = portClients.length;
           isPortUp = true;
+        } else if (pCfg && (pCfg.mode === "switch" || pCfg.mode === "node") && pCfg.device) {
+          portClients = pCfg.device.devices || [];
+          count = portClients.length;
+          isPortUp = true;
         } else if (pCfg && pCfg.mode === "direct" && pCfg.device) {
           portClients = [pCfg.device];
           count = 1;
@@ -6768,30 +6771,8 @@ function drawStorageIconSmall(x, y, color, parent) {
 
         const savedBootId = localStorage.getItem('maxnet_reboot_boot_id');
         const savedUptime = Number(localStorage.getItem('maxnet_reboot_pending_uptime') || 0);
-        const isRebootPending = (window._rebootPending || localStorage.getItem('maxnet_reboot_pending') === '1');
 
-        if (isRebootPending) {
-          let hasRebooted = false;
-          if (savedBootId && curBootId && curBootId !== savedBootId) {
-            hasRebooted = true;
-          } else if (savedUptime > 0 && curUptime > 0 && curUptime < (savedUptime - 5)) {
-            hasRebooted = true;
-          } else if (curUptime > 0 && curUptime < 300 && !d.router.reboot_required) {
-            hasRebooted = true;
-          } else if (d.router.reboot_required === false && !savedBootId && !savedUptime) {
-            hasRebooted = true;
-          }
-
-          if (hasRebooted) {
-            window._rebootPending = false;
-            try {
-              localStorage.removeItem('maxnet_reboot_pending');
-              localStorage.removeItem('maxnet_reboot_reason');
-              localStorage.removeItem('maxnet_reboot_boot_id');
-              localStorage.removeItem('maxnet_reboot_pending_uptime');
-            } catch (e) {}
-          }
-        } else if (d.router.reboot_required) {
+        if (d.router.reboot_required === true) {
           window._rebootPending = true;
           try {
             localStorage.setItem('maxnet_reboot_pending', '1');
@@ -6799,10 +6780,22 @@ function drawStorageIconSmall(x, y, color, parent) {
             if (curBootId) localStorage.setItem('maxnet_reboot_boot_id', curBootId);
             if (curUptime) localStorage.setItem('maxnet_reboot_pending_uptime', String(curUptime));
           } catch (e) {}
+        } else {
+          // Backend is the source of truth: when backend reports no reboot required, clear pending state!
+          window._rebootPending = false;
+          try {
+            localStorage.removeItem('maxnet_reboot_pending');
+            localStorage.removeItem('maxnet_reboot_reason');
+            localStorage.removeItem('maxnet_reboot_boot_id');
+            localStorage.removeItem('maxnet_reboot_pending_uptime');
+          } catch (e) {}
         }
       }
       if (typeof updateRebootTopbarBadge === 'function') {
         updateRebootTopbarBadge();
+      }
+      if (typeof updateStagedChangesTopbar === 'function') {
+        updateStagedChangesTopbar();
       }
       const verStr = String(d.firmware || d.router?.version || '').trim();
       const hTitle = document.getElementById('dashBrandTitle');
@@ -8522,6 +8515,9 @@ function drawStorageIconSmall(x, y, color, parent) {
         port.child = childNode;
       }
       markTopologyPortManual(port);
+      if (res.parentNode && res.parentNode.id !== 'root') {
+        lockTopologyNodeParent(res.parentNode.id);
+      }
 
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
@@ -8549,6 +8545,7 @@ function drawStorageIconSmall(x, y, color, parent) {
         child.ip = chosenIp;
       }
       markTopologyPortManual(res.port);
+      if (res.parentNode && res.parentNode.id !== 'root') lockTopologyNodeParent(res.parentNode.id);
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -8560,6 +8557,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       if (!res || !res.port.child) return;
       res.port.child[field] = value;
       markTopologyPortManual(res.port);
+      if (res.parentNode && res.parentNode.id !== 'root') lockTopologyNodeParent(res.parentNode.id);
       updateValidationNotice();
       triggerTopologyAutoSave();
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -8580,6 +8578,7 @@ function drawStorageIconSmall(x, y, color, parent) {
         child.ip = chosenIp;
       }
       markTopologyPortManual(res.port);
+      if (res.parentNode && res.parentNode.id !== 'root') lockTopologyNodeParent(res.parentNode.id);
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
@@ -8592,6 +8591,10 @@ function drawStorageIconSmall(x, y, color, parent) {
       node[field] = value;
       node.manual = true;
       lockTopologyNodeParent(nodeId);
+      const titleEl = document.getElementById('topoNodeTitle_' + nodeId);
+      if (titleEl && !nodeId.startsWith('root')) {
+        titleEl.textContent = `${node.name || 'Subordinate Node'} (${node.ip || '--'})`;
+      }
       updateValidationNotice();
       triggerTopologyAutoSave();
       if (field === 'type') {
@@ -8944,7 +8947,7 @@ function drawStorageIconSmall(x, y, color, parent) {
         <div class="topo-node-setting-block" id="topoNodeCard_${escapeHtml(node.id)}" style="display:flex; flex-direction:column; gap:8px;">
           <!-- NODE IDENTITY & HARDWARE HEADER -->
           <div class="setting-section-header" style="display:flex; justify-content:space-between; align-items:center; margin-top:${isRoot ? '4px' : '18px'};">
-            <span>${isRoot ? 'Host Gateway' : escapeHtml(node.name || 'Subordinate Node')} (${escapeHtml(node.ip || '--')})</span>
+            <span id="topoNodeTitle_${escapeHtml(node.id)}">${isRoot ? 'Host Gateway' : escapeHtml(node.name || 'Subordinate Node')} (${escapeHtml(node.ip || '--')})</span>
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="card-badge" style="color:${layerColor}; border-color:${layerColor}; font-size:10px;">
                 LAYER ${depth} &bull; ${isRoot ? 'ROOT ROUTER' : (node.type || 'AP').toUpperCase()}${uplinkDesc}
@@ -9330,6 +9333,71 @@ function onRemoveWifiClient(nodeId, clientIdent) {
   if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
 }
 
+    function sanitizeTopologyNode(node) {
+      if (!node || typeof node !== 'object') return null;
+      const clean = {
+        id: String(node.id || ''),
+        type: String(node.type || 'router'),
+        name: String(node.name || ''),
+        ip: String(node.ip || ''),
+        mac: String(node.mac || ''),
+        uplinkPort: node.uplinkPort || null,
+        numPorts: Number(node.numPorts) || (Array.isArray(node.ports) ? node.ports.length : 4),
+        wan_mode: node.wan_mode || 'standard',
+        wan_speed: node.wan_speed || '1000',
+        manual: !!node.manual
+      };
+      if (node.usb_config) {
+        clean.usb_config = {
+          mode: node.usb_config.mode || 'hub',
+          num_ports: Number(node.usb_config.num_ports) || 0,
+          speed_std: node.usb_config.speed_std || 'usb3',
+          locked: !!node.usb_config.locked,
+          ports: Array.isArray(node.usb_config.ports) ? node.usb_config.ports.map(up => ({
+            id: up.id,
+            label: up.label,
+            role: up.role,
+            name: up.name || '',
+            speed: up.speed || 'usb3'
+          })) : []
+        };
+      }
+      if (node.active_uplink) clean.active_uplink = { ...node.active_uplink };
+      if (node.repeater_uplink) clean.repeater_uplink = { ...node.repeater_uplink };
+
+      if (Array.isArray(node.ports)) {
+        clean.ports = node.ports.map(p => ({
+          id: String(p.id || ''),
+          label: String(p.label || ''),
+          role: String(p.role || 'empty'),
+          locked: !!p.locked,
+          child: p.child ? (p.child.type === 'device' ? {
+            id: String(p.child.id || ''),
+            type: 'device',
+            name: String(p.child.name || ''),
+            ip: String(p.child.ip || ''),
+            mac: String(p.child.mac || ''),
+            status: String(p.child.status || 'online'),
+            manual: !!p.child.manual,
+            uplinkPort: String(p.id || '')
+          } : sanitizeTopologyNode(p.child)) : null
+        }));
+      }
+      if (Array.isArray(node.wireless_clients)) {
+        clean.wireless_clients = node.wireless_clients.map(wc => ({
+          id: String(wc.id || ''),
+          name: String(wc.name || ''),
+          ip: String(wc.ip || ''),
+          mac: String(wc.mac || ''),
+          status: String(wc.status || 'online'),
+          band: String(wc.band || 'WiFi'),
+          linkSpeed: String(wc.linkSpeed || '144 Mbps'),
+          manual: !!wc.manual
+        }));
+      }
+      return clean;
+    }
+
     async function saveTopologyLayersConfig(silent = false) {
       if (!window._topoTree) return;
       const val = validateTopologyTree(window._topoTree);
@@ -9339,15 +9407,16 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         return;
       }
 
+      const cleanTree = sanitizeTopologyNode(window._topoTree);
       const payload = {
         status: "ok",
         version: 2,
-        tree: window._topoTree,
-        ports: synthesizeLegacyPorts(window._topoTree)
+        tree: cleanTree,
+        ports: synthesizeLegacyPorts(cleanTree)
       };
 
       try {
-        const res = await fetch('/cgi-bin/topology_layers', {
+        const res = await apiFetch('/cgi-bin/topology_layers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -9372,7 +9441,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     async function resetTopologyLayersConfig() {
       if (!(await customConfirm('Reset network topology to default hierarchy?', 'Reset Topology', 'Reset', true))) return;
       try {
-        const res = await fetch('/cgi-bin/topology_layers?action=reset', { method: 'POST' });
+        const res = await apiFetch('/cgi-bin/topology_layers?action=reset', { method: 'POST' });
         const result = await res.json();
         const tree = normalizeTopologyTree(result);
         tree.discovery_mode = 'live';
@@ -9397,7 +9466,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     async function fetchTopologyLayers() {
       try {
-        const res = await fetch('/cgi-bin/topology_layers', { cache: 'no-store' });
+        const res = await apiFetch('/cgi-bin/topology_layers', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (data) {
@@ -9446,10 +9515,11 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (err) err.style.display = 'none';
       if (btnApply) btnApply.style.display = 'none';
 
+      const cleanTree = sanitizeTopologyNode(window._topoTree || createDefaultTopologyTree());
       const payload = {
         status: "ok",
         version: 2,
-        tree: window._topoTree || createDefaultTopologyTree()
+        tree: cleanTree
       };
       area.value = JSON.stringify(payload, null, 2);
       modal.style.display = 'flex';
@@ -11071,10 +11141,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     function scheduleNetworkAutoSave(delayMs = 600) {
       if (networkAutoSaveTimer) clearTimeout(networkAutoSaveTimer);
-      setSettingSaveStatus('pending', 'Saving changes...');
-      networkAutoSaveTimer = setTimeout(() => {
-        saveNetworkSettingsAuto();
-      }, delayMs);
+      setSettingSaveStatus('pending', 'Pending Apply (click ✓ in topbar)');
+      if (typeof stageSettingChange === 'function') {
+        stageSettingChange('network');
+      }
     }
 
     async function saveNetworkSettingsAuto() {
@@ -11132,9 +11202,11 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (data && data.reboot_required) {
           markRebootRequired(data.reboot_reason || data.message || 'Network reconfiguration requires a gateway reboot.');
         }
+        return data;
       } catch (e) {
         console.error("Auto-save network error:", e);
         setSettingSaveStatus('error', 'Update Failed');
+        throw e;
       } finally {
         isNetworkSaving = false;
       }
@@ -12364,16 +12436,119 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
     function updateRebootTopbarBadge() {
       const isPending = !!(window._rebootPending || (localStorage.getItem('maxnet_reboot_pending') === '1'));
-      const topbarBtn = document.getElementById('topbarPendingRebootBtn');
-      const settingsBtn = document.getElementById('settingsPendingRebootBtn');
-      if (topbarBtn) {
-        topbarBtn.style.display = isPending ? 'inline-flex' : 'none';
+      const reason = localStorage.getItem('maxnet_reboot_reason') || 'Some configuration changes require a gateway restart.';
+
+      // Settings Home banner
+      const banner = document.getElementById('settingsRebootBanner');
+      const reasonEl = document.getElementById('settingsRebootReason');
+      if (banner) {
+        banner.style.display = isPending ? 'flex' : 'none';
+        if (reasonEl && reason) reasonEl.textContent = reason;
       }
-      if (settingsBtn) {
-        settingsBtn.style.display = isPending ? 'inline-flex' : 'none';
+
+      // Settings Detail banner
+      const detailBanner = document.getElementById('settingsDetailRebootBanner');
+      const detailReasonEl = document.getElementById('settingsDetailRebootReason');
+      if (detailBanner) {
+        detailBanner.style.display = isPending ? 'flex' : 'none';
+        if (detailReasonEl && reason) detailReasonEl.textContent = reason;
+      }
+
+      // Settings Maintenance card badge
+      const maintBadge = document.getElementById('maintenanceRebootBadge');
+      if (maintBadge) {
+        maintBadge.style.display = isPending ? 'inline-block' : 'none';
       }
     }
     window.updateRebootTopbarBadge = updateRebootTopbarBadge;
+
+    // ==================== STAGED CHANGES MANAGER ====================
+    window._stagedChanges = window._stagedChanges || new Set();
+
+    function stageSettingChange(section) {
+      if (!section) return;
+      window._stagedChanges.add(section);
+      updateStagedChangesTopbar();
+    }
+    window.stageSettingChange = stageSettingChange;
+
+    function updateStagedChangesTopbar() {
+      const count = (window._stagedChanges && window._stagedChanges.size) || 0;
+      const stagedList = Array.from(window._stagedChanges || []);
+      const summaryText = count > 0 
+        ? `${count} setting${count > 1 ? 's' : ''} modified (${stagedList.map(s => s.toUpperCase()).join(', ')})`
+        : 'Modified settings ready to apply';
+
+      // Settings Home Staged Bar
+      const homeBar = document.getElementById('settingsStagedBar');
+      const homeCount = document.getElementById('settingsStagedCount');
+      const homeSummary = document.getElementById('settingsStagedSummary');
+      if (homeBar) {
+        homeBar.style.display = count > 0 ? 'flex' : 'none';
+        if (homeCount) homeCount.textContent = count;
+        if (homeSummary) homeSummary.textContent = summaryText;
+      }
+
+      // Settings Detail Staged Bar
+      const detailBar = document.getElementById('settingsDetailStagedBar');
+      const detailCount = document.getElementById('settingsDetailStagedCount');
+      const detailSummary = document.getElementById('settingsDetailStagedSummary');
+      if (detailBar) {
+        detailBar.style.display = count > 0 ? 'flex' : 'none';
+        if (detailCount) detailCount.textContent = count;
+        if (detailSummary) detailSummary.textContent = summaryText;
+      }
+    }
+    window.updateStagedChangesTopbar = updateStagedChangesTopbar;
+
+    async function applyStagedChanges() {
+      if (!window._stagedChanges || window._stagedChanges.size === 0) return;
+      const stagedList = Array.from(window._stagedChanges);
+      showToast(`Applying pending changes (${stagedList.join(', ')})...`, 'info', 4000);
+      let hasError = false;
+
+      if (window._stagedChanges.has('wifi')) {
+        try {
+          await saveWifiSettings();
+        } catch (e) {
+          hasError = true;
+          showToast('Failed to apply Wi-Fi settings: ' + (e.message || e), 'error');
+        }
+      }
+
+      if (window._stagedChanges.has('network')) {
+        try {
+          await saveNetworkSettingsAuto();
+        } catch (e) {
+          hasError = true;
+          showToast('Failed to apply Network settings: ' + (e.message || e), 'error');
+        }
+      }
+
+      if (!hasError) {
+        window._stagedChanges.clear();
+        updateStagedChangesTopbar();
+        showToast('All staged settings applied successfully!', 'success');
+      }
+    }
+    window.applyStagedChanges = applyStagedChanges;
+
+    async function discardStagedChanges() {
+      if (!window._stagedChanges || window._stagedChanges.size === 0) return;
+      showToast('Reverting staged changes...', 'info');
+
+      if (window._stagedChanges.has('wifi')) {
+        if (typeof fetchWifiConfig === 'function') await fetchWifiConfig();
+      }
+      if (window._stagedChanges.has('network')) {
+        if (typeof loadNetworkSettings === 'function') await loadNetworkSettings();
+      }
+
+      window._stagedChanges.clear();
+      updateStagedChangesTopbar();
+      showToast('Staged changes discarded. Restored saved configuration.', 'info');
+    }
+    window.discardStagedChanges = discardStagedChanges;
 
     function markRebootRequired(reason) {
       window._rebootPending = true;
@@ -12590,7 +12765,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const hLow = val.toLowerCase();
         if (disp) disp.textContent = `${val} • ${hLow}.lan / ${hLow}.local`;
         scheduleNetworkAutoSave();
-        markRebootRequired(`Gateway hostname updated to "${val}". Gateway reboot required to propagate new host identifier.`);
       } else if (currentModalKey === 'custom_mac') {
         const val = (document.getElementById('modalInput_custom_mac').value || '').trim();
         const hwMac = (document.getElementById('netHwMac') ? document.getElementById('netHwMac').value : 'ca:e7:b7:34:8f:ac').toLowerCase();
@@ -12641,7 +12815,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const disp = document.getElementById('disp_lan_ip');
         if (disp) disp.textContent = val;
         scheduleNetworkAutoSave();
-        markRebootRequired(`Gateway LAN IP address changed to ${val}. Gateway reboot required to reconfigure network interfaces and DHCP leases.`);
       } else if (currentModalKey === 'net_mask') {
         const maskVal = (document.getElementById('modalInput_net_mask').value || '').trim();
         if (!isValidSubnetMask(maskVal)) {
@@ -12656,7 +12829,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const disp = document.getElementById('disp_net_mask');
         if (disp) disp.textContent = `${maskVal} (/${cidrVal})`;
         scheduleNetworkAutoSave();
-        markRebootRequired(`Subnet mask updated to ${maskVal} (/${cidrVal}). Gateway reboot required to reconfigure IP pool and routing.`);
       } else if (currentModalKey === 'net_gateway') {
         const val = (document.getElementById('modalInput_gateway').value || '').trim();
         if (val && !isValidIpv4(val)) {
@@ -13046,13 +13218,13 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const el = document.getElementById('wifi2gSsid');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi24_enc') {
         const val = document.getElementById('modalSelect_wifi24_enc')?.value || 'sae-mixed';
         const el = document.getElementById('wifi2gEnc');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi24_key') {
         const val = (document.getElementById('modalInput_wifi24_key')?.value || '').trim();
         const enc = document.getElementById('wifi2gEnc')?.value || 'sae-mixed';
@@ -13063,32 +13235,32 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const el = document.getElementById('wifi2gKey');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi24_channel') {
         const val = document.getElementById('modalSelect_wifi24_channel')?.value || 'auto';
         const el = document.getElementById('wifi2gChannel');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi24_bandwidth') {
         const val = document.getElementById('modalSelect_wifi24_bandwidth')?.value || 'HE20';
         const el = document.getElementById('wifi2gHtmode');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi5_ssid') {
         const val = (document.getElementById('modalInput_wifi5_ssid')?.value || '').trim();
         if (!val) { showToast('SSID cannot be empty', 'error'); return; }
         const el = document.getElementById('wifi5gSsid');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi5_enc') {
         const val = document.getElementById('modalSelect_wifi5_enc')?.value || 'sae-mixed';
         const el = document.getElementById('wifi5gEnc');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi5_key') {
         const val = (document.getElementById('modalInput_wifi5_key')?.value || '').trim();
         const enc = document.getElementById('wifi5gEnc')?.value || 'sae-mixed';
@@ -13099,20 +13271,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const el = document.getElementById('wifi5gKey');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi5_channel') {
         const val = document.getElementById('modalSelect_wifi5_channel')?.value || 'auto';
         const el = document.getElementById('wifi5gChannel');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'wifi5_bandwidth') {
         const val = document.getElementById('modalSelect_wifi5_bandwidth')?.value || 'HE160';
         const el = document.getElementById('wifi5gHtmode');
         if (el) el.value = val;
         updateWifiDisplayLabels();
-        saveWifiSettings();
-        saveWifiSettings();
+        stageSettingChange('wifi');
       } else if (currentModalKey === 'notif_retention') {
         const max = parseInt(document.getElementById('modalSelect_notif_max')?.value || '50', 10);
         const days = parseInt(document.getElementById('modalSelect_notif_days')?.value || '30', 10);
@@ -19100,7 +19271,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           if (el && !el._hasWifiChangeListener) {
             el._hasWifiChangeListener = true;
             el.addEventListener('change', () => {
-              saveWifiSettings();
+              updateWifiDisplayLabels();
+              stageSettingChange('wifi');
             });
           }
         });
@@ -19932,18 +20104,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
 
     function toggleWifiMasterPower(checked) {
-      const payload = { master_enabled: checked ? 1 : 0 };
-      showToast(checked ? 'Enabling Wi-Fi transmitters...' : 'Disabling Wi-Fi transmitters...', 'info');
-      apiFetch('/cgi-bin/wifi?action=set', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).then(() => {
-        showToast(checked ? 'Wi-Fi radios active' : 'Wi-Fi radios disabled (DMA memory reclaimed)', 'success');
-        setTimeout(fetchWifiConfig, 1000);
-      }).catch(err => {
-        showToast('Failed to toggle master Wi-Fi: ' + err.message, 'error');
-      });
+      const toggle = document.getElementById('wifiMasterToggle');
+      if (toggle) toggle.checked = checked;
+      stageSettingChange('wifi');
+      showToast(checked ? 'Wi-Fi master power enabled (staged)' : 'Wi-Fi master power disabled (staged)', 'info');
     }
 
     function togglePasswordVisibility(inputId, btn) {
@@ -21561,5 +21725,14 @@ export {
   toggleNotificationTrigger,
   loadNotificationTriggers,
   openNotificationSettingsModal,
-  closeNotificationSettingsModal
+  closeNotificationSettingsModal,
+  stageSettingChange,
+  updateStagedChangesTopbar,
+  applyStagedChanges,
+  discardStagedChanges,
+  updateRebootTopbarBadge,
+  markRebootRequired,
+  promptPendingRebootModal,
+  closeRebootRequiredModal,
+  confirmRebootNow
 };

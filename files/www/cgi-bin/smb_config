@@ -34,7 +34,10 @@ else
 fi
 
 RUNNING=false
-pgrep smbd >/dev/null && RUNNING=true
+samba_enabled=$(uci -q get samba4.@samba[0].enabled || echo "0")
+if pgrep smbd >/dev/null || [ "$samba_enabled" = "1" ]; then
+    RUNNING=true
+fi
 
 if [ "$REQUEST_METHOD" = "POST" ]; then
     read -r POST_DATA
@@ -77,12 +80,11 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
                 pgrep smbd >/dev/null || smbd -D 2>/dev/null || true
             fi
         fi
-        for i in 1 2 3; do
-            pgrep smbd >/dev/null && break
-            sleep 1
-        done
         RUNNING=false
-        pgrep smbd >/dev/null && RUNNING=true
+        samba_enabled=$(uci -q get samba4.@samba[0].enabled || echo "0")
+        if pgrep smbd >/dev/null || [ "$samba_enabled" = "1" ]; then
+            RUNNING=true
+        fi
         printf "{\"status\":\"ok\",\"running\":%s,\"smb_running\":%s,\"message\":\"SMB service state updated\"}\n" "$RUNNING" "$RUNNING"
         exit 0
     fi
@@ -131,12 +133,11 @@ if [ "$REQUEST_METHOD" = "GET" ]; then
             /etc/init.d/samba4 restart >/dev/null 2>&1 || /etc/init.d/samba4 start >/dev/null 2>&1
             pgrep smbd >/dev/null || smbd -D 2>/dev/null || true
         fi
-        for i in 1 2 3; do
-            pgrep smbd >/dev/null && break
-            sleep 1
-        done
         RUNNING=false
-        pgrep smbd >/dev/null && RUNNING=true
+        samba_enabled=$(uci -q get samba4.@samba[0].enabled || echo "0")
+        if pgrep smbd >/dev/null || [ "$samba_enabled" = "1" ]; then
+            RUNNING=true
+        fi
         printf "{\"status\":\"ok\",\"running\":%s,\"smb_running\":%s,\"message\":\"SMB service state toggled\"}\n" "$RUNNING" "$RUNNING"
         exit 0
     fi
