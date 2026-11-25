@@ -2526,10 +2526,11 @@ function handleSettingsBack() {
         target.textContent = '...';
       }
       try {
-        const res = await fetch('/cgi-bin/smb_config?action=toggle');
+        const res = await apiFetch('/cgi-bin/smb_config?action=toggle');
         const data = await res.json();
+        const isUp = !!(data && (data.running !== undefined ? data.running : data.smb_running));
         if (badge) {
-          if (data && data.running) {
+          if (isUp) {
             badge.className = 'toggle-status-badge on';
             badge.textContent = 'RUNNING';
             if (isCheckbox) target.checked = true;
@@ -3284,8 +3285,8 @@ function handleSettingsBack() {
         }
         if (btnViewClient) btnViewClient.style.display = 'none';
         if (btnEditSettings) {
-          btnEditSettings.textContent = 'DHCP CLIENTS';
-          btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-lan-clients'); };
+          btnEditSettings.textContent = 'EDIT TOPOLOGY';
+          btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-topo-layers'); };
         }
         overlay.style.display = 'flex';
         requestAnimationFrame(() => overlay.classList.add('active'));
@@ -5306,9 +5307,9 @@ function drawStorageIconSmall(x, y, color, parent) {
         }, wirePillG);
 
         const displaySsid = (repInfo.ssid && repInfo.ssid.length > 10) ? (repInfo.ssid.substring(0, 9) + '…') : (repInfo.ssid || "Wi-Fi");
-        const wanTitleStr = isUsbActiveWan ? "WAN USB (TETHERING)" : (isRepeaterActive ? `REPEATER: ${displaySsid}` : "WAN ETHERNET");
+        const wanTitleStr = isUsbActiveWan ? "WAN" : (isRepeaterActive ? `REPEATER: ${displaySsid}` : "WAN ETHERNET");
         const effectiveWanIp = isUsbActiveWan
-          ? (tetheringIp || liveWanIpStr || "Tethering Online")
+          ? (tetheringIp || liveWanIpStr || "Connected")
           : (isRepeaterActive ? (repInfo.ip || liveWanIpStr || "Connected") : (liveWanIpStr || "DHCP Online"));
 
         const tWireSpd = mk("text", {
@@ -5381,7 +5382,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           drawSwitchIcon(wanIconBoxX + wanIconBoxW / 2, wanIconBoxY + wanIconBoxH / 2, "#0284c7", wanG);
         }
 
-        const textStartX = wanX + 36;
+        const textStartX = wanX + 35;
 
         // WAN Title on top row with compact bold typography
         const tWanTitle = mk("text", {
@@ -5401,8 +5402,8 @@ function drawStorageIconSmall(x, y, color, parent) {
 
         // Draw Hotspot Tethering Icon & Android ADB Icon in WAN card if mobile (compact, right next to WAN label)
         if (isUsbActiveWan && !isStorageDev) {
-          const iconTetherX = textStartX + 46;
-          const iconAdbX = textStartX + 57;
+          const iconTetherX = textStartX + 26;
+          const iconAdbX = textStartX + 38;
           const iconCenterY = wanY + 11.5;
           drawTetheringIconSmall(iconTetherX, iconCenterY, "#10b981", wanG, 0.65);
           drawAdbIconSmall(iconAdbX, iconCenterY, "#38bdf8", wanG, 0.65);
@@ -6757,9 +6758,51 @@ function drawStorageIconSmall(x, y, color, parent) {
         window._mobUptimeBase = Number(d.mobile.uptime_seconds);
         window._mobUptimeTs = Date.now();
       }
-      if (d.router && d.router.uptime_seconds) {
-        window._rtrUptimeBase = Number(d.router.uptime_seconds);
-        window._rtrUptimeTs = Date.now();
+      if (d.router) {
+        if (d.router.uptime_seconds !== undefined) {
+          window._rtrUptimeBase = Number(d.router.uptime_seconds);
+          window._rtrUptimeTs = Date.now();
+        }
+        const curBootId = String(d.router.boot_id || '').trim();
+        const curUptime = Number(d.router.uptime_seconds || 0);
+
+        const savedBootId = localStorage.getItem('maxnet_reboot_boot_id');
+        const savedUptime = Number(localStorage.getItem('maxnet_reboot_pending_uptime') || 0);
+        const isRebootPending = (window._rebootPending || localStorage.getItem('maxnet_reboot_pending') === '1');
+
+        if (isRebootPending) {
+          let hasRebooted = false;
+          if (savedBootId && curBootId && curBootId !== savedBootId) {
+            hasRebooted = true;
+          } else if (savedUptime > 0 && curUptime > 0 && curUptime < (savedUptime - 5)) {
+            hasRebooted = true;
+          } else if (curUptime > 0 && curUptime < 300 && !d.router.reboot_required) {
+            hasRebooted = true;
+          } else if (d.router.reboot_required === false && !savedBootId && !savedUptime) {
+            hasRebooted = true;
+          }
+
+          if (hasRebooted) {
+            window._rebootPending = false;
+            try {
+              localStorage.removeItem('maxnet_reboot_pending');
+              localStorage.removeItem('maxnet_reboot_reason');
+              localStorage.removeItem('maxnet_reboot_boot_id');
+              localStorage.removeItem('maxnet_reboot_pending_uptime');
+            } catch (e) {}
+          }
+        } else if (d.router.reboot_required) {
+          window._rebootPending = true;
+          try {
+            localStorage.setItem('maxnet_reboot_pending', '1');
+            if (d.router.reboot_reason) localStorage.setItem('maxnet_reboot_reason', d.router.reboot_reason);
+            if (curBootId) localStorage.setItem('maxnet_reboot_boot_id', curBootId);
+            if (curUptime) localStorage.setItem('maxnet_reboot_pending_uptime', String(curUptime));
+          } catch (e) {}
+        }
+      }
+      if (typeof updateRebootTopbarBadge === 'function') {
+        updateRebootTopbarBadge();
       }
       const verStr = String(d.firmware || d.router?.version || '').trim();
       const hTitle = document.getElementById('dashBrandTitle');
@@ -8337,6 +8380,13 @@ function drawStorageIconSmall(x, y, color, parent) {
       triggerTopologyAutoSave();
       renderTopologyLayersUI(window._topoTree);
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
+      const modeLabels = {
+        'standard': 'Standard WAN Uplink',
+        'wan_as_lan': 'WAN as LAN (5th LAN port)',
+        'lan_as_wan_1': 'LAN 1 as WAN Failover',
+        'lan_as_wan_4': 'LAN 4 as WAN Failover'
+      };
+      markRebootRequired(`WAN architecture remapped to ${modeLabels[newMode] || newMode}. Gateway restart required to reconfigure Ethernet switch VLANs.`);
     }
 
     function onWanSpeedChange(newSpeed) {
@@ -8544,8 +8594,37 @@ function drawStorageIconSmall(x, y, color, parent) {
       lockTopologyNodeParent(nodeId);
       updateValidationNotice();
       triggerTopologyAutoSave();
+      if (field === 'type') {
+        renderTopologyLayersUI(window._topoTree);
+      }
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
     }
+
+    function onRemoveTopologyNode(nodeId) {
+      if (!window._topoTree) return;
+      function removeFrom(tree) {
+        if (!tree || !Array.isArray(tree.ports)) return false;
+        for (const port of tree.ports) {
+          if (port.child && port.child.id === nodeId) {
+            port.role = 'empty';
+            port.child = null;
+            port.locked = true;
+            return true;
+          }
+          if (port.child && port.child.type !== 'device') {
+            if (removeFrom(port.child)) return true;
+          }
+        }
+        return false;
+      }
+      if (removeFrom(window._topoTree)) {
+        triggerTopologyAutoSave();
+        renderTopologyLayersUI(window._topoTree);
+        if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
+        if (typeof showToast === 'function') showToast('Subordinate node removed from topology', 'info');
+      }
+    }
+    window.onRemoveTopologyNode = onRemoveTopologyNode;
 
     function onAddWirelessClient(nodeId) {
       if (!window._topoTree) return;
@@ -8866,9 +8945,17 @@ function drawStorageIconSmall(x, y, color, parent) {
           <!-- NODE IDENTITY & HARDWARE HEADER -->
           <div class="setting-section-header" style="display:flex; justify-content:space-between; align-items:center; margin-top:${isRoot ? '4px' : '18px'};">
             <span>${isRoot ? 'Host Gateway' : escapeHtml(node.name || 'Subordinate Node')} (${escapeHtml(node.ip || '--')})</span>
-            <span class="card-badge" style="color:${layerColor}; border-color:${layerColor}; font-size:10px;">
-              LAYER ${depth} &bull; ${isRoot ? 'ROOT ROUTER' : (node.type || 'AP').toUpperCase()}${uplinkDesc}
-            </span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="card-badge" style="color:${layerColor}; border-color:${layerColor}; font-size:10px;">
+                LAYER ${depth} &bull; ${isRoot ? 'ROOT ROUTER' : (node.type || 'AP').toUpperCase()}${uplinkDesc}
+              </span>
+              ${!isRoot ? `
+                <button type="button" class="topo-remove-btn" onclick="onRemoveTopologyNode('${escapeHtml(node.id)}')" title="Delete this subordinate node from tree" style="padding:3px 8px; font-size:11px; display:inline-flex; align-items:center; gap:4px; color:#ef4444; border:1px solid rgba(239,68,68,0.3); background:rgba(239,68,68,0.08); border-radius:6px; cursor:pointer;">
+                  <svg viewBox="0 0 24 24" style="width:12px; height:12px; stroke:currentColor; fill:none; stroke-width:2;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  <span>Delete</span>
+                </button>
+              ` : ''}
+            </div>
           </div>
 
           <!-- Row: Node Name -->
@@ -8895,6 +8982,28 @@ function drawStorageIconSmall(x, y, color, parent) {
                   <option value="router" ${node.type === 'router' ? 'selected' : ''}>Router</option>
                   <option value="switch" ${node.type === 'switch' ? 'selected' : ''}>Ethernet Switch</option>
                 </select>
+              </div>
+            </div>
+
+            <!-- Row: Management IPv4 -->
+            <div class="setting-row-item" style="flex-direction:column; align-items:stretch; gap:6px;">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">Management IPv4 Address</span>
+                <span class="setting-label-sub">Static or DHCP assigned IPv4 address for Layer ${depth} hardware</span>
+              </div>
+              <div>
+                <input type="text" class="mh-input" placeholder="e.g. 10.0.0.2" value="${escapeHtml(node.ip || '')}" oninput="onNodeFieldChange('${escapeHtml(node.id)}', 'ip', this.value)" style="width:100%; box-sizing:border-box; font-size:12px; font-family:var(--font-mono);">
+              </div>
+            </div>
+
+            <!-- Row: MAC Hardware Address -->
+            <div class="setting-row-item" style="flex-direction:column; align-items:stretch; gap:6px;">
+              <div class="setting-label-col">
+                <span class="setting-label-bold">MAC Hardware Address</span>
+                <span class="setting-label-sub">Physical Ethernet / BSSID hardware identifier</span>
+              </div>
+              <div>
+                <input type="text" class="mh-input" placeholder="e.g. 00:11:22:33:44:55" value="${escapeHtml(node.mac || '')}" oninput="onNodeFieldChange('${escapeHtml(node.id)}', 'mac', this.value)" style="width:100%; box-sizing:border-box; font-size:12px; font-family:var(--font-mono);">
               </div>
             </div>
           ` : ''}
@@ -9021,6 +9130,12 @@ function drawStorageIconSmall(x, y, color, parent) {
                     <button type="button" class="topo-remove-btn" onclick="onPortRoleChange('${escapeHtml(port.id)}', 'empty')" title="Remove device from ${escapeHtml(port.label || 'this port')}">
                       <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                       <span>Remove</span>
+                    </button>
+                  ` : ''}
+                  ${(isNode && child.id) ? `
+                    <button type="button" class="topo-remove-btn" onclick="onPortRoleChange('${escapeHtml(port.id)}', 'empty')" title="Disconnect subordinate device from ${escapeHtml(port.label || 'this port')}">
+                      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      <span>Disconnect</span>
                     </button>
                   ` : ''}
                 </div>
@@ -11014,6 +11129,9 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         });
         const data = await res.json();
         setSettingSaveStatus('saved', 'Configuration Saved');
+        if (data && data.reboot_required) {
+          markRebootRequired(data.reboot_reason || data.message || 'Network reconfiguration requires a gateway reboot.');
+        }
       } catch (e) {
         console.error("Auto-save network error:", e);
         setSettingSaveStatus('error', 'Update Failed');
@@ -12241,6 +12359,89 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
     }
 
+    // ==================== PENDING REBOOT & WARNING MANAGER ====================
+    window._rebootPending = (localStorage.getItem('maxnet_reboot_pending') === '1');
+
+    function updateRebootTopbarBadge() {
+      const isPending = !!(window._rebootPending || (localStorage.getItem('maxnet_reboot_pending') === '1'));
+      const topbarBtn = document.getElementById('topbarPendingRebootBtn');
+      const settingsBtn = document.getElementById('settingsPendingRebootBtn');
+      if (topbarBtn) {
+        topbarBtn.style.display = isPending ? 'inline-flex' : 'none';
+      }
+      if (settingsBtn) {
+        settingsBtn.style.display = isPending ? 'inline-flex' : 'none';
+      }
+    }
+    window.updateRebootTopbarBadge = updateRebootTopbarBadge;
+
+    function markRebootRequired(reason) {
+      window._rebootPending = true;
+      try {
+        localStorage.setItem('maxnet_reboot_pending', '1');
+        if (reason) localStorage.setItem('maxnet_reboot_reason', reason);
+        const rtr = window._lastDataCache && window._lastDataCache.router;
+        if (rtr) {
+          if (rtr.boot_id) localStorage.setItem('maxnet_reboot_boot_id', String(rtr.boot_id).trim());
+          if (rtr.uptime_seconds) localStorage.setItem('maxnet_reboot_pending_uptime', String(rtr.uptime_seconds));
+        }
+      } catch (e) {}
+      updateRebootTopbarBadge();
+      promptPendingRebootModal(reason);
+    }
+    window.markRebootRequired = markRebootRequired;
+
+    function promptPendingRebootModal(customReason) {
+      const overlay = document.getElementById('rebootRequiredModalOverlay');
+      if (!overlay) return;
+      const reasonEl = document.getElementById('rebootModalReason');
+      const reason = customReason || localStorage.getItem('maxnet_reboot_reason') || 'Some network and system settings have been modified that require a gateway reboot to take effect.';
+      if (reasonEl) reasonEl.textContent = reason;
+      overlay.style.display = 'flex';
+      requestAnimationFrame(() => overlay.classList.add('active'));
+    }
+    window.promptPendingRebootModal = promptPendingRebootModal;
+
+    function closeRebootRequiredModal(dismissPending = false) {
+      const overlay = document.getElementById('rebootRequiredModalOverlay');
+      if (overlay) {
+        overlay.classList.remove('active');
+        setTimeout(() => { overlay.style.display = 'none'; }, 200);
+      }
+      if (dismissPending) {
+        window._rebootPending = false;
+        try {
+          localStorage.removeItem('maxnet_reboot_pending');
+          localStorage.removeItem('maxnet_reboot_reason');
+          localStorage.removeItem('maxnet_reboot_boot_id');
+          localStorage.removeItem('maxnet_reboot_pending_uptime');
+        } catch (e) {}
+        updateRebootTopbarBadge();
+      }
+    }
+    window.closeRebootRequiredModal = closeRebootRequiredModal;
+
+    async function confirmRebootNow() {
+      closeRebootRequiredModal(true);
+      if (typeof showToast === 'function') {
+        showToast('Initiating gateway reboot... Reconnecting in 30 seconds', 'warning', 15000);
+      }
+      try {
+        await fetch('/cgi-bin/restore?action=reboot', { method: 'POST' }).catch(() => {});
+      } catch (e) {}
+      let countdown = 30;
+      const toastTimer = setInterval(() => {
+        countdown -= 5;
+        if (countdown <= 0) {
+          clearInterval(toastTimer);
+          window.location.reload();
+        } else if (typeof showToast === 'function') {
+          showToast(`Rebooting gateway... Reconnecting in ${countdown}s`, 'info', 4000);
+        }
+      }, 5000);
+    }
+    window.confirmRebootNow = confirmRebootNow;
+
     
     // ==================== NETWORK CONFIGURATION VALIDATORS ====================
     function isValidIpv4(ip) {
@@ -12325,11 +12526,15 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         renderTopologyLayersUI(window._topoTree);
         if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
         if (typeof showToast === 'function') showToast(`${name} added under ${portRef.parentNode.name} · ${portRef.port.label}`, 'success');
+        closeSettingModal();
+        return;
       } else if (currentModalKey === 'pppoe_user_add') {
         if (!(await addPppoeUserFromModal())) return;
       } else if (currentModalKey === 'topology_type') {
         const mode = document.querySelector('input[name="topologyDiscoveryMode"]:checked')?.value || 'live';
         setTopologyDiscoveryMode(mode);
+        closeSettingModal();
+        return;
       } else if (currentModalKey === 'system_date') {
         if (document.getElementById('systemNtpEnabled')?.checked) {
           if (typeof showToast === 'function') showToast('Automatic time sync is enabled. Turn it off to set the date and time manually.', 'info');
@@ -12385,6 +12590,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const hLow = val.toLowerCase();
         if (disp) disp.textContent = `${val} • ${hLow}.lan / ${hLow}.local`;
         scheduleNetworkAutoSave();
+        markRebootRequired(`Gateway hostname updated to "${val}". Gateway reboot required to propagate new host identifier.`);
       } else if (currentModalKey === 'custom_mac') {
         const val = (document.getElementById('modalInput_custom_mac').value || '').trim();
         const hwMac = (document.getElementById('netHwMac') ? document.getElementById('netHwMac').value : 'ca:e7:b7:34:8f:ac').toLowerCase();
@@ -12435,6 +12641,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const disp = document.getElementById('disp_lan_ip');
         if (disp) disp.textContent = val;
         scheduleNetworkAutoSave();
+        markRebootRequired(`Gateway LAN IP address changed to ${val}. Gateway reboot required to reconfigure network interfaces and DHCP leases.`);
       } else if (currentModalKey === 'net_mask') {
         const maskVal = (document.getElementById('modalInput_net_mask').value || '').trim();
         if (!isValidSubnetMask(maskVal)) {
@@ -12449,6 +12656,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const disp = document.getElementById('disp_net_mask');
         if (disp) disp.textContent = `${maskVal} (/${cidrVal})`;
         scheduleNetworkAutoSave();
+        markRebootRequired(`Subnet mask updated to ${maskVal} (/${cidrVal}). Gateway reboot required to reconfigure IP pool and routing.`);
       } else if (currentModalKey === 'net_gateway') {
         const val = (document.getElementById('modalInput_gateway').value || '').trim();
         if (val && !isValidIpv4(val)) {
@@ -12903,6 +13111,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const el = document.getElementById('wifi5gHtmode');
         if (el) el.value = val;
         updateWifiDisplayLabels();
+        saveWifiSettings();
         saveWifiSettings();
       } else if (currentModalKey === 'notif_retention') {
         const max = parseInt(document.getElementById('modalSelect_notif_max')?.value || '50', 10);
@@ -17210,15 +17419,16 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     // SMB / USB STORAGE SETTINGS
     async function fetchSmbConfig() {
       try {
-        const res = await fetch('/cgi-bin/smb_config');
+        const res = await apiFetch('/cgi-bin/smb_config');
         const data = await res.json();
         if (data.status === 'ok') {
+          const isUp = !!(data.running !== undefined ? data.running : data.smb_running);
           const userEl = document.getElementById('smbUsernameInput');
           if (userEl && data.username) userEl.value = data.username;
 
           const badge = document.getElementById('smbStatusBadge');
           if (badge) {
-            if (data.smb_running) {
+            if (isUp) {
               badge.className = 'card-badge emerald';
               badge.innerText = 'ONLINE (' + (data.mounted ? (data.device || 'MOUNTED') : 'READY') + ')';
             } else {
@@ -17229,8 +17439,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
           const toggleBtn = document.getElementById('btnToggleSmbSettings');
           if (toggleBtn) {
-            toggleBtn.innerText = data.smb_running ? 'STOP SMB' : 'START SMB';
-            toggleBtn.className = data.smb_running ? 'mh-btn btn-ghost' : 'mh-btn';
+            toggleBtn.innerText = isUp ? 'STOP SMB' : 'START SMB';
+            toggleBtn.className = isUp ? 'mh-btn btn-ghost' : 'mh-btn';
           }
           const devEl = document.getElementById('smbDevState');
           if (devEl) devEl.innerText = data.mounted ? (data.device || 'Mounted') : 'No drive mounted';
@@ -17262,24 +17472,41 @@ function onRemoveWifiClient(nodeId, clientIdent) {
             userDescEl.textContent = 'Open Guest Access (No Password Required) • Click to configure credentials';
           }
           const masterToggle = document.getElementById('smbMasterToggle');
-          if (masterToggle) masterToggle.checked = !!data.smb_running;
+          if (masterToggle) masterToggle.checked = isUp;
         }
       } catch (e) {
         console.error('fetchSmbConfig error', e);
       }
     }
 
-    async function toggleSmbService(enabled) {
+    async function toggleSmbService(arg) {
+      let enabled;
+      if (typeof arg === 'boolean') {
+        enabled = arg;
+      } else if (arg && typeof arg === 'object' && arg.target) {
+        if (arg.stopPropagation) arg.stopPropagation();
+        if (arg.target.type === 'checkbox') {
+          enabled = !!arg.target.checked;
+        } else {
+          const m = document.getElementById('smbMasterToggle');
+          enabled = m ? !m.checked : true;
+        }
+      } else {
+        const m = document.getElementById('smbMasterToggle');
+        enabled = m ? !m.checked : true;
+      }
       showToast(enabled ? 'Starting Samba 4 service...' : 'Stopping Samba service...', 'info');
       try {
-        const res = await fetch('/cgi-bin/smb_config', {
+        const res = await apiFetch('/cgi-bin/smb_config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'toggle', enable: !!enabled })
+          body: JSON.stringify({ action: 'toggle', enable: enabled })
         });
         const data = await res.json();
-        showToast(data.message || 'Samba state updated', 'success');
+        const isUp = !!(data && (data.running !== undefined ? data.running : data.smb_running));
+        showToast(data.message || (isUp ? 'Samba service running' : 'Samba service stopped'), 'success');
         fetchSmbConfig();
+        if (typeof fetchData === 'function') fetchData();
       } catch (e) {
         showToast('Failed to toggle SMB: ' + e.message, 'error');
       }
@@ -17306,7 +17533,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
 
       try {
-        const res = await fetch('/cgi-bin/smb_config', {
+        const res = await apiFetch('/cgi-bin/smb_config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'set', username: user, password: pass })
@@ -18443,11 +18670,19 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
 
     function confirmRebootRouter() {
+      window._rebootPending = false;
+      try {
+        localStorage.removeItem('maxnet_reboot_pending');
+        localStorage.removeItem('maxnet_reboot_reason');
+        localStorage.removeItem('maxnet_reboot_boot_id');
+        localStorage.removeItem('maxnet_reboot_pending_uptime');
+      } catch (e) {}
+      if (typeof updateRebootTopbarBadge === 'function') updateRebootTopbarBadge();
       showToast('Rebooting Maxnet Gateway...', 'warning');
       fetch('/cgi-bin/restore?action=reboot', { method: 'POST' })
         .then(() => {
-          showToast('Reboot command sent. Reconnecting in 15 seconds...', 'info');
-          setTimeout(() => location.reload(), 15000);
+          showToast('Reboot command sent. Reconnecting in 25 seconds...', 'info');
+          setTimeout(() => location.reload(), 25000);
         })
         .catch(() => showToast('Reboot initiated.', 'info'));
     }
@@ -18858,6 +19093,17 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (r5gCh && data.radio_5g) r5gCh.value = data.radio_5g.channel || '36';
         if (r5gHt && data.radio_5g) r5gHt.value = data.radio_5g.htmode || 'HE80';
         if (r5gHid && data.radio_5g) r5gHid.checked = data.radio_5g.hidden === 1;
+
+        // Ensure change listeners are bound to checkboxes
+        ['wifi2gEnable', 'wifi2gHidden', 'wifi5gEnable', 'wifi5gHidden'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el && !el._hasWifiChangeListener) {
+            el._hasWifiChangeListener = true;
+            el.addEventListener('change', () => {
+              saveWifiSettings();
+            });
+          }
+        });
 
         // Update subtitle labels beneath settings
         updateWifiDisplayLabels();
@@ -19647,6 +19893,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     async function saveWifiSettings() {
       try {
         const payload = {
+          action: 'set',
           master_enabled: document.getElementById('wifiMasterToggle')?.checked ? 1 : 0,
           enable_2g: document.getElementById('wifi2gEnable')?.checked ? 1 : 0,
           ssid_2g: document.getElementById('wifi2gSsid')?.value || 'MAXNET',
@@ -19665,6 +19912,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           hidden_5g: document.getElementById('wifi5gHidden')?.checked ? 1 : 0
         };
 
+        updateWifiDisplayLabels();
         showToast('Applying Wi-Fi settings to wireless radios...', 'info');
         const res = await apiFetch('/cgi-bin/wifi?action=set', {
           method: 'POST',

@@ -10,12 +10,14 @@ echo ""
 ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
 
 if [ "$ACTION" = "reset" ]; then
+    rm -f /var/run/maxnet_reboot_required /var/run/maxnet_reboot_reason 2>/dev/null || true
     echo '{"status": "ok", "message": "Factory reset initiated. Gateway rebooting..."}'
     ( sleep 2 && firstboot -y && reboot ) >/dev/null 2>&1 &
     exit 0
 fi
 
 if [ "$ACTION" = "reboot" ]; then
+    rm -f /var/run/maxnet_reboot_required /var/run/maxnet_reboot_reason 2>/dev/null || true
     echo '{"status": "ok", "message": "Reboot initiated. Gateway restarting..."}'
     ( sleep 1 && /etc/init.d/trafficd stop && sync && sleep 1 && reboot ) >/dev/null 2>&1 &
     exit 0

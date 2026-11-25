@@ -810,6 +810,13 @@ else
     REPEATER_JSON='{"connected":false,"ssid":"","ip":""}'
 fi
 
+REBOOT_REQUIRED="false"
+REBOOT_REASON=""
+if [ -f /var/run/maxnet_reboot_required ]; then
+    REBOOT_REQUIRED="true"
+    REBOOT_REASON=$(cat /var/run/maxnet_reboot_reason 2>/dev/null || echo "Configuration changes require a gateway reboot.")
+fi
+
 cat << JSON
 {
   "repeater": ${REPEATER_JSON},
@@ -856,6 +863,9 @@ cat << JSON
     "hostname": "$(uci get system.@system[0].hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")",
     "model": "Jio AX6000 Qualcomm IPQ9574",
     "kernel": "Linux $(uname -r 2>/dev/null || echo "6.18") MAXNET",
+    "boot_id": "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo '')",
+    "reboot_required": ${REBOOT_REQUIRED},
+    "reboot_reason": "${REBOOT_REASON}",
     "uptime": "${UPTIME_FMT}",
     "uptime_seconds": ${UPTIME_SEC:-0},
     "load_avg": ["${LOAD_1}", "${LOAD_5}", "${LOAD_15}"],

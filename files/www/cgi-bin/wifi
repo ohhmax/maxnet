@@ -142,36 +142,47 @@ fi
 
 # 1. HANDLE SETTINGS SAVE (POST / SET)
 if [ "$ACTION" = "set" ] || [ "$REQUEST_METHOD" = "POST" ]; then
-    # Helper function to extract JSON or query param value
-    get_val() {
-        local key="$1"
-        local val=""
-        if [ -n "$BODY" ]; then
-            val=$(echo "$BODY" | grep -o "\"$key\"[ ]*:[ ]*\"[^\"]*\"" | sed -e "s/\"$key\"[ ]*:[ ]*\"//" -e 's/"$//')
-            [ -z "$val" ] && val=$(echo "$BODY" | grep -o "\"$key\"[ ]*:[ ]*[0-9a-zA-Z_-]*" | sed -e "s/\"$key\"[ ]*:[ ]*//" -e 's/[^0-9a-zA-Z_-]//g')
-        fi
-        if [ -z "$val" ] && [ -n "$QUERY_STRING" ]; then
-            val=$(echo "$QUERY_STRING" | sed -n "s/^.*$key=\([^&]*\).*$/\1/p")
-        fi
-        echo "$val"
+    if [ -n "$BODY" ]; then
+        eval "$(printf '%s' "$BODY" | jq -r '
+          def val(k): if .[k] == false then "0" elif .[k] == true then "1" elif .[k] != null then (.[k]|tostring) else "" end;
+          "MASTER_EN=" + (val("master_enabled") | @sh) + "\n" +
+          "EN_2G=" + (val("enable_2g") | @sh) + "\n" +
+          "SSID_2G=" + (val("ssid_2g") | @sh) + "\n" +
+          "KEY_2G=" + (val("key_2g") | @sh) + "\n" +
+          "ENC_2G=" + (val("enc_2g") | @sh) + "\n" +
+          "CH_2G=" + (val("channel_2g") | @sh) + "\n" +
+          "HT_2G=" + (val("htmode_2g") | @sh) + "\n" +
+          "HIDDEN_2G=" + (val("hidden_2g") | @sh) + "\n" +
+          "EN_5G=" + (val("enable_5g") | @sh) + "\n" +
+          "SSID_5G=" + (val("ssid_5g") | @sh) + "\n" +
+          "KEY_5G=" + (val("key_5g") | @sh) + "\n" +
+          "ENC_5G=" + (val("enc_5g") | @sh) + "\n" +
+          "CH_5G=" + (val("channel_5g") | @sh) + "\n" +
+          "HT_5G=" + (val("htmode_5g") | @sh) + "\n" +
+          "HIDDEN_5G=" + (val("hidden_5g") | @sh)
+        ' 2>/dev/null)"
+    fi
+
+    # Fallback to query string if body did not contain parameter
+    get_qs_val() {
+        printf '%s' "$QUERY_STRING" | sed -n "s/^.*$1=\([^&]*\).*$/\1/p"
     }
+    [ -z "$MASTER_EN" ] && MASTER_EN=$(get_qs_val "master_enabled")
+    [ -z "$EN_2G" ] && EN_2G=$(get_qs_val "enable_2g")
+    [ -z "$SSID_2G" ] && SSID_2G=$(get_qs_val "ssid_2g")
+    [ -z "$KEY_2G" ] && KEY_2G=$(get_qs_val "key_2g")
+    [ -z "$ENC_2G" ] && ENC_2G=$(get_qs_val "enc_2g")
+    [ -z "$CH_2G" ] && CH_2G=$(get_qs_val "channel_2g")
+    [ -z "$HT_2G" ] && HT_2G=$(get_qs_val "htmode_2g")
+    [ -z "$HIDDEN_2G" ] && HIDDEN_2G=$(get_qs_val "hidden_2g")
 
-    MASTER_EN=$(get_val "master_enabled")
-    EN_2G=$(get_val "enable_2g")
-    SSID_2G=$(get_val "ssid_2g")
-    KEY_2G=$(get_val "key_2g")
-    ENC_2G=$(get_val "enc_2g")
-    CH_2G=$(get_val "channel_2g")
-    HT_2G=$(get_val "htmode_2g")
-    HIDDEN_2G=$(get_val "hidden_2g")
-
-    EN_5G=$(get_val "enable_5g")
-    SSID_5G=$(get_val "ssid_5g")
-    KEY_5G=$(get_val "key_5g")
-    ENC_5G=$(get_val "enc_5g")
-    CH_5G=$(get_val "channel_5g")
-    HT_5G=$(get_val "htmode_5g")
-    HIDDEN_5G=$(get_val "hidden_5g")
+    [ -z "$EN_5G" ] && EN_5G=$(get_qs_val "enable_5g")
+    [ -z "$SSID_5G" ] && SSID_5G=$(get_qs_val "ssid_5g")
+    [ -z "$KEY_5G" ] && KEY_5G=$(get_qs_val "key_5g")
+    [ -z "$ENC_5G" ] && ENC_5G=$(get_qs_val "enc_5g")
+    [ -z "$CH_5G" ] && CH_5G=$(get_qs_val "channel_5g")
+    [ -z "$HT_5G" ] && HT_5G=$(get_qs_val "htmode_5g")
+    [ -z "$HIDDEN_5G" ] && HIDDEN_5G=$(get_qs_val "hidden_5g")
 
     # If master toggle is explicitly off (0), disable both radios
     if [ "$MASTER_EN" = "0" ]; then
@@ -184,13 +195,20 @@ if [ "$ACTION" = "set" ] || [ "$REQUEST_METHOD" = "POST" ]; then
         if [ "$EN_2G" = "0" ]; then
             uci set wireless.radio0.disabled="1" 2>/dev/null || true
             uci set wireless.default_radio0.disabled="1" 2>/dev/null || true
-        elif [ "$EN_2G" = "1" ] || [ -n "$SSID_2G" ]; then
+        elif [ "$EN_2G" = "1" ]; then
             uci set wireless.radio0.disabled="0" 2>/dev/null || true
             uci set wireless.default_radio0.disabled="0" 2>/dev/null || true
         fi
         [ -n "$SSID_2G" ] && uci set wireless.default_radio0.ssid="$SSID_2G" 2>/dev/null || true
-        [ -n "$KEY_2G" ] && uci set wireless.default_radio0.key="$KEY_2G" 2>/dev/null || true
-        [ -n "$ENC_2G" ] && uci set wireless.default_radio0.encryption="$ENC_2G" 2>/dev/null || true
+        if [ "$ENC_2G" = "none" ]; then
+            uci set wireless.default_radio0.encryption="none" 2>/dev/null || true
+            uci delete wireless.default_radio0.key 2>/dev/null || true
+        elif [ -n "$ENC_2G" ]; then
+            uci set wireless.default_radio0.encryption="$ENC_2G" 2>/dev/null || true
+            [ -n "$KEY_2G" ] && uci set wireless.default_radio0.key="$KEY_2G" 2>/dev/null || true
+        elif [ -n "$KEY_2G" ]; then
+            uci set wireless.default_radio0.key="$KEY_2G" 2>/dev/null || true
+        fi
         [ -n "$CH_2G" ] && uci set wireless.radio0.channel="$CH_2G" 2>/dev/null || true
         [ -n "$HT_2G" ] && uci set wireless.radio0.htmode="$HT_2G" 2>/dev/null || true
         [ -n "$HIDDEN_2G" ] && uci set wireless.default_radio0.hidden="$HIDDEN_2G" 2>/dev/null || true
@@ -199,13 +217,20 @@ if [ "$ACTION" = "set" ] || [ "$REQUEST_METHOD" = "POST" ]; then
         if [ "$EN_5G" = "0" ]; then
             uci set wireless.radio1.disabled="1" 2>/dev/null || true
             uci set wireless.default_radio1.disabled="1" 2>/dev/null || true
-        elif [ "$EN_5G" = "1" ] || [ -n "$SSID_5G" ]; then
+        elif [ "$EN_5G" = "1" ]; then
             uci set wireless.radio1.disabled="0" 2>/dev/null || true
             uci set wireless.default_radio1.disabled="0" 2>/dev/null || true
         fi
         [ -n "$SSID_5G" ] && uci set wireless.default_radio1.ssid="$SSID_5G" 2>/dev/null || true
-        [ -n "$KEY_5G" ] && uci set wireless.default_radio1.key="$KEY_5G" 2>/dev/null || true
-        [ -n "$ENC_5G" ] && uci set wireless.default_radio1.encryption="$ENC_5G" 2>/dev/null || true
+        if [ "$ENC_5G" = "none" ]; then
+            uci set wireless.default_radio1.encryption="none" 2>/dev/null || true
+            uci delete wireless.default_radio1.key 2>/dev/null || true
+        elif [ -n "$ENC_5G" ]; then
+            uci set wireless.default_radio1.encryption="$ENC_5G" 2>/dev/null || true
+            [ -n "$KEY_5G" ] && uci set wireless.default_radio1.key="$KEY_5G" 2>/dev/null || true
+        elif [ -n "$KEY_5G" ]; then
+            uci set wireless.default_radio1.key="$KEY_5G" 2>/dev/null || true
+        fi
         [ -n "$CH_5G" ] && uci set wireless.radio1.channel="$CH_5G" 2>/dev/null || true
         [ -n "$HT_5G" ] && uci set wireless.radio1.htmode="$HT_5G" 2>/dev/null || true
         [ -n "$HIDDEN_5G" ] && uci set wireless.default_radio1.hidden="$HIDDEN_5G" 2>/dev/null || true
@@ -216,7 +241,7 @@ if [ "$ACTION" = "set" ] || [ "$REQUEST_METHOD" = "POST" ]; then
     # Non-blocking reload of wireless stack
     ( wifi reload 2>/dev/null || wifi down 2>/dev/null || true ) </dev/null >/dev/null 2>&1 &
 
-    echo "{\"status\": \"ok\", \"message\": \"Wi-Fi settings applied successfully\"}"
+    jq -cn '{status: "ok", message: "Wi-Fi settings applied successfully"}'
     exit 0
 fi
 
@@ -316,34 +341,51 @@ STATIONS=$(jq -cn --argjson stations "$STATIONS" --argjson blocked_macs "${BLOCK
     | $connected + [$blocked[] as $mac | select(([$connected[].mac | ascii_downcase] | index($mac)) == null) | ($leases | map(select(.mac == $mac)) | first // {}) as $lease | {mac:$mac,ip:($lease.ip // ""),name:($lease.name // "Blocked Wi-Fi station"),hostname:($lease.name // "Blocked Wi-Fi station"),connected:false,blocked:true}]
 ' 2>/dev/null || printf '[]')
 
-cat <<EOF
-{
-  "status": "ok",
-  "master_enabled": $MASTER_EN,
-  "hardware": {
-    "radio2g": $HW_2G,
-    "radio5g": $HW_5G,
-    "soc_wcss": "IPQ9574 2.4GHz",
-    "pcie_pine": "QCN9074 5GHz"
-  },
-  "radio_2g": {
-    "enabled": $EN_2G,
-    "ssid": "$SSID_2G",
-    "key": "$KEY_2G",
-    "encryption": "$ENC_2G",
-    "channel": "$CH_2G",
-    "htmode": "$HT_2G",
-    "hidden": $HIDDEN_2G
-  },
-  "radio_5g": {
-    "enabled": $EN_5G,
-    "ssid": "$SSID_5G",
-    "key": "$KEY_5G",
-    "encryption": "$ENC_5G",
-    "channel": "$CH_5G",
-    "htmode": "$HT_5G",
-    "hidden": $HIDDEN_5G
-  },
-  "clients": $STATIONS
-}
-EOF
+jq -n \
+  --argjson master_enabled "$MASTER_EN" \
+  --argjson hw_2g "$HW_2G" \
+  --argjson hw_5g "$HW_5G" \
+  --argjson en_2g "$EN_2G" \
+  --arg ssid_2g "$SSID_2G" \
+  --arg key_2g "$KEY_2G" \
+  --arg enc_2g "$ENC_2G" \
+  --arg ch_2g "$CH_2G" \
+  --arg ht_2g "$HT_2G" \
+  --argjson hidden_2g "${HIDDEN_2G:-0}" \
+  --argjson en_5g "$EN_5G" \
+  --arg ssid_5g "$SSID_5G" \
+  --arg key_5g "$KEY_5G" \
+  --arg enc_5g "$ENC_5G" \
+  --arg ch_5g "$CH_5G" \
+  --arg ht_5g "$HT_5G" \
+  --argjson hidden_5g "${HIDDEN_5G:-0}" \
+  --argjson clients "$STATIONS" \
+  '{
+    status: "ok",
+    master_enabled: $master_enabled,
+    hardware: {
+      radio2g: $hw_2g,
+      radio5g: $hw_5g,
+      soc_wcss: "IPQ9574 2.4GHz",
+      pcie_pine: "QCN9074 5GHz"
+    },
+    radio_2g: {
+      enabled: $en_2g,
+      ssid: $ssid_2g,
+      key: $key_2g,
+      encryption: $enc_2g,
+      channel: $ch_2g,
+      htmode: $ht_2g,
+      hidden: $hidden_2g
+    },
+    radio_5g: {
+      enabled: $en_5g,
+      ssid: $ssid_5g,
+      key: $key_5g,
+      encryption: $enc_5g,
+      channel: $ch_5g,
+      htmode: $ht_5g,
+      hidden: $hidden_5g
+    },
+    clients: $clients
+  }'

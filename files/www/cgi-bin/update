@@ -160,11 +160,12 @@ if [ -s "$UPDATES_FILE" ] && jq -e . "$UPDATES_FILE" >/dev/null 2>&1; then
 fi
 
 if [ "$FETCH_NOW" -eq 1 ]; then
-    curl -s -L --connect-timeout 4 --max-time 8 -o "$UPDATES_FILE.tmp" "$UPDATES_URL" 2>/dev/null
-    if [ -s "$UPDATES_FILE.tmp" ] && jq -e . "$UPDATES_FILE.tmp" >/dev/null 2>&1; then
-        mv "$UPDATES_FILE.tmp" "$UPDATES_FILE"
+    TMP_FILE="${UPDATES_FILE}.$$.tmp"
+    curl -s -L --connect-timeout 4 --max-time 8 -o "$TMP_FILE" "$UPDATES_URL" 2>/dev/null
+    if [ -s "$TMP_FILE" ] && jq -e . "$TMP_FILE" >/dev/null 2>&1; then
+        mv -f "$TMP_FILE" "$UPDATES_FILE" 2>/dev/null
     else
-        rm -f "$UPDATES_FILE.tmp"
+        rm -f "$TMP_FILE" 2>/dev/null
         # Local fallback if present
         if [ ! -s "$UPDATES_FILE" ] || ! jq -e . "$UPDATES_FILE" >/dev/null 2>&1; then
             [ -s "/etc/updates/${DEV_KEY}.json" ] && cp "/etc/updates/${DEV_KEY}.json" "$UPDATES_FILE" 2>/dev/null

@@ -1,31 +1,52 @@
 #!/bin/sh
 
-# Remove default root password for passwordless system login
-passwd -d root 2>/dev/null || true
+# Remove default root password for passwordless system login only on clean/factory installs
+root_hash=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
+case "$root_hash" in
+	""|"\*"|"\!"|"x")
+		passwd -d root 2>/dev/null || true
+		;;
+	*)
+		# User has a configured root password; preserve it across sysupgrades
+		;;
+esac
 
-# Set system hostname and timezone
-uci set system.@system[0].hostname="MAXNET"
+# Set system hostname and timezone (preserve user hostname if already customized)
+cur_host=$(uci -q get system.@system[0].hostname)
+if [ -z "$cur_host" ] || [ "$cur_host" = "OpenWrt" ]; then
+	uci set system.@system[0].hostname="MAXNET"
+fi
 uci set system.@system[0].zonename="Asia/Kolkata"
 uci set system.@system[0].timezone="IST-5:30"
 uci set system.@system[0].zram_size_mb="256"
 uci set system.@system[0].zram_comp_algo="lzo-rle"
 uci commit system
 
-# Configure LAN IP to 10.0.0.1 and secondary alias 10.0.0.254
-uci set network.lan.ipaddr="10.0.0.1"
-uci add_list network.lan.ipaddr="10.0.0.254/24" 2>/dev/null || true
+# Configure LAN IP to 10.0.0.1 and secondary alias 10.0.0.254 (preserve user IP if customized)
+cur_lan=$(uci -q get network.lan.ipaddr)
+if [ -z "$cur_lan" ] || [ "$cur_lan" = "192.168.1.1" ]; then
+	uci set network.lan.ipaddr="10.0.0.1"
+	uci add_list network.lan.ipaddr="10.0.0.254/24" 2>/dev/null || true
+fi
 uci set network.@globals[0].packet_steering="1"
 uci commit network
 
-# Set Default High-Performance Wi-Fi SSIDs & Balanced Tx-Power (Open / No Pre-Password)
-uci set wireless.radio0.txpower="20" 2>/dev/null || true
-uci set wireless.radio1.txpower="23" 2>/dev/null || true
-uci set wireless.default_radio0.ssid="MAXNET" 2>/dev/null || true
-uci set wireless.default_radio0.encryption="none" 2>/dev/null || true
-uci delete wireless.default_radio0.key 2>/dev/null || true
-uci set wireless.default_radio1.ssid="MAXNET-5G" 2>/dev/null || true
-uci set wireless.default_radio1.encryption="none" 2>/dev/null || true
-uci delete wireless.default_radio1.key 2>/dev/null || true
+# Set Default High-Performance Wi-Fi SSIDs & Balanced Tx-Power ONLY if unconfigured or default OpenWrt
+cur_ssid_0=$(uci -q get wireless.default_radio0.ssid)
+if [ -z "$cur_ssid_0" ] || [ "$cur_ssid_0" = "OpenWrt" ]; then
+	uci set wireless.default_radio0.ssid="MAXNET" 2>/dev/null || true
+	uci set wireless.default_radio0.encryption="none" 2>/dev/null || true
+	uci delete wireless.default_radio0.key 2>/dev/null || true
+fi
+[ -z "$(uci -q get wireless.radio0.txpower)" ] && uci set wireless.radio0.txpower="20" 2>/dev/null || true
+
+cur_ssid_1=$(uci -q get wireless.default_radio1.ssid)
+if [ -z "$cur_ssid_1" ] || [ "$cur_ssid_1" = "OpenWrt" ]; then
+	uci set wireless.default_radio1.ssid="MAXNET-5G" 2>/dev/null || true
+	uci set wireless.default_radio1.encryption="none" 2>/dev/null || true
+	uci delete wireless.default_radio1.key 2>/dev/null || true
+fi
+[ -z "$(uci -q get wireless.radio1.txpower)" ] && uci set wireless.radio1.txpower="23" 2>/dev/null || true
 uci commit wireless 2>/dev/null || true
 
 # Fix dnsmasq startup sequence (START=60 after S20network)
@@ -110,8 +131,12 @@ fi
 for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog phone_telemetry ttyd; do
 	[ -x "/etc/init.d/$s" ] && /etc/init.d/"$s" enable 2>/dev/null && /etc/init.d/"$s" start 2>/dev/null || true
 done
-# Conserve DDR4 RAM by default, but preserve Tailscale if already configured
-[ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 disable 2>/dev/null || true
+# Conserve DDR4 RAM by default on clean factory install, but preserve if already enabled
+if [ "$(uci -q get samba4.@samba[0].enabled)" = "1" ] || [ -f /etc/rc.d/S*samba4 ]; then
+	[ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 enable 2>/dev/null || true
+elif [ ! -f /sysupgrade.tgz ]; then
+	[ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 disable 2>/dev/null || true
+fi
 if [ -s /etc/tailscale/tailscaled.state ]; then
 	[ -x /etc/init.d/tailscale ] && /etc/init.d/tailscale enable 2>/dev/null && /etc/init.d/tailscale start 2>/dev/null || true
 else

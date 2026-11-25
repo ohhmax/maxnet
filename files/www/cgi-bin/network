@@ -182,6 +182,13 @@ fi
 
 # ACTION: SET NETWORK SETTINGS
 if [ "$ACTION" = "set" ]; then
+    OLD_LAN_IP=$(uci -q get network.lan.ipaddr | cut -d' ' -f1)
+    OLD_NETMASK=$(uci -q get network.lan.netmask || echo '255.255.255.0')
+    OLD_DEV_HOST=$(uci -q get system.@system[0].hostname || echo '')
+    OLD_CUST_MAC=$(uci -q get network.lan.macaddr || echo '')
+    REBOOT_REQ="false"
+    REBOOT_REASONS=""
+
     LAN_IP=$(echo "$POST_DATA" | jq -r '.lan_ip // empty' 2>/dev/null)
     NETMASK=$(echo "$POST_DATA" | jq -r '.netmask // empty' 2>/dev/null)
     GATEWAY=$(echo "$POST_DATA" | jq -r '.gateway // empty' 2>/dev/null)
@@ -318,7 +325,33 @@ if [ "$ACTION" = "set" ]; then
     uci commit dhcp
     [ $reload_fw -eq 1 ] && uci commit firewall && (/sbin/fw4 reload >/dev/null 2>&1) &
     (/etc/init.d/dnsmasq restart >/dev/null 2>&1) &
-    echo '{"status": "ok", "message": "Network configuration applied successfully."}'
+
+    if [ -n "$LAN_IP" ] && [ "$LAN_IP" != "$OLD_LAN_IP" ]; then
+        REBOOT_REQ="true"
+        REBOOT_REASONS="LAN IP address changed to $LAN_IP"
+    fi
+    if [ -n "$NETMASK" ] && [ "$NETMASK" != "$OLD_NETMASK" ]; then
+        REBOOT_REQ="true"
+        [ -n "$REBOOT_REASONS" ] && REBOOT_REASONS="$REBOOT_REASONS, "
+        REBOOT_REASONS="${REBOOT_REASONS}Subnet mask changed"
+    fi
+    if [ -n "$DEV_HOST" ] && [ "$DEV_HOST" != "$OLD_DEV_HOST" ]; then
+        REBOOT_REQ="true"
+        [ -n "$REBOOT_REASONS" ] && REBOOT_REASONS="$REBOOT_REASONS, "
+        REBOOT_REASONS="${REBOOT_REASONS}Gateway hostname changed to $DEV_HOST"
+    fi
+    if [ -n "$CUST_MAC" ] && [ "$CUST_MAC" != "$OLD_CUST_MAC" ]; then
+        REBOOT_REQ="true"
+        [ -n "$REBOOT_REASONS" ] && REBOOT_REASONS="$REBOOT_REASONS, "
+        REBOOT_REASONS="${REBOOT_REASONS}LAN MAC address changed"
+    fi
+
+    if [ "$REBOOT_REQ" = "true" ]; then
+        touch /var/run/maxnet_reboot_required 2>/dev/null || true
+        printf "%s" "$REBOOT_REASONS" > /var/run/maxnet_reboot_reason 2>/dev/null || true
+    fi
+
+    echo "{\"status\": \"ok\", \"reboot_required\": $REBOOT_REQ, \"reboot_reason\": \"$REBOOT_REASONS\", \"message\": \"Network configuration applied successfully.\"}"
     exit 0
 fi
 

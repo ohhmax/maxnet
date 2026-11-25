@@ -61,21 +61,33 @@ EOF
 EOF
     done
 
-    # If no external drives mounted, only provide fallback share if user explicitly enabled samba
+    # If no external drives mounted, provide fallback share if user explicitly enabled samba
     if [ "$has_shares" -eq 0 ]; then
         samba_user_enabled=0
-        /etc/init.d/samba4 enabled 2>/dev/null && samba_user_enabled=1
+        [ "$(uci -q get samba4.@samba[0].enabled 2>/dev/null)" = "1" ] && samba_user_enabled=1
+        if [ "$samba_user_enabled" -eq 0 ] && /etc/init.d/samba4 enabled 2>/dev/null; then
+            samba_user_enabled=1
+        fi
         if [ "$samba_user_enabled" -eq 1 ]; then
             mkdir -p "$LEGACY_BASE"
+            chmod 777 "$LEGACY_BASE" 2>/dev/null
             cat << EOF >> "$SMB_CONF.tmp"
+
+[Pendrive]
+	comment = Fast Router Storage
+	path = $LEGACY_BASE
+	browseable = yes
+	read only = no
+	guest ok = yes
+	create mask = 0664
+	directory mask = 0775
 
 [Storage]
 	comment = Fast Router Storage
 	path = $LEGACY_BASE
 	browseable = yes
 	read only = no
-	guest ok = no
-	valid users = root
+	guest ok = yes
 	create mask = 0664
 	directory mask = 0775
 EOF
@@ -85,7 +97,8 @@ EOF
     mv "$SMB_CONF.tmp" "$SMB_CONF"
 
     samba_user_enabled=0
-    if /etc/init.d/samba4 enabled 2>/dev/null; then
+    [ "$(uci -q get samba4.@samba[0].enabled 2>/dev/null)" = "1" ] && samba_user_enabled=1
+    if [ "$samba_user_enabled" -eq 0 ] && /etc/init.d/samba4 enabled 2>/dev/null; then
         samba_user_enabled=1
     fi
 
@@ -201,7 +214,11 @@ while true; do
     # Check if disk state or samba user-enabled state changed
     PREV_STATE_KEY=""
     [ -f "$PREV_DISKS_FILE" ] && PREV_STATE_KEY=$(cat "$PREV_DISKS_FILE" 2>/dev/null)
-    samba_user_enabled=$(/etc/init.d/samba4 enabled 2>/dev/null && echo 1 || echo 0)
+    samba_user_enabled=0
+    [ "$(uci -q get samba4.@samba[0].enabled 2>/dev/null)" = "1" ] && samba_user_enabled=1
+    if [ "$samba_user_enabled" -eq 0 ] && /etc/init.d/samba4 enabled 2>/dev/null; then
+        samba_user_enabled=1
+    fi
     STATE_KEY="${CURR_DISKS}__${samba_user_enabled}"
 
     if [ "$STATE_KEY" != "$PREV_STATE_KEY" ]; then

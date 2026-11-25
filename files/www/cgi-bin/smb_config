@@ -45,28 +45,45 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
     if [ "$ACTION" = "toggle" ]; then
         ENABLE_REQ=$(echo "$POST_DATA" | jq -r ".enable // empty" 2>/dev/null)
         if [ "$ENABLE_REQ" = "true" ]; then
+            mkdir -p /mnt/pendrive /mnt/storage 2>/dev/null
+            chmod 777 /mnt/pendrive /mnt/storage 2>/dev/null
+            uci set samba4.@samba[0].enabled="1" 2>/dev/null
+            uci commit samba4 2>/dev/null
             /etc/init.d/samba4 enable >/dev/null 2>&1
             /usr/bin/maxnet_storage_manager.sh --update >/dev/null 2>&1 || true
-            /etc/init.d/samba4 start >/dev/null 2>&1
+            /etc/init.d/samba4 restart >/dev/null 2>&1 || /etc/init.d/samba4 start >/dev/null 2>&1
+            pgrep smbd >/dev/null || smbd -D 2>/dev/null || true
         elif [ "$ENABLE_REQ" = "false" ]; then
+            uci set samba4.@samba[0].enabled="0" 2>/dev/null
+            uci commit samba4 2>/dev/null
             /etc/init.d/samba4 stop >/dev/null 2>&1
             /etc/init.d/samba4 disable >/dev/null 2>&1
             killall smbd 2>/dev/null || true
         else
             if pgrep smbd >/dev/null; then
+                uci set samba4.@samba[0].enabled="0" 2>/dev/null
+                uci commit samba4 2>/dev/null
                 /etc/init.d/samba4 stop >/dev/null 2>&1
                 /etc/init.d/samba4 disable >/dev/null 2>&1
                 killall smbd 2>/dev/null || true
             else
+                mkdir -p /mnt/pendrive /mnt/storage 2>/dev/null
+                chmod 777 /mnt/pendrive /mnt/storage 2>/dev/null
+                uci set samba4.@samba[0].enabled="1" 2>/dev/null
+                uci commit samba4 2>/dev/null
                 /etc/init.d/samba4 enable >/dev/null 2>&1
                 /usr/bin/maxnet_storage_manager.sh --update >/dev/null 2>&1 || true
-                /etc/init.d/samba4 start >/dev/null 2>&1
+                /etc/init.d/samba4 restart >/dev/null 2>&1 || /etc/init.d/samba4 start >/dev/null 2>&1
+                pgrep smbd >/dev/null || smbd -D 2>/dev/null || true
             fi
         fi
-        sleep 1
+        for i in 1 2 3; do
+            pgrep smbd >/dev/null && break
+            sleep 1
+        done
         RUNNING=false
         pgrep smbd >/dev/null && RUNNING=true
-        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state updated\"}\n" "$RUNNING"
+        printf "{\"status\":\"ok\",\"running\":%s,\"smb_running\":%s,\"message\":\"SMB service state updated\"}\n" "$RUNNING" "$RUNNING"
         exit 0
     fi
 
@@ -99,22 +116,32 @@ if [ "$REQUEST_METHOD" = "GET" ]; then
     QUERY_ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
     if [ "$QUERY_ACTION" = "toggle" ]; then
         if pgrep smbd >/dev/null; then
+            uci set samba4.@samba[0].enabled="0" 2>/dev/null
+            uci commit samba4 2>/dev/null
             /etc/init.d/samba4 stop >/dev/null 2>&1
             /etc/init.d/samba4 disable >/dev/null 2>&1
             killall smbd 2>/dev/null || true
         else
+            mkdir -p /mnt/pendrive /mnt/storage 2>/dev/null
+            chmod 777 /mnt/pendrive /mnt/storage 2>/dev/null
+            uci set samba4.@samba[0].enabled="1" 2>/dev/null
+            uci commit samba4 2>/dev/null
             /etc/init.d/samba4 enable >/dev/null 2>&1
             /usr/bin/maxnet_storage_manager.sh --update >/dev/null 2>&1 || true
-            /etc/init.d/samba4 start >/dev/null 2>&1
+            /etc/init.d/samba4 restart >/dev/null 2>&1 || /etc/init.d/samba4 start >/dev/null 2>&1
+            pgrep smbd >/dev/null || smbd -D 2>/dev/null || true
         fi
-        sleep 1
+        for i in 1 2 3; do
+            pgrep smbd >/dev/null && break
+            sleep 1
+        done
         RUNNING=false
         pgrep smbd >/dev/null && RUNNING=true
-        printf "{\"status\":\"ok\",\"smb_running\":%s,\"message\":\"SMB service state toggled\"}\n" "$RUNNING"
+        printf "{\"status\":\"ok\",\"running\":%s,\"smb_running\":%s,\"message\":\"SMB service state toggled\"}\n" "$RUNNING" "$RUNNING"
         exit 0
     fi
 fi
 
 # Default response
-printf "{\"status\":\"ok\",\"username\":\"%s\",\"share_name\":\"Pendrive\",\"share_path\":\"/mnt/pendrive\",\"share_ip\":\"%s\",\"hostname\":\"%s\",\"mounted\":%s,\"smb_running\":%s,\"device\":\"%s\",\"total_space\":\"%s\",\"free_space\":\"%s\"}\n" \
-  "$SMB_USER" "$SMB_IP" "$SMB_HOST" "$MOUNTED" "$RUNNING" "$DEV_NAME" "$TOTAL_SPACE" "$FREE_SPACE"
+printf "{\"status\":\"ok\",\"running\":%s,\"smb_running\":%s,\"username\":\"%s\",\"share_name\":\"Pendrive\",\"share_path\":\"/mnt/pendrive\",\"share_ip\":\"%s\",\"hostname\":\"%s\",\"mounted\":%s,\"device\":\"%s\",\"total_space\":\"%s\",\"free_space\":\"%s\"}\n" \
+  "$RUNNING" "$RUNNING" "$SMB_USER" "$SMB_IP" "$SMB_HOST" "$MOUNTED" "$DEV_NAME" "$TOTAL_SPACE" "$FREE_SPACE"

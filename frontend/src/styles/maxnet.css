@@ -6672,6 +6672,48 @@ body[data-theme="dark"] {
       fill: none;
       stroke-width: 2;
     }
+    @keyframes rebootPulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      50% { transform: scale(1.02); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .topo-reboot-warning-btn {
+      width: auto !important;
+      height: 28px !important;
+      padding: 0 10px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      background: rgba(239, 68, 68, 0.16) !important;
+      border: 1px solid rgba(239, 68, 68, 0.45) !important;
+      border-radius: 14px !important;
+      color: #ef4444 !important;
+      font-size: 11px !important;
+      font-weight: 800 !important;
+      letter-spacing: 0.3px !important;
+      font-family: var(--font-mono, monospace) !important;
+      cursor: pointer !important;
+      animation: rebootPulse 2s infinite ease-in-out !important;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.25) !important;
+      transition: all 0.2s ease !important;
+      white-space: nowrap !important;
+    }
+    .topo-reboot-warning-btn:hover {
+      background: rgba(239, 68, 68, 0.28) !important;
+      border-color: #ef4444 !important;
+      color: #ffffff !important;
+    }
+    .topo-reboot-icon {
+      width: 13px;
+      height: 13px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.2;
+      flex-shrink: 0;
+    }
+    .settings-reboot-warning-btn {
+      margin-right: 8px;
+    }
     #tabOverview:fullscreen, #tabOverview:-webkit-full-screen {
       background: var(--bg, #0b0d13);
       padding: 0;
