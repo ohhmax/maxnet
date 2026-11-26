@@ -3,7 +3,7 @@
     {
       "build": 61,
       "version": "2.2.61",
-      "tested": false,
+      "tested": true,
       "title": "MAXNET | V2.2.61",
       "description": "N/A",
       "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.61-b61/maxnet-jidu6111-sysupgrade.bin",
@@ -16,7 +16,7 @@
     {
       "build": 60,
       "version": "2.2.60",
-      "tested": false,
+      "tested": true,
       "title": "MAXNET | V2.2.60",
       "description": "N/A",
       "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.60-b60/maxnet-jidu6111-sysupgrade.bin",
@@ -42,7 +42,7 @@
     {
       "build": 58,
       "version": "2.2.58",
-      "tested": false,
+      "tested": true,
       "title": "MAXNET | V2.2.58",
       "description": "N/A",
       "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.58-b58/maxnet-jidu6111-sysupgrade.bin",
