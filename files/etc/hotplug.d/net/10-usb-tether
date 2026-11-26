@@ -1,14 +1,22 @@
 #!/bin/sh
-# Bring up wan_usb automatically and update firewall DNAT redirect for port 5555
-[ "$DEVICENAME" = "usb0" -o "$INTERFACE" = "usb0" ] || exit 0
+# Bring up wan_usb automatically and optimize USB 3.0 High-Speed Tethering
+case "$DEVICENAME" in
+    usb*|ncm*|rndis*) ;;
+    *)
+        case "$INTERFACE" in
+            usb*|ncm*|rndis*) DEVICENAME="$INTERFACE" ;;
+            *) exit 0 ;;
+        esac
+        ;;
+esac
 
 if [ "$ACTION" = "add" ]; then
     sleep 1
-    ethtool -K usb0 gro on 2>/dev/null || true
+    ethtool -K "$DEVICENAME" gro on 2>/dev/null || true
     # Multi-Core RPS & RFS Steering (Cores 0-3)
-    echo f > /sys/class/net/usb0/queues/rx-0/rps_cpus 2>/dev/null || true
-    echo 4096 > /sys/class/net/usb0/queues/rx-0/rps_flow_cnt 2>/dev/null || true
-    echo f > /sys/class/net/usb0/queues/tx-0/xps_cpus 2>/dev/null || true
+    echo f > "/sys/class/net/$DEVICENAME/queues/rx-0/rps_cpus" 2>/dev/null || true
+    echo 4096 > "/sys/class/net/$DEVICENAME/queues/rx-0/rps_flow_cnt" 2>/dev/null || true
+    echo f > "/sys/class/net/$DEVICENAME/queues/tx-0/xps_cpus" 2>/dev/null || true
 
     # Hardware IRQ Steering: Steer xHCI USB 3.0 interrupts to CPU 1
     for irq_dir in /proc/irq/*; do
@@ -18,10 +26,10 @@ if [ "$ACTION" = "add" ]; then
     done
 
     # Maximum Throughput MTU (1500) & Ultra-Deep queue sizing (10000)
-    ip link set usb0 mtu 1500 qlen 10000 2>/dev/null || ifconfig usb0 mtu 1500 txqueuelen 10000 2>/dev/null || true
+    ip link set "$DEVICENAME" mtu 1500 qlen 10000 2>/dev/null || ifconfig "$DEVICENAME" mtu 1500 txqueuelen 10000 2>/dev/null || true
 
     # Smart Queue Management (CAKE / FQ-CoDel)
-    tc qdisc replace dev usb0 root cake diffserv4 ack-filter 2>/dev/null || true
+    tc qdisc replace dev "$DEVICENAME" root cake diffserv4 ack-filter 2>/dev/null || true
 
     # Disable USB autosuspend on controller and root hub
     for f in /sys/bus/usb/devices/*/power/control; do echo on > "$f" 2>/dev/null; done
@@ -30,13 +38,19 @@ if [ "$ACTION" = "add" ]; then
     # Disable USB 3.0 LPM on Samsung Galaxy device
     echo "04e8:6864:k" > /sys/module/usbcore/parameters/quirks 2>/dev/null || true
 
+    # IPv6 Router Solicitation and Neighbor Discovery resilience
+    sysctl -w "net.ipv6.conf.$DEVICENAME.accept_ra=2" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.force_tllao=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.ndisc_notify=1" >/dev/null 2>&1 || true
+    ip link set "$DEVICENAME" allmulticast on 2>/dev/null || true
+
     ifup wan_usb
     
     # Wait for gateway IP address assignment and update ADB-Forward redirect
     (
         for i in $(seq 1 15); do
             sleep 1
-            gw=$(ip route show default dev usb0 2>/dev/null | awk '{print $3}' | head -n 1)
+            gw=$(ip route show default dev "$DEVICENAME" 2>/dev/null | awk '{print $3}' | head -n 1)
             if [ -n "$gw" ]; then
                 uci set firewall.adb_forward.dest_ip="$gw"
                 uci commit firewall

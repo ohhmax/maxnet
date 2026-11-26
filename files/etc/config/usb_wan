@@ -5,7 +5,7 @@ config usb_wan 'global'
 	option ping_interval '15'
 	option dns_override '1.1.1.1 8.8.8.8'
 	option auto_reconnect '1'
-	option tether_proto 'rndis'
+	option tether_proto 'ncm'
 
 config device 'usb0'
 	option name 'USB Modem 1 (Primary)'

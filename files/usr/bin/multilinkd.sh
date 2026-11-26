@@ -112,7 +112,7 @@ while true; do
     fi
 
     # Check USB / tether interfaces
-    for d in /sys/class/net/usb* /sys/class/net/rndis* /sys/class/net/eth*; do
+    for d in /sys/class/net/usb* /sys/class/net/rndis* /sys/class/net/ncm* /sys/class/net/eth*; do
         [ -d "$d" ] || continue
         iname=$(basename "$d")
         case "$iname" in

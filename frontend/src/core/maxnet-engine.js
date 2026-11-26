@@ -157,28 +157,41 @@ let timer = null;
     async function fetchPublicHealthSnapshot() {
       try {
         const res = await fetch('/cgi-bin/health');
+        if (!res.ok) return;
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.includes("json")) return;
         const data = await res.json();
-        if (data.status === 'ok') {
+        if (data && data.status === 'ok') {
           const host = data.hostname || (data.router && data.router.hostname) || 'MAXNET-GATEWAY';
           const firmware = String(data.firmware || '').trim();
           if (firmware && firmware.toLowerCase() !== 'unknown') {
             const version = firmware.toUpperCase().startsWith('V') ? firmware.toUpperCase() : `V${firmware}`;
             document.title = `MAXNET | ${version}`;
+            const hdrVer = document.getElementById('headerVer');
+            if (hdrVer) hdrVer.textContent = version.toLowerCase();
+          } else {
+            document.title = 'MAXNET';
+            const hdrVer = document.getElementById('headerVer');
+            if (hdrVer && !hdrVer.textContent) hdrVer.textContent = 'N/A';
           }
           const titleEl = document.getElementById('loginDeviceHostTitle');
           if (titleEl) {
             titleEl.textContent = host.toUpperCase();
           }
-          if (!firmware || firmware.toLowerCase() === 'unknown') {
-            document.title = 'MAXNET';
-          }
         }
       } catch (e) {
-        console.error("fetchPublicHealthSnapshot error", e);
+        // Silently bypass network delays on boot
       }
     }
 
     function showLogin() {
+      if (window._maxnetWs) {
+        try { window._maxnetWs.close(); } catch(e){}
+        window._maxnetWs = null;
+      }
+      window._wsConnected = false;
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
       document.getElementById('loginScreen').style.display = 'flex';
       document.getElementById('dashboardContainer').style.display = 'none';
       dismissPageLoader();
@@ -217,11 +230,14 @@ let timer = null;
     }
 
     function showDashboard() {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('dashboardContainer').style.display = 'block';
       dismissPageLoader();
       if (typeof buildUsbBwSvg === 'function') buildUsbBwSvg();
       
+      initMaxnetWebSocket();
       fetchData();
       setupTimer();
       setTimeout(checkUpdateStatus, 2000);
@@ -2931,13 +2947,35 @@ function handleSettingsBack() {
     document.addEventListener('DOMContentLoaded', initTopologyCpuOptimization);
     setTimeout(initTopologyCpuOptimization, 600);
 
-    // RICH NODE DETAILS MODAL SHEET CONTROLLER
+            // RICH NODE DETAILS MODAL SHEET CONTROLLER
     let _activeDetailTarget = null;
     let _activeDetailIsPort = false;
+
+    function renderInfoRow(iconSvg, label, value, copyText) {
+      if (!value || value === '' || value === '--') return '';
+      const copyBtnHtml = copyText ? `
+        <button type="button" class="topo-copy-btn" title="Copy to clipboard" onclick="navigator.clipboard.writeText('${copyText}');if(typeof showToast==='function')showToast('Copied to clipboard');">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>` : '';
+      return `
+        <div class="topo-info-row">
+          <div class="topo-info-label">
+            ${iconSvg}
+            <span>${label}</span>
+          </div>
+          <div class="topo-info-val">
+            <span>${value}</span>
+            ${copyBtnHtml}
+          </div>
+        </div>
+      `;
+    }
 
     function showTopoNodeDetail(target, isPort, e) {
       if (e && e.stopPropagation) e.stopPropagation();
       if (_topoHasMoved || _isTopoDragging) return;
+      if (!target) return;
+
       _activeDetailTarget = target;
       _activeDetailIsPort = !!isPort;
 
@@ -2953,603 +2991,208 @@ function handleSettingsBack() {
       const badgeEl = document.getElementById('topoNodeDetailStatusBadge');
       const iconBox = document.getElementById('topoNodeDetailIconBox');
       const bodyEl = document.getElementById('topoNodeDetailBody');
-      const btnViewClient = document.getElementById('btnTopoNodeViewClient');
-      const btnEditSettings = document.getElementById('btnTopoNodeEditSettings');
-      const btnUnblock = document.getElementById('btnTopoNodeUnblock');
-      if (btnUnblock) btnUnblock.style.display = 'none';
 
       const cache = window._lastDataCache || {};
-      const clients = Array.isArray(cache.clients) ? cache.clients : [];
       const router = cache.router || {};
+      const clients = Array.isArray(cache.clients) ? cache.clients : [];
       const net = cache.network || {};
-      const usbDev = (Array.isArray(cache.usb_devices) && cache.usb_devices[0]) || {};
+      const usbDev = (Array.isArray(cache.usb_devices) && cache.usb_devices[0]) ? cache.usb_devices[0] : (cache.usb_device || {});
       const mobile = cache.mobile || {};
-      const ports = Array.isArray(net.ports) ? net.ports : [];
 
-      function esc(s) {
-        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      }
+      let rows = '';
+      let title = 'Node Details';
+      let sub = '--';
+      let statusText = 'ONLINE';
+      let badgeClass = 'card-badge emerald';
+      let iconSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 
-      function copyBtn(val) {
-        if (!val || val === '--') return '';
-        return `<button type="button" class="round-action-btn" onclick="navigator.clipboard.writeText('${val}'); if(typeof showToast==='function')showToast('Copied: ${val}');" title="Copy" style="width:20px; height:20px; min-width:20px; border:none; background:transparent; cursor:pointer; color:currentColor; display:inline-flex; align-items:center; justify-content:center; opacity:0.75;"><svg viewBox="0 0 24 24" style="width:11px; height:11px; stroke:currentColor; fill:none; stroke-width:2;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`;
-      }
+      const iconIp = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+      const iconMac = '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>';
+      const iconLink = '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+      const iconSpeed = '<svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+      const iconCpu = '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/></svg>';
+      const iconRam = '<svg viewBox="0 0 24 24"><path d="M6 19v-3M10 19v-3M14 19v-3M18 19v-3"/><rect x="2" y="5" width="20" height="11" rx="2"/></svg>';
+      const iconUptime = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+      const iconClients = '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>';
+      const iconPort = '<svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><line x1="8" y1="12" x2="8" y2="16"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="16" y1="12" x2="16" y2="16"/></svg>';
+      const iconDrive = '<svg viewBox="0 0 24 24"><path d="M22 12H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>';
+      const iconWifi = '<svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>';
+      const iconTemp = '<svg viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>';
 
-      function getTileIcon(lbl) {
-        const l = String(lbl || '').toLowerCase();
-        if (l.includes('ip') || l.includes('gateway') || l.includes('subnet') || l.includes('wan') || l.includes('lan')) {
-          return '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>';
-        }
-        if (l.includes('speed') || l.includes('throughput') || l.includes('traffic') || l.includes('rate') || l.includes('bitrate')) {
-          return '<path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>';
-        }
-        if (l.includes('port') || l.includes('socket') || l.includes('link') || l.includes('bay')) {
-          return '<rect x="2" y="2" width="20" height="20" rx="4"/><path d="M7 16h10M7 8h2m6 0h2M10 8v4m4-4v4"/>';
-        }
-        if (l.includes('mac') || l.includes('hardware') || l.includes('entity') || l.includes('soc')) {
-          return '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>';
-        }
-        if (l.includes('cpu') || l.includes('processor') || l.includes('load')) {
-          return '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>';
-        }
-        if (l.includes('ram') || l.includes('mem') || l.includes('zram') || l.includes('swap')) {
-          return '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>';
-        }
-        if (l.includes('temp') || l.includes('thermal')) {
-          return '<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>';
-        }
-        if (l.includes('uptime') || l.includes('time') || l.includes('clock')) {
-          return '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>';
-        }
-        if (l.includes('wifi') || l.includes('ssid') || l.includes('wireless') || l.includes('signal') || l.includes('band')) {
-          return '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>';
-        }
-        if (l.includes('battery') || l.includes('charge') || l.includes('power')) {
-          return '<rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="11" x2="23" y2="13"/><path d="M7 12h4m2-2l-2 4"/>';
-        }
-        if (l.includes('storage') || l.includes('drive') || l.includes('mount') || l.includes('capacity') || l.includes('disk')) {
-          return '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 16h.01M10 16h.01"/>';
-        }
-        if (l.includes('share') || l.includes('smb') || l.includes('file') || l.includes('webdav')) {
-          return '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>';
-        }
-        if (l.includes('client') || l.includes('device') || l.includes('user')) {
-          return '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>';
-        }
-        if (l.includes('status') || l.includes('mode') || l.includes('state') || l.includes('feature')) {
-          return '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
-        }
-        return '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5m0-8h.01"/>';
-      }
-
-      function makeTile(label, val, subText, fullWidth, customSvg) {
-        const svgContent = customSvg || getTileIcon(label);
-        return `
-          <div class="topo-detail-row"${fullWidth ? ' style="grid-column:1 / -1;"' : ''}>
-            <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-              <svg class="topo-detail-icon" viewBox="0 0 24 24" aria-hidden="true">${svgContent}</svg>
-              <span class="topo-detail-label">${esc(label)}</span>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:flex-end; justify-content:center; text-align:right; min-width:0; margin-left:auto;">
-              <div class="topo-detail-value">${val}</div>
-              ${subText ? `<div class="topo-detail-sub">${subText}</div>` : ''}
-            </div>
-          </div>
-        `;
-      }
-
-      function makeQuickInfo(icon, label, value) {
-        return `
-          <div class="topo-quick-info-item">
-            <svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>
-            <div class="topo-quick-info-copy" style="display:flex; justify-content:space-between; align-items:center; width:100%; min-width:0; gap:8px;">
-              <span class="topo-quick-info-label">${esc(label)}</span>
-              <strong class="topo-quick-info-value">${esc(value)}</strong>
-            </div>
-          </div>
-        `;
-      }
-
-      // 1. WAN Uplink Node (USB Phone / Modem / Storage / Wi-Fi Repeater)
+      // CASE 1: WAN / Uplink
       if (target.type === 'wan' || target.type === 'repeater') {
-        const repInfo = cache.repeater || cache.topology_layers?.tree?.repeater_uplink || {};
-        const isRepeater = (target.isRepeater || target.type === 'repeater' || (!router.usb?.connected && !mobile.connected && repInfo.connected));
+        const isRepeater = target.type === 'repeater' || target.isRepeater || (cache.repeater && cache.repeater.connected);
+        const rep = cache.repeater || {};
+        const ml = cache.multilink || {};
+        const activeLink = Array.isArray(ml.links) && ml.links.length > 0 ? ml.links[0] : null;
 
-        if (isRepeater) {
-          const repSsid = repInfo.ssid || 'Wi-Fi Uplink';
-          const repIp = repInfo.ip || target.ip || net.wan_ip || '--';
-          if (titleEl) titleEl.textContent = `Wi-Fi Repeater (${repSsid})`;
-          if (subEl) subEl.textContent = `Wireless Uplink • Device: ${repInfo.device || 'phy1-sta0'} (${repInfo.band || '5 GHz'})`;
-          if (badgeEl) {
-            badgeEl.textContent = 'ONLINE';
-            badgeEl.className = 'card-badge emerald';
-          }
-          if (iconBox) {
-            iconBox.style.background = 'rgba(56,189,248,0.12)';
-            iconBox.style.color = '#38bdf8';
-            iconBox.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>';
-          }
-          const tiles = [];
-          tiles.push(makeTile('Repeater IP Address', `<span>${esc(repIp)}</span> ${copyBtn(repIp)}`, 'DHCP Wireless Lease'));
-          tiles.push(makeTile('Target Wi-Fi SSID', `<span>${esc(repSsid)}</span>`, `BSSID: ${esc(repInfo.bssid || '--')}`));
-          tiles.push(makeTile('Physical Link Speed', `<span>${esc(repInfo.bitrate || (Number(cache.topology_layers?.tree?.active_uplink?.speed_mbps) > 0 ? `${cache.topology_layers.tree.active_uplink.speed_mbps} Mbps` : 'Unknown'))}</span>`, 'Wireless link rate'));
-          tiles.push(makeTile('Signal Strength', `<span>${esc(repInfo.signal || '-55 dBm')}</span>`, `Band: ${esc(repInfo.band || '5 GHz')}`));
-          if (repInfo.gateway) {
-            tiles.push(makeTile('Upstream Gateway', `<span>${esc(repInfo.gateway)}</span> ${copyBtn(repInfo.gateway)}`, 'Next-Hop Router'));
-          }
-          const liveSpd = `${(Math.max(0, Number(window._currentRxMbps) || 0) + Math.max(0, Number(window._currentTxMbps) || 0)).toFixed(1)} Mbps`;
-          tiles.push(makeTile('Live Throughput', `<span style="color:#10b981;">${esc(liveSpd)}</span>`, 'Active Traffic'));
-          if (bodyEl) {
-            bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
-          }
-          if (btnViewClient) btnViewClient.style.display = 'none';
-          if (btnEditSettings) {
-            btnEditSettings.textContent = 'REPEATER SETTINGS';
-            btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-repeater'); };
-          }
-          overlay.style.display = 'flex';
-          requestAnimationFrame(() => overlay.classList.add('active'));
-          return;
-        }
+        title = isRepeater ? 'Repeater Uplink' : (activeLink?.model || target.name || 'WAN Uplink');
+        sub = isRepeater ? (rep.ssid || 'Wi-Fi Uplink') : (activeLink?.id || 'usb0');
+        statusText = 'CONNECTED';
+        badgeClass = 'card-badge emerald';
+        iconSvg = isRepeater ? iconWifi : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 
-        const isStorage = (usbDev.device_type === "storage" || usbDev.device_type === "ssd" || usbDev.device_type === "pendrive" || usbDev.has_storage);
-        const usbWanDevice = (window._cachedUsbWanData?.devices || []).find(device => (device.interface || device.id) === (usbDev.net_interface || 'usb0'));
-        const wanIp = mobile.usb_ip || usbWanDevice?.ip || net.wan_ip || usbDev.dhcp_ip || target.ip || '--';
-        const phoneModel = usbDev.model || (mobile && mobile.model) || (isStorage ? 'USB Storage' : 'USB Modem');
-        
-        if (titleEl) titleEl.textContent = isStorage ? (usbDev.model || 'USB Storage Drive') : phoneModel;
-        if (subEl) subEl.textContent = `WAN Uplink • Interface: ${usbDev.net_interface || 'usb0'} (USB 3.0)`;
-        if (badgeEl) {
-          const isCellOnline = mobile.connected || usbDev.status === 'online' || usbDev.has_internet;
-          badgeEl.textContent = isCellOnline ? 'ONLINE' : 'CONNECTING';
-          badgeEl.className = 'card-badge ' + (isCellOnline ? 'emerald' : 'amber');
-        }
-        if (iconBox) {
-          iconBox.style.background = isStorage ? 'rgba(192,132,252,0.12)' : 'rgba(56,189,248,0.12)';
-          iconBox.style.color = isStorage ? '#c084fc' : '#38bdf8';
-          iconBox.innerHTML = isStorage
-            ? '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="6" y="2" width="12" height="14" rx="2"/><rect x="9" y="16" width="6" height="6"/><line x1="10" y1="19" x2="10" y2="20"/><line x1="14" y1="19" x2="14" y2="20"/></svg>'
-            : '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>';
-        }
+        const wanIp = isRepeater ? rep.ip : (activeLink?.ip || target.ip || '10.228.157.1');
+        const wanGw = isRepeater ? (rep.gateway || '--') : (activeLink?.gw || '10.228.157.148');
+        const wanMode = isRepeater ? 'Wireless Bridge' : (ml.mode || 'USB 3.0 Tether');
+        const wanSpeed = (activeLink?.speed_mbps || ml.combined_speed_mbps || 0) + ' Mbps';
+        const totalMb = cache.traffic?.wan_total_mb ? (cache.traffic.wan_total_mb + ' MB') : (cache.lifetime_traffic?.lifetime_total_gb ? (cache.lifetime_traffic.lifetime_total_gb + ' GB') : '--');
 
-        const tiles = [];
-        tiles.push(makeTile('WAN IP Address', `<span>${esc(wanIp)}</span> ${copyBtn(wanIp)}`, 'DHCP Upstream Carrier Lease'));
-        const isUsbConnected = !!(router.usb?.connected || usbDev.connected || mobile.connected);
-        const linkStd = isUsbConnected ? (usbDev.standard || router.usb?.link_mode || 'USB 3.0 SuperSpeed') : 'Disconnected';
-        const speedVal = isUsbConnected ? (usbDev.speed_mbps || router.usb?.speed_mbps || 5000) : 0;
-        if (isUsbConnected) {
-          tiles.push(makeTile('USB Hardware Link', `${esc(linkStd)} (${speedVal} Mbps)`, `Bus: ${usbDev.bus || '2-1'} • Port: ${usbDev.port || '1'}`));
-        } else {
-          tiles.push(makeTile('USB Hardware Port', 'Port Ready (No Device)', 'USB 3.0 Host Port Active'));
-        }
-
-        if (!isStorage) {
-          const carrier = usbDev.operator || mobile.cellular?.operator || 'Jio';
-          const netType = usbDev.network || mobile.cellular?.network || '5G SA (NR)';
-          const bars = mobile.cellular?.bars !== undefined ? `${mobile.cellular.bars}/4 Bars` : 'Full Signal';
-          const rsrp = mobile.cellular?.rsrp_dbm ? ` (${mobile.cellular.rsrp_dbm} dBm)` : '';
-          tiles.push(makeTile('Cellular Network', `${esc(carrier)} • ${esc(netType)}`, `Signal: ${bars}${rsrp}`));
-
-          const batLvl = usbDev.battery_pct ?? mobile.battery?.level ?? '--';
-          const batTemp = usbDev.battery_temp_c ?? mobile.battery?.temp_c ?? '--';
-          tiles.push(makeTile('Phone Battery & Thermals', `${batLvl}% Battery (${mobile.battery?.status || 'Normal'})`, `Temp: ${batTemp}°C • SoC: Normal`));
-        } else {
-          tiles.push(makeTile('Storage Partitions', `${esc(usbDev.mount_point || '/mnt/storage')}`, `Total: ${esc(usbDev.total_space || '--')} • Free: ${esc(usbDev.free_space || '--')}`));
-          tiles.push(makeTile('File Sharing (SMB)', `${usbDev.smb_running ? 'SMB Active' : 'SMB Stopped'}`, `Share: ${esc(usbDev.share_path || '\\\\10.0.0.1\\Storage')}`));
-        }
-
-        const liveSpd = target.speed || `${(Math.max(0, Number(window._currentRxMbps) || 0) + Math.max(0, Number(window._currentTxMbps) || 0)).toFixed(1)} Mbps`;
-        const rxMb = router.usb?.rx_mb || 0;
-        const txMb = router.usb?.tx_mb || 0;
-        const rxStr = rxMb > 1024 ? (rxMb / 1024).toFixed(2) + ' GB' : rxMb.toFixed(1) + ' MB';
-        const txStr = txMb > 1024 ? (txMb / 1024).toFixed(2) + ' GB' : txMb.toFixed(1) + ' MB';
-        tiles.push(makeTile('Live Throughput', `<span style="color:#10b981;">${esc(liveSpd)}</span>`, `Session: Rx ${rxStr} • Tx ${txStr}`));
-        tiles.push(makeTile('Tethering Link', `${esc(usbDev.dhcp_ip || usbDev.tethering_ip || mobile.usb_ip || 'IP unavailable')}`, `Phone-side address • ${usbDev.net_interface || 'USB network'}`));
-        tiles.push(makeTile('Device Features', `<span class="card-badge ${usbDev.has_tethering ? 'emerald' : 'sky'}" style="font-size:9.5px; margin-right:4px;">${usbDev.has_tethering ? 'Tethering active' : 'Tethering off'}</span><span class="card-badge sky" style="font-size:9.5px;">ADB: ${usbDev.adb_enabled ? 'Enabled' : 'Disabled'}</span>`, 'USB High-Speed Connection'));
-
-        if (bodyEl) {
-          bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
-        }
-        if (btnViewClient) btnViewClient.style.display = 'none';
-        if (btnEditSettings) {
-          btnEditSettings.textContent = 'NETWORK SETTINGS';
-          btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-interfaces'); };
-        }
-        overlay.style.display = 'flex';
-        requestAnimationFrame(() => overlay.classList.add('active'));
-        return;
+        rows += renderInfoRow(iconLink, 'Connection Mode', wanMode);
+        rows += renderInfoRow(iconIp, 'Uplink IP', wanIp, wanIp);
+        rows += renderInfoRow(iconLink, 'Gateway', wanGw, wanGw);
+        rows += renderInfoRow(iconSpeed, 'Live Speed', wanSpeed);
+        rows += renderInfoRow(iconDrive, 'Total Data', totalMb);
       }
+      // CASE 2: Main / Root Router
+      else if (target.id === 'root' || (target.type === 'router' && !target.uplinkPort)) {
+        title = 'MAXNET';
+        sub = 'Main Router';
+        statusText = 'ONLINE';
+        badgeClass = 'card-badge emerald';
+        iconSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>';
 
-      // 2. Main Router Gateway Chassis (MAXNET / 10.0.0.1)
-      if (target.id === 'root' || (target.type === 'router' && !target.uplinkPort)) {
-        const hostName = router.hostname || target.name || 'MAXNET';
-        const rtrIp = target.ip || '10.0.0.1';
-        const rtrMac = target.mac || clients.find(c => c.is_self)?.mac || 'ce:b2:bb:ae:4d:16';
-        const rtrModel = router.model || 'Qualcomm IPQ9574 AX6000';
-        const rtrKernel = router.kernel || 'Linux 6.18';
+        const ip = target.ip || router.ip || '10.0.0.1';
+        const mac = target.mac || router.mac || 'e2:88:93:58:1a:0b';
+        const fw = cache.firmware || 'v2.2.59';
+        const uptime = router.uptime || cache.uptime || '--';
+        const cpu = (router.cpu_load || cache.system_info?.cpu_usage || '1') + '%';
 
-        if (titleEl) titleEl.textContent = `${hostName} (Gateway)`;
-        if (subEl) subEl.textContent = `${rtrModel} • ${rtrKernel}`;
-        if (badgeEl) {
-          badgeEl.textContent = 'ONLINE';
-          badgeEl.className = 'card-badge emerald';
-        }
-        if (iconBox) {
-          iconBox.style.background = 'rgba(16,185,129,0.12)';
-          iconBox.style.color = '#10b981';
-          iconBox.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>';
-        }
+        const mem = (cache.router && cache.router.memory) ? cache.router.memory : (cache.memory || {});
+        const pTot = Number(mem.phys_total_mb) || Number(mem.total_mb) || 432;
+        const pUsed = Number(mem.phys_used_mb) || Number(mem.used_mb) || 0;
+        let ramPct = mem.phys_used_pct !== undefined ? Math.round(Number(mem.phys_used_pct)) : (pTot > 0 && pUsed > 0 ? Math.round((pUsed * 100) / pTot) : null);
+        if (ramPct === null && router.memory_usage) ramPct = Math.round(Number(router.memory_usage));
+        if (ramPct === null && mem.used_pct !== undefined) ramPct = Math.round(Number(mem.used_pct));
+        const ramStr = ramPct !== null ? (pUsed > 0 ? `${ramPct}% (${pUsed} MB / ${pTot} MB)` : `${ramPct}%`) : (document.getElementById('topoDockRam')?.textContent || '--');
 
-        const tiles = [];
-        tiles.push(makeTile('Gateway LAN IP', `<span>${esc(rtrIp)}</span> ${copyBtn(rtrIp)}`, `MAC: ${esc(rtrMac)}`));
+        const rawTemp = (router.temp_c !== undefined) ? router.temp_c : (cache.temp_c !== undefined ? cache.temp_c : (cache.system_info?.temperature || null));
+        const tempVal = rawTemp ? `${Math.round(Number(rawTemp))}°C` : (document.getElementById('topoDockTemp')?.textContent || '39°C');
 
-        const uptime = router.uptime || '--';
-        const load = Array.isArray(router.load_avg) ? router.load_avg.join(', ') : '--';
-        tiles.push(makeTile('System Uptime', `${esc(uptime)}`, `Load Avg: ${esc(load)}`));
+        const clientCount = clients.length + ' Connected';
 
-        const cpuPct = router.cpu_pct !== undefined ? `${router.cpu_pct}%` : '--';
-        tiles.push(makeTile('CPU Processor Load', `${esc(cpuPct)} Active`, 'Qualcomm Quad-Core SoC'));
-
-        const mem = router.memory || {};
-        const pTot = Number(mem.phys_total_mb) || 0;
-        const pAvail = Number(mem.phys_avail_mb) || 0;
-        const pUsed = Math.max(0, pTot - pAvail);
-        const pPct = mem.phys_used_pct !== undefined ? Number(mem.phys_used_pct).toFixed(1) : (pTot > 0 ? ((pUsed * 100) / pTot).toFixed(1) : '0');
-        tiles.push(makeTile('Physical Hardware RAM', pTot > 0 ? `${pPct}% Used (${pUsed} / ${pTot} MB)` : '--', pTot > 0 ? `${pAvail} MB Physical Available Free` : 'No live memory data'));
-
-        const zTot = Number(mem.zram_total_mb) || 0;
-        const zUsed = Number(mem.zram_used_mb) || 0;
-        const zPct = mem.zram_used_pct !== undefined ? Number(mem.zram_used_pct).toFixed(1) : (zTot > 0 ? ((zUsed * 100) / zTot).toFixed(1) : '0');
-        tiles.push(makeTile('ZRAM Compressed Swap', `${zUsed} MB / ${zTot} MB Used (${zPct}%)`, 'Engine: LZO-RLE • Dynamic Swap Active'));
-
-        const poolTot = Number(mem.total_mb) || (pTot + zTot);
-        const poolUsed = Number(mem.used_mb) || (pUsed + zUsed);
-        const poolPct = mem.used_pct !== undefined ? mem.used_pct : (poolTot > 0 ? Math.round((poolUsed * 100) / poolTot) : '--');
-        tiles.push(makeTile('Total Working Memory Pool', `${poolPct}% Used (${poolUsed} / ${poolTot} MB)`, `${mem.available_mb || (poolTot - poolUsed)} MB Combined Available`));
-
-        const tempC = router.temp_c !== undefined ? `${router.temp_c.toFixed(1)}°C` : '--';
-        tiles.push(makeTile('Core Temperature', `${tempC}`, 'All Thermal Zones Optimal'));
-
-        const activeClients = clients.filter(c => !c.is_self && c.connected).length;
-        tiles.push(makeTile('Connected Clients', `${activeClients} Active Devices`, 'Wired LAN & Wireless Network'));
-
-        if (bodyEl) {
-          bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
-        }
-        if (btnViewClient) btnViewClient.style.display = 'none';
-        if (btnEditSettings) {
-          btnEditSettings.textContent = 'SYSTEM INFO';
-          btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-sys-info'); };
-        }
-        overlay.style.display = 'flex';
-        requestAnimationFrame(() => overlay.classList.add('active'));
-        return;
+        rows += renderInfoRow(iconIp, 'Gateway IP', ip, ip);
+        rows += renderInfoRow(iconMac, 'Hardware MAC', mac, mac);
+        rows += renderInfoRow(iconSpeed, 'Firmware Version', fw, fw);
+        rows += renderInfoRow(iconUptime, 'System Uptime', uptime);
+        rows += renderInfoRow(iconCpu, 'CPU Load', cpu);
+        rows += renderInfoRow(iconRam, 'RAM Usage', ramStr);
+        rows += renderInfoRow(iconTemp, 'Temperature', tempVal);
+        rows += renderInfoRow(iconClients, 'Active Clients', clientCount);
       }
+      // CASE 3: Subordinate Router Node
+      else if (target.type === 'ap' || (target.type === 'router' && target.uplinkPort)) {
+        title = target.name || 'Subordinate Node';
+        sub = target.uplinkPort ? `Uplink: ${target.uplinkPort.toUpperCase()}` : 'Network Node';
+        statusText = target.ip ? 'ONLINE' : 'CONFIGURED';
+        badgeClass = target.ip ? 'card-badge emerald' : 'card-badge amber';
+        iconSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/></svg>';
 
-      // 3. Sub-Router / Access Point (maxnet-b)
-      if (target.type === 'ap' || (target.type === 'router' && target.uplinkPort)) {
-        const apName = target.name || 'Sub-Router';
-        const apIp = target.ip || '--';
-        const apMac = target.mac || '--';
-        const liveClient = clients.find(c => c.ip === apIp || c.mac === apMac);
-        const vendor = target.metrics?.vendor || liveClient?.vendor || 'Broadcom / Reliance';
-        const uplink = target.uplinkPort ? target.uplinkPort.replace('root-', '').toUpperCase() : 'LAN 3';
-        const wClients = Array.isArray(target.wireless_clients) ? target.wireless_clients : [];
+        const ip = target.ip || 'DHCP Dynamic';
+        const mac = target.mac || '--';
+        const uplink = target.uplinkPort ? target.uplinkPort.toUpperCase() : 'LAN Port';
+        const speed = target.wan_speed ? `${target.wan_speed} Mbps` : '1000 Mbps';
+        const ports = target.numPorts ? `${target.numPorts} Ports` : '4 Ports';
 
-        if (titleEl) titleEl.textContent = `${apName}`;
-        if (subEl) subEl.textContent = `Access Point / Sub-Router • ${apIp}`;
-        if (badgeEl) {
-          badgeEl.textContent = 'ONLINE';
-          badgeEl.className = 'card-badge emerald';
-        }
-        if (iconBox) {
-          iconBox.style.background = 'rgba(56,189,248,0.12)';
-          iconBox.style.color = '#38bdf8';
-          iconBox.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>';
-        }
-
-        const tiles = [];
-        tiles.push(makeTile('IP Address', `<span>${esc(apIp)}</span> ${copyBtn(apIp)}`, `Hostname: ${esc(apName)}.lan`));
-        tiles.push(makeTile('MAC & Hardware', `${esc(apMac)}`, `Vendor: ${esc(vendor)}`));
-        tiles.push(makeTile('Gateway Uplink', `Port ${esc(uplink)}`, `Link Speed: ${target.link_speed || liveClient?.link_speed || 'unavailable'}`));
-        tiles.push(makeTile('Sub-Clients Count', `${wClients.length} Wireless Clients`, 'Bridged Network Traffic'));
-
-        if (wClients.length > 0) {
-          const clientListHtml = wClients.map(c => `
-            <div style="background:${isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)'}; padding:8px 10px; border-radius:6px; border:1px solid ${cardBorder}; display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <div style="font-weight:700; color:${textMain}; font-size:11px;">${esc(c.name || 'Wireless Device')}</div>
-                <div style="font-size:10px; color:${textDim};">${esc(c.ip || '--')} &bull; ${esc(c.mac || '--')}</div>
-              </div>
-              <div style="text-align:right;">
-                <span class="card-badge sky" style="font-size:9px;">${esc(c.linkSpeed || '72 Mbps')}</span>
-                ${c.metrics?.ping_avg_ms ? `<div style="font-size:9.5px; color:#10b981; margin-top:2px;">${c.metrics.ping_avg_ms} ms</div>` : ''}
-              </div>
-            </div>
-          `).join('');
-
-          tiles.push(`
-            <div style="background:${cardBg}; padding:10px 12px; border-radius:8px; border:1px solid ${cardBorder}; grid-column:span 2;">
-              <div style="color:${textDim}; font-size:9.5px; font-weight:800; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">Clients Connected Behind This AP:</div>
-              <div style="display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto;">${clientListHtml}</div>
-            </div>
-          `);
-        }
-
-        if (bodyEl) {
-          bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
-        }
-        if (btnViewClient) btnViewClient.style.display = 'none';
-        if (btnEditSettings) {
-          btnEditSettings.textContent = 'EDIT TOPOLOGY';
-          btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-topo-layers'); };
-        }
-        overlay.style.display = 'flex';
-        requestAnimationFrame(() => overlay.classList.add('active'));
-        return;
+        rows += renderInfoRow(iconIp, 'Node IP', ip, target.ip || null);
+        rows += renderInfoRow(iconMac, 'Node MAC', mac, target.mac || null);
+        rows += renderInfoRow(iconPort, 'Uplink Port', uplink);
+        rows += renderInfoRow(iconSpeed, 'Link Speed', speed);
+        rows += renderInfoRow(iconLink, 'Ethernet Ports', ports);
       }
-
-      // 3B. USB Storage Drive Node
-      if (target.type === 'storage') {
+      // CASE 4: USB Storage
+      else if (target.type === 'storage' || target.device_type === 'storage') {
         const stor = cache.usb_storage || {};
-        const uDev = (Array.isArray(cache.usb_devices) && cache.usb_devices.find(u => u.device_type === 'storage' || u.has_storage)) || {};
-        const devName = target.name || uDev.raw_model || uDev.model || stor.name || 'USB storage';
-        const devSize = target.size || uDev.total_space || stor.total || '--';
-        const devFree = target.free || uDev.free_space || stor.free || '--';
-        const devMount = target.mount_point || uDev.mount_point || stor.mount_point || '--';
-        const devPath = stor.device || uDev.device || '--';
-        const lanIp = (net && net.lan_ip) || '10.0.0.1';
-        const smbPath = target.share_path || uDev.share_path || `\\\\${lanIp}\\Pendrive`;
-        const linkSpd = Number(target.speed_mbps || uDev.speed_mbps) > 0 ? `${Number(target.speed_mbps || uDev.speed_mbps)} Mbps` : '--';
+        title = target.name || stor.name || stor.model || 'USB Storage';
+        sub = stor.mount_point || '/mnt/usb';
+        statusText = stor.mounted ? 'MOUNTED' : 'READY';
+        badgeClass = stor.mounted ? 'card-badge emerald' : 'card-badge amber';
+        iconSvg = iconDrive;
 
-        if (titleEl) titleEl.textContent = `${devName}`;
-        if (subEl) subEl.textContent = `External USB Storage • Local Network Share & Dufs WebDAV`;
-        if (badgeEl) {
-          badgeEl.textContent = 'ONLINE';
-          badgeEl.className = 'card-badge emerald';
-        }
-        if (iconBox) {
-          iconBox.style.background = 'rgba(192,132,252,0.12)';
-          iconBox.style.color = '#c084fc';
-          iconBox.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><line x1="10" y1="6" x2="14" y2="6"/><line x1="10" y1="18" x2="14" y2="18"/></svg>';
-        }
+        const cap = (stor.used || '--') + ' / ' + (stor.total || '--') + (stor.use_pct ? ` (${stor.use_pct}%)` : '');
+        const devNode = stor.device || '/dev/sda1';
+        const share = '\\10.0.0.1\share';
 
-        const tiles = [];
-        tiles.push(makeTile('Drive Capacity', `<span>${esc(devSize)}</span>`, `Free Space: ${esc(devFree)} available`));
-        tiles.push(makeTile('Mount Point', `<span>${esc(devMount)}</span>`, `Block Device: ${esc(devPath)}`));
-        tiles.push(makeTile('SMB Share Path', `<span>${esc(smbPath)}</span> ${copyBtn(smbPath)}`, 'Windows / macOS / Linux Network File Sharing'));
-        tiles.push(makeTile('Dufs WebDAV Manager', `<span>http://${esc(lanIp)}:5000/</span>`, 'Web File Manager & Browser Uploads'));
-        tiles.push(makeTile('Hardware Interface', `<span>${esc(linkSpd)}</span>`, 'Qualcomm IPQ9574 USB 3.0 Host Port'));
-
-        if (bodyEl) {
-          bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
-        }
-        if (btnViewClient) {
-          btnViewClient.style.display = 'inline-flex';
-          btnViewClient.textContent = 'STORAGE SETTINGS';
-          btnViewClient.onclick = () => {
-            closeTopoNodeDetail();
-            if (typeof switchTab === 'function') switchTab('settings');
-            if (typeof openSettingPage === 'function') openSettingPage('acc-smb-storage');
-          };
-        }
-        if (btnEditSettings) {
-          btnEditSettings.textContent = 'OPEN FILE MANAGER';
-          btnEditSettings.onclick = () => {
-            window.open(`http://${lanIp}:5000/`, '_blank');
-          };
-        }
-        overlay.style.display = 'flex';
-        requestAnimationFrame(() => overlay.classList.add('active'));
-        return;
+        rows += renderInfoRow(iconDrive, 'Capacity', cap);
+        rows += renderInfoRow(iconPort, 'Storage Device', devNode);
+        rows += renderInfoRow(iconSpeed, 'Bus Interface', 'USB 3.0');
+        rows += renderInfoRow(iconLink, 'Network Share', share, '\\10.0.0.1\share');
       }
-
-      // 3C. USB Hub Node
-      if (target.type === 'hub') {
+      // CASE 5: USB Hub
+      else if (target.type === 'hub') {
         const hub = cache.usb_hub || {};
-        const hubModel = target.name || hub.model || 'USB 3.0 Hub';
-        const totalPorts = target.ports || hub.ports || 4;
-        const connCount = target.connected_count || hub.connected_count || 1;
-        const availPorts = target.available_ports || (totalPorts - connCount);
-        const hubSpd = (target.speed_mbps || hub.speed_mbps || 5000) >= 1000 ? '5 Gbps (SuperSpeed USB 3.0)' : '480 Mbps (HighSpeed USB 2.0)';
+        title = target.model || hub.model || 'GL3523 USB 3.0 Hub';
+        sub = target.manufacturer || hub.manufacturer || 'GenesysLogic';
+        statusText = 'ACTIVE';
+        badgeClass = 'card-badge emerald';
+        iconSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="12" cy="6" r="2"/><path d="M12 9v3M6 16l4-2.5M18 16l-4-2.5"/></svg>';
 
-        if (titleEl) titleEl.textContent = `${hubModel}`;
-        if (subEl) subEl.textContent = `External USB Extension Hub • ${totalPorts} Downstream Ports`;
-        if (badgeEl) {
-          badgeEl.textContent = 'ONLINE';
-          badgeEl.className = 'card-badge emerald';
+        const totalPorts = (hub.ports || target.ports || 4) + ' Ports';
+        const activePorts = (hub.connected_count || target.connected_count || 1) + ' Connected';
+        const speed = (hub.speed_mbps || 5000) + ' Mbps (USB 3.0)';
+
+        rows += renderInfoRow(iconPort, 'Total Ports', totalPorts);
+        rows += renderInfoRow(iconLink, 'Active Devices', activePorts);
+        rows += renderInfoRow(iconSpeed, 'Standard Speed', speed);
+      }
+      // CASE 6: Physical Switch / Port
+      else if (isPort || target.portId || target.label?.startsWith('LAN') || target.label?.startsWith('WAN')) {
+        const portName = target.label || target.name || 'Switch Port';
+        title = portName;
+        sub = target.id || 'Ethernet Port';
+        const hasChild = !!(target.child || target.status === 'up');
+        statusText = hasChild ? 'LINK UP' : 'EMPTY';
+        badgeClass = hasChild ? 'card-badge emerald' : 'card-badge zinc';
+        iconSvg = iconPort;
+
+        const role = target.role ? target.role.toUpperCase() : (hasChild ? 'CONNECTED' : 'STANDBY');
+        const attached = target.child ? (target.child.name || target.child.ip || 'Connected Entity') : 'None';
+        const attachedIp = target.child?.ip || '--';
+
+        rows += renderInfoRow(iconPort, 'Port Status', hasChild ? '1000 Mbps Full Duplex' : 'Link Down');
+        rows += renderInfoRow(iconLink, 'Port Role', role);
+        rows += renderInfoRow(iconClients, 'Attached Host', attached);
+        if (target.child?.ip) {
+          rows += renderInfoRow(iconIp, 'Host IP', attachedIp, attachedIp);
         }
-        if (iconBox) {
-          iconBox.style.background = 'rgba(56,189,248,0.12)';
-          iconBox.style.color = '#38bdf8';
-          iconBox.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="4" y="8" width="16" height="8" rx="2"/><circle cx="8" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16" cy="12" r="1.2" fill="currentColor"/></svg>';
+      }
+      // CASE 7: Connected Client Device
+      else {
+        const ip = target.ip || '--';
+        const mac = target.mac || '--';
+        const liveClient = clients.find(c => (ip && c.ip === ip) || (mac && mac !== '--' && c.mac && c.mac.toLowerCase() === mac.toLowerCase()));
+
+        title = target.name || liveClient?.name || liveClient?.hostname || 'Client Device';
+        sub = ip;
+        const isBlocked = !!(target.blocked || liveClient?.blocked || (typeof blockedIps !== 'undefined' && blockedIps.has(ip)));
+        const isOnline = liveClient ? (liveClient.connected !== false) : (target.status !== 'offline');
+
+        statusText = isBlocked ? 'BLOCKED' : (isOnline ? 'ONLINE' : 'OFFLINE');
+        badgeClass = isBlocked ? 'card-badge red' : (isOnline ? 'card-badge emerald' : 'card-badge zinc');
+        iconSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+
+        const connType = (target.band || liveClient?.band || liveClient?.wifi) ? 'Wi-Fi Wireless' : 'Ethernet Cable';
+        const speed = (target.linkSpeed || liveClient?.rate || liveClient?.link_speed) ? `${target.linkSpeed || liveClient?.rate || liveClient?.link_speed} Mbps` : 'Auto';
+        const leaseTime = liveClient?.lease_expires || liveClient?.lease || '--';
+
+        rows += renderInfoRow(iconIp, 'IP Address', ip, ip !== '--' ? ip : null);
+        rows += renderInfoRow(iconMac, 'MAC Address', mac, mac !== '--' ? mac : null);
+        rows += renderInfoRow(iconLink, 'Connection Type', connType);
+        rows += renderInfoRow(iconSpeed, 'Link Rate', speed);
+        if (leaseTime !== '--') {
+          rows += renderInfoRow(iconUptime, 'DHCP Lease', leaseTime);
         }
-
-        const tiles = [];
-        tiles.push(makeTile('Total Downstream Ports', `<span>${totalPorts} Ports</span>`, 'Hardware USB Splitter Ports'));
-        tiles.push(makeTile('Active Connected Devices', `<span>${connCount} Connected</span>`, `Available Empty Ports: ${availPorts}`));
-        tiles.push(makeTile('Bus Standard Speed', `<span>${hubSpd}</span>`, 'Host Controller Link Speed'));
-        tiles.push(makeTile('Auto-Detection Mode', `<span style="color:#10b981;">Hardware Hotplug Active</span>`, 'Plug & Play USB Peripheral Detection'));
-
-        const pList = (Array.isArray(target.ports_list) && target.ports_list.length > 0) ? target.ports_list :
-                      ((Array.isArray(hub.ports_list) && hub.ports_list.length > 0) ? hub.ports_list : [
-                        { port: 1, version: "U3.0", version_name: "USB 3.0 Ready (5 Gbps)", status: "available", speed_mbps: 5000 },
-                        { port: 2, version: "U3.0", version_name: "USB 3.0 Ready (5 Gbps)", status: "available", speed_mbps: 5000 },
-                        { port: 3, version: "U2.0", version_name: "USB 2.0 HighSpeed (480 Mbps)", status: "connected", name: "Disk 2.0", device_type: "storage", speed_mbps: 480 },
-                        { port: 4, version: "U3.0", version_name: "USB 3.0 Ready (5 Gbps)", status: "available", speed_mbps: 5000 }
-                      ]);
-
-        const portRowsHtml = pList.map(p => {
-          const isConn = p.status === 'connected';
-          const ver = p.version || 'U3.0';
-          let verCol = '#38bdf8';
-          let verBg = 'rgba(56, 189, 248, 0.12)';
-          let verBorder = 'rgba(56, 189, 248, 0.3)';
-          if (ver.includes('3.2')) {
-            verCol = '#00d2ff';
-            verBg = 'rgba(0, 210, 255, 0.12)';
-            verBorder = 'rgba(0, 210, 255, 0.35)';
-          } else if (ver.includes('2')) {
-            verCol = '#c084fc';
-            verBg = 'rgba(192, 132, 252, 0.12)';
-            verBorder = 'rgba(192, 132, 252, 0.35)';
-          } else if (ver.includes('1')) {
-            verCol = '#a1a1aa';
-            verBg = 'rgba(161, 161, 170, 0.12)';
-            verBorder = 'rgba(161, 161, 170, 0.3)';
-          }
-
-          const spdText = (p.speed_mbps && p.speed_mbps >= 1000) ? ((p.speed_mbps >= 10000) ? '10 Gbps' : '5 Gbps') : (p.speed_mbps ? `${p.speed_mbps} Mbps` : '--');
-          const devName = isConn ? (p.name || 'Connected USB Peripheral') : 'Empty Port (Ready)';
-
-          return `
-            <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 12px; background:var(--card-inner, #161822); border:1px solid ${isConn ? 'rgba(16, 185, 129, 0.25)' : 'var(--border-sub, rgba(255,255,255,0.06))'}; border-radius:8px; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-                <span style="font-size:11px; font-weight:800; font-family:var(--font-mono); color:var(--text-main); white-space:nowrap;">Port ${p.port}</span>
-                <span style="font-size:9.5px; font-weight:800; font-family:var(--font-mono); padding:1.5px 7px; border-radius:4px; background:${verBg}; color:${verCol}; border:1px solid ${verBorder}; white-space:nowrap;">${ver}</span>
-                <span style="font-size:11px; font-family:var(--font-mono); color:${isConn ? 'var(--text-main)' : 'var(--text-muted)'}; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                  ${esc(devName)}
-                </span>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                <span style="font-size:9.5px; font-weight:700; font-family:var(--font-mono); color:${isConn ? '#10b981' : 'var(--text-dim)'}; text-transform:uppercase; letter-spacing:0.5px;">
-                  ${isConn ? 'CONNECTED' : 'AVAILABLE'}
-                </span>
-                <span style="font-size:10px; font-weight:600; font-family:var(--font-mono); color:var(--text-dim);">
-                  ${spdText}
-                </span>
-              </div>
-            </div>
-          `;
-        }).join('');
-
-        if (bodyEl) {
-          bodyEl.innerHTML = `
-            <div class="topo-details-grid">${tiles.join('')}</div>
-            <div style="margin-top:14px;">
-              <div style="font-size:10px; font-weight:800; font-family:var(--font-mono); color:var(--text-dim); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px;">
-                Downstream Ports &amp; Negotiated Protocols
-              </div>
-              <div style="display:flex; flex-direction:column; gap:6px;">
-                ${portRowsHtml}
-              </div>
-            </div>
-          `;
-        }
-        if (btnViewClient) btnViewClient.style.display = 'none';
-        if (btnEditSettings) {
-          btnEditSettings.textContent = 'USB SETTINGS';
-          btnEditSettings.onclick = () => {
-            closeTopoNodeDetail();
-            if (typeof switchTab === 'function') switchTab('settings');
-            if (typeof openSettingPage === 'function') openSettingPage('acc-usb-wan');
-          };
-        }
-        overlay.style.display = 'flex';
-        requestAnimationFrame(() => overlay.classList.add('active'));
-        return;
       }
 
-      // 4. Physical Switch Port Socket (isPort === true)
-      if (isPort) {
-        const port = target;
-        const portId = port.id ? port.id.replace('root-', '') : (port.label || '').toLowerCase().replace(/\s+/g, '');
-        const portObj = ports.find(p => p.id === portId) || {};
-        const isUp = portObj.status === 'up' || (port.role && port.role !== 'empty');
-        const portLabel = port.label || portId.toUpperCase();
-
-        if (titleEl) titleEl.textContent = `Port ${portLabel}`;
-        if (subEl) subEl.textContent = 'Physical Ethernet Bay • Qualcomm IPQ9574 Switch';
-        if (badgeEl) {
-          badgeEl.textContent = isUp ? `LINK UP (${Number(portObj.speed) > 0 ? `${portObj.speed}M` : 'SPEED UNKNOWN'})` : 'DISCONNECTED';
-          badgeEl.className = 'card-badge ' + (isUp ? 'emerald' : 'gray');
-        }
-        if (iconBox) {
-          iconBox.style.background = isUp ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.12)';
-          iconBox.style.color = isUp ? '#10b981' : '#94a3b8';
-          iconBox.innerHTML = '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="2" y="2" width="20" height="20" rx="4"/><path d="M7 16h10M7 8h2m6 0h2M10 8v4m4-4v4"/></svg>';
-        }
-
-        const child = port.child || {};
-        const childName = child.name || child.ip || (isUp ? 'Connected Entity' : 'Empty Port Socket');
-        const childIp = child.ip || '--';
-
-        const tiles = [];
-        tiles.push(makeTile('Port Link State', isUp ? `<span style="color:#10b981;">Up (${Number(portObj.speed) > 0 ? `${portObj.speed} Mbps` : 'speed unknown'} ${portObj.duplex ? portObj.duplex.toUpperCase() : ''})</span>` : '<span style="color:#94a3b8;">Down • No Link</span>', `Port Identifier: ${esc(portId.toUpperCase())}`));
-        tiles.push(makeTile('Hardware Port Bay', 'Ethernet port', 'Negotiated link speed is shown when reported by the router'));
-        tiles.push(makeTile('Attached Entity', `<span>${esc(childName)}</span>`, childIp !== '--' ? `IP: ${esc(childIp)}` : 'No attached device detected', true));
-
-        if (bodyEl) {
-          bodyEl.innerHTML = `<div class="topo-details-grid">${tiles.join('')}</div>`;
-        }
-        if (btnViewClient) btnViewClient.style.display = 'none';
-        if (btnEditSettings) {
-          btnEditSettings.textContent = 'SWITCH PORTS';
-          btnEditSettings.onclick = () => { closeTopoNodeDetail(); if(typeof switchTab==='function')switchTab('settings'); if(typeof openSettingPage==='function')openSettingPage('acc-switch'); };
-        }
-        overlay.style.display = 'flex';
-        requestAnimationFrame(() => overlay.classList.add('active'));
-        return;
-      }
-
-      // 5. Client Device (Direct LAN Wired or Wireless Client)
-      const node = target;
-      const liveClient = clients.find(c => (node.ip && c.ip === node.ip) || (node.mac && c.mac === node.mac));
-      const devIp = node.ip || liveClient?.ip || '--';
-      const devMac = node.mac || liveClient?.mac || '--';
-      const devName = node.name || liveClient?.name || devIp || 'Client Device';
-      const isOnline = liveClient ? liveClient.connected : (node.status !== 'offline');
-      const isWifi = !!(node.band || node.linkSpeed || (liveClient && liveClient.port && liveClient.port.toLowerCase().includes('wifi')) || (node.uplinkPort && node.uplinkPort.includes('ap')));
-      const vendor = node.metrics?.vendor || liveClient?.vendor || 'Network Device';
-      const isBlocked = !!(node.blocked || liveClient?.blocked || (typeof blockedIps !== 'undefined' && blockedIps.has(devIp)));
-
-      if (titleEl) titleEl.textContent = `${devName}`;
-      if (subEl) subEl.textContent = `${isWifi ? 'Wi-Fi Wireless Client' : 'Wired Ethernet Client'} • ${devIp}${isBlocked ? ' • FIREWALL BLOCKED' : ''}`;
+      if (titleEl) titleEl.textContent = title;
+      if (subEl) subEl.textContent = sub;
       if (badgeEl) {
-        if (isBlocked) {
-          badgeEl.textContent = 'BLOCKED';
-          badgeEl.className = 'card-badge ruby';
-        } else {
-          badgeEl.textContent = isOnline ? 'ONLINE' : 'OFFLINE';
-          badgeEl.className = 'card-badge ' + (isOnline ? 'emerald' : 'gray');
-        }
+        badgeEl.textContent = statusText;
+        badgeEl.className = badgeClass;
       }
-      if (iconBox) {
-        iconBox.style.background = isBlocked ? 'rgba(239,68,68,0.12)' : (isWifi ? 'rgba(56,189,248,0.12)' : 'rgba(16,185,129,0.12)');
-        iconBox.style.color = isBlocked ? '#ef4444' : (isWifi ? '#38bdf8' : '#10b981');
-        iconBox.innerHTML = isWifi
-          ? '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>'
-          : '<svg viewBox="0 0 24 24" style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-      }
-
-      const connVal = isWifi ? `Wi-Fi${node.linkSpeed ? ` · ${node.linkSpeed}` : ''}` : (node.uplinkPort ? `Port ${node.uplinkPort.replace('root-', '').toUpperCase()}` : (liveClient?.port || 'Ethernet'));
-      const liveRate = Number(window._clientLiveRateMap?.get(devIp) || 0);
-      const quickInfo = [
-        makeQuickInfo('<path d="M20 6 9 17l-5-5"/>', 'Status', isBlocked ? 'Blocked' : (isOnline ? 'Online' : 'Offline')),
-        makeQuickInfo('<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>', 'IP address', devIp),
-        makeQuickInfo('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h6"/>', 'Device / MAC', devMac),
-        makeQuickInfo(isWifi ? '<path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/>' : '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>', 'Connection', connVal),
-        makeQuickInfo('<path d="M4 18V6m0 12h16M8 14l3-3 3 2 5-6"/>', 'Live traffic', `${liveRate.toFixed(1)} Mbps`)
-      ];
-      if (bodyEl) bodyEl.innerHTML = `<div class="topo-quick-info-grid">${quickInfo.join('')}</div>`;
-      if (btnUnblock) {
-        if (isBlocked) {
-          btnUnblock.style.display = 'inline-block';
-          btnUnblock.onclick = async () => {
-            await unblockDevice(devIp, devMac);
-            closeTopoNodeDetail();
-            if (typeof showToast === 'function') showToast(`Unblocked device ${devIp}`, 'success');
-            if (typeof fetchData === 'function') fetchData();
-          };
-        } else {
-          btnUnblock.style.display = 'none';
-        }
-      }
-      if (btnViewClient) btnViewClient.style.display = 'none';
-      if (btnEditSettings) btnEditSettings.style.display = 'none';
-
-      if (typeof highlightPathToRoot === 'function') {
-        highlightPathToRoot(target);
+      if (iconBox) iconBox.innerHTML = iconSvg;
+      if (bodyEl) {
+        bodyEl.innerHTML = `<div class="topo-info-list">${rows}</div>`;
       }
 
       overlay.style.display = 'flex';
@@ -3573,7 +3216,7 @@ function handleSettingsBack() {
       }
     }
 
-    function syncMobileModalViewport() {
+function syncMobileModalViewport() {
       const viewport = window.visualViewport;
       if (!viewport) return;
       document.documentElement.style.setProperty('--maxnet-modal-vh', `${Math.round(viewport.height)}px`);
@@ -5279,37 +4922,14 @@ function drawStorageIconSmall(x, y, color, parent) {
         const ethernetLinkMbps = Number(wanPort?.speed) || 0;
         const effectiveWireSpeed = `${liveWanTotalSpeed.toFixed(1)} Mbps`;
 
-        // WAN Wire Speed Pill on wire midpoint - dynamically sized to fit text with clean padding
+        // WAN wire midpoint calculations
         const wireMidY = (wanY + wanH + rootY) / 2;
-        const wirePillW = Math.max(52, Math.round(effectiveWireSpeed.length * 6.8 + 14));
-        const wirePillH = 15;
-        const wirePillG = mk("g", { class: "topo-wan-wire-pill" }, labelsLayer);
-        mk("rect", {
-          x: rtrCenterX - wirePillW / 2,
-          y: wireMidY - wirePillH / 2,
-          width: wirePillW,
-          height: wirePillH,
-          rx: 4,
-          ry: 4,
-          fill: topoTheme.cardBg,
-          stroke: wanWireCol,
-          "stroke-width": 1.1,
-          style: `filter:${isLight ? "drop-shadow(0 1px 3px rgba(0,0,0,0.1))" : "drop-shadow(0 2px 6px rgba(0,0,0,0.6))"};`
-        }, wirePillG);
 
         const displaySsid = (repInfo.ssid && repInfo.ssid.length > 10) ? (repInfo.ssid.substring(0, 9) + '…') : (repInfo.ssid || "Wi-Fi");
         const wanTitleStr = isUsbActiveWan ? "WAN" : (isRepeaterActive ? `REPEATER: ${displaySsid}` : "WAN ETHERNET");
         const effectiveWanIp = isUsbActiveWan
           ? (tetheringIp || liveWanIpStr || "Connected")
           : (isRepeaterActive ? (repInfo.ip || liveWanIpStr || "Connected") : (liveWanIpStr || "DHCP Online"));
-
-        const tWireSpd = mk("text", {
-          x: rtrCenterX,
-          y: wireMidY + 3.2,
-          "text-anchor": "middle",
-          style: `font-size:7.5px; font-weight:800; font-family:var(--font-mono); fill:${usbStyle.lineStroke || "#0284c7"};`
-        }, wirePillG);
-        tWireSpd.textContent = effectiveWireSpeed;
 
         // WAN Chip Card in NODES LAYER - curve UI matching other cards (rx: 8, ry: 8)
         const wanG = mk("g", {
@@ -5776,7 +5396,7 @@ function drawStorageIconSmall(x, y, color, parent) {
               }
 
               // Speed label on wire
-              if (prefs.showSpeeds) {
+              if (false && prefs.showSpeeds) {
                 const labelX = (startX + childX) / 2;
                 const lblG = mk("g", { class: `topo-edge-speed-pill ${isLayerDimmed ? 'topo-dimmed' : ''}` }, labelsLayer);
                 mk("rect", {
@@ -6132,7 +5752,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           }
 
           // Edge Label Pill in LABELS LAYER (SOLID BACKGROUND PILL, COLLISION-FREE)
-          if (prefs.showSpeeds && c.type !== "wifi_cluster") {
+          if (false && prefs.showSpeeds && c.type !== "wifi_cluster") {
             const labelX = (socketCenterX + childX) / 2;
             const lblG = mk("g", { class: `topo-edge-speed-pill ${isLayerDimmed ? 'topo-dimmed' : ''}` }, labelsLayer);
             const pillW = 36;
@@ -7820,22 +7440,42 @@ function drawStorageIconSmall(x, y, color, parent) {
           const attachedClients = clients.filter(c => c.connected && (c.port === portTag || c.port === `lan${portNum}`));
           const candidates = discoveryMode === 'mac' ? attachedClients.filter(c => c.mac) : attachedClients;
           const stableValue = port.child ? (discoveryMode === 'ip' ? port.child.ip : port.child.mac) : '';
-          const matchedClient = candidates.find(c => stableValue && String(discoveryMode === 'ip' ? c.ip : (c.mac || '')).toLowerCase() === String(stableValue).toLowerCase()) || candidates[0];
+
+          // Prefer existing router/node or detect subordinate router among candidates
+          let routerCandidate = candidates.find(c => {
+            const m = (c.mac || '').toLowerCase();
+            const n = (c.name || '').toLowerCase();
+            const vend = (c.vendor || '').toLowerCase();
+            return m.startsWith('a8:1b:5a') || m.startsWith('00:11:32') ||
+              /asus|router|gateway|access point|openwrt|mesh|switch/i.test(n) ||
+              /asus|tp-link|netgear|cisco/i.test(vend) ||
+              c.device_type === 'router' || c.device_type === 'ap';
+          });
+          if (!routerCandidate && candidates.length > 1) {
+            routerCandidate = candidates.find(c => !/poco|motorola|oppo|vivo|iphone|samsung|pixel|phone|mobile/i.test(c.name || '')) || candidates[0];
+          }
+
+          const matchedClient = routerCandidate || candidates.find(c => stableValue && String(discoveryMode === 'ip' ? c.ip : (c.mac || '')).toLowerCase() === String(stableValue).toLowerCase()) || candidates[0];
 
           if (matchedClient) {
-            const isNetworkNode = matchedClient.device_type === 'router' || matchedClient.device_type === 'switch' || matchedClient.device_type === 'ap' ||
-              /router|switch|repeater|access point|mesh|gateway|maxnet/i.test(matchedClient.name || '') ||
-              /router|switch|repeater/i.test(matchedClient.model || '');
+            const hasMultiple = candidates.length > 1;
+            const isAsusRouter = (matchedClient.mac && matchedClient.mac.toLowerCase().startsWith('a8:1b:5a')) || /asus/i.test(matchedClient.name || '');
+            const isNetworkNode = hasMultiple || matchedClient.device_type === 'router' || matchedClient.device_type === 'switch' || matchedClient.device_type === 'ap' ||
+              isAsusRouter ||
+              /asus|router|switch|repeater|access point|mesh|gateway|maxnet/i.test(matchedClient.name || '') ||
+              /asus|router|switch|repeater/i.test(matchedClient.model || '');
 
             if (isNetworkNode) {
               port.role = 'node';
-              if (!port.child || port.child.mac !== matchedClient.mac) {
+              const nodeName = isAsusRouter ? 'Asus Router' : (matchedClient.name && !/poco|motorola|oppo|vivo|iphone|samsung|pixel/i.test(matchedClient.name) ? matchedClient.name : 'Subordinate Router');
+              if (!port.child || port.child.role === 'device' || port.child.type === 'device') {
                 port.child = {
                   id: `node-lan${portNum}-${(matchedClient.mac || '').replace(/[:]/g, '')}`,
-                  type: matchedClient.device_type || (/switch/i.test(matchedClient.name) ? 'switch' : 'router'),
-                  name: matchedClient.name || matchedClient.dns_name || 'Sub-Switch',
+                  type: 'router',
+                  name: nodeName,
                   ip: matchedClient.ip || '',
                   mac: matchedClient.mac || '',
+                  status: 'online',
                   uplinkPort: port.id,
                   numPorts: 4,
                   ports: [
@@ -7843,11 +7483,59 @@ function drawStorageIconSmall(x, y, color, parent) {
                     { id: `node-lan${portNum}-p2`, label: 'Port 2', role: 'empty', child: null },
                     { id: `node-lan${portNum}-p3`, label: 'Port 3', role: 'empty', child: null },
                     { id: `node-lan${portNum}-p4`, label: 'Port 4', role: 'empty', child: null }
-                  ]
+                  ],
+                  wireless_clients: []
                 };
               } else {
-                port.child.name = matchedClient.name || matchedClient.dns_name || port.child.name;
+                port.child.name = nodeName;
                 port.child.ip = matchedClient.ip || port.child.ip;
+                port.child.mac = matchedClient.mac || port.child.mac;
+                port.child.status = 'online';
+                if (!Array.isArray(port.child.ports)) {
+                  port.child.ports = [
+                    { id: `node-lan${portNum}-p1`, label: 'Port 1', role: 'empty', child: null },
+                    { id: `node-lan${portNum}-p2`, label: 'Port 2', role: 'empty', child: null },
+                    { id: `node-lan${portNum}-p3`, label: 'Port 3', role: 'empty', child: null },
+                    { id: `node-lan${portNum}-p4`, label: 'Port 4', role: 'empty', child: null }
+                  ];
+                }
+                if (!Array.isArray(port.child.wireless_clients)) {
+                  port.child.wireless_clients = [];
+                }
+              }
+
+              // Attach other devices learned on this port under the subordinate router
+              const subClients = candidates.filter(c => c.mac && c.mac.toLowerCase() !== matchedClient.mac.toLowerCase());
+              if (subClients.length > 0 && Array.isArray(port.child.ports)) {
+                let subWiredIdx = 0;
+                subClients.forEach(sc => {
+                  const isScWifi = /poco|motorola|vivo|oppo|phone|mobile|iphone|galaxy/i.test(sc.name || '') || sc.is_wifi;
+                  if (isScWifi) {
+                    if (!port.child.wireless_clients.some(wc => wc.mac && wc.mac.toLowerCase() === sc.mac.toLowerCase())) {
+                      port.child.wireless_clients.push({
+                        id: `wdev-${(sc.mac || '').replace(/[:]/g, '')}`,
+                        name: sc.name || 'Wireless Device',
+                        ip: sc.ip || '',
+                        mac: sc.mac || '',
+                        status: 'online',
+                        band: '5GHz',
+                        linkSpeed: sc.link_speed || '866 Mbps'
+                      });
+                    }
+                  } else if (subWiredIdx < port.child.ports.length) {
+                    port.child.ports[subWiredIdx].role = 'device';
+                    port.child.ports[subWiredIdx].child = {
+                      id: `dev-${(sc.mac || '').replace(/[:]/g, '')}`,
+                      type: 'device',
+                      name: sc.name || 'Wired Host',
+                      ip: sc.ip || '',
+                      mac: sc.mac || '',
+                      status: 'online',
+                      uplinkPort: port.child.ports[subWiredIdx].id
+                    };
+                    subWiredIdx++;
+                  }
+                });
               }
             } else {
               port.role = 'device';
@@ -18107,8 +17795,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const filEl = document.getElementById('flashFileName');
       const sizEl = document.getElementById('flashFileSize');
 
-      if (curEl) curEl.textContent = d.current || 'v2.2.47-b47';
-      if (latEl) latEl.textContent = d.latest || d.current || 'v2.2.48-b48';
+      if (curEl) curEl.textContent = d.current || 'v2.2.59';
+      if (latEl) latEl.textContent = d.latest || d.current || 'v2.2.59';
       if (filEl) filEl.textContent = d.file || 'maxnet-jidu6911-sysupgrade.bin';
       if (sizEl) sizEl.textContent = d.size ? ((d.size / 1048576).toFixed(2) + ' MB') : '29.40 MB';
 
@@ -18407,10 +18095,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
             if (hwRevEl && updateData.hw_rev) hwRevEl.textContent = `${updateData.hw_rev} (Validated)`;
           }
 
-          if (fwBadge) fwBadge.textContent = (updateData && updateData.current) || 'v2.2.47-b47';
-          if (fwModel) fwModel.textContent = (updateData && updateData.model) || 'JioRouter AX6000';
+          if (fwBadge) fwBadge.textContent = (updateData && updateData.current) || 'v2.2.59';
+          if (fwModel) fwModel.textContent = (updateData && updateData.model) || 'MAXNET Gateway AX6000';
           if (fwSoc) fwSoc.textContent = (updateData && updateData.target_soc) || 'Qualcomm IPQ9574';
-          if (fwLatest) fwLatest.textContent = (updateData && updateData.latest) || ((updateData && updateData.current) || 'v2.2.47-b47');
+          if (fwLatest) fwLatest.textContent = (updateData && updateData.latest) || ((updateData && updateData.current) || 'v2.2.59');
           if (fwFile) fwFile.textContent = (updateData && updateData.file) || 'sysupgrade.bin';
           if (fwSize) fwSize.textContent = (updateData && updateData.size) ? ((updateData.size / 1048576).toFixed(2) + ' MB') : '29.40 MB';
           if (fwSha) fwSha.textContent = (updateData && updateData.sha256) ? `${updateData.sha256.substring(0, 16)}...${updateData.sha256.substring(updateData.sha256.length - 8)}` : 'Verified via Release Manifest';
@@ -18421,8 +18109,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           }
 
           if (updateAvailable && updateData) {
-            const latVer = updateData.latest || 'v2.2.48-b48';
-            const modName = updateData.model || 'JioRouter AX6000';
+            const latVer = updateData.latest || 'v2.2.59';
+            const modName = updateData.model || 'MAXNET Gateway AX6000';
 
             if (pulseEl) {
               pulseEl.style.background = '#38bdf8';
@@ -18431,7 +18119,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
             if (rowUpgrade) rowUpgrade.style.display = 'flex';
             if (fwStatusSub) {
-              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(updateData.current || 'v2.2.47-b47')}</strong> &bull; <span style="color:#38bdf8; font-weight:600;">Update ${escapeHtml(latVer)} available</span>`;
+              fwStatusSub.innerHTML = `Installed: <strong id="fwCurrentVerBadge" style="font-weight:700; color:var(--text-main); font-family:var(--font-mono);">${escapeHtml(updateData.current || 'v2.2.59')}</strong> &bull; <span style="color:#38bdf8; font-weight:600;">Update ${escapeHtml(latVer)} available</span>`;
             }
 
             const sysSub = document.getElementById('fwSysupgradeSub');
@@ -18475,8 +18163,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
               }
             }
           } else {
-            const curVer = (updateData && updateData.current) || 'v2.2.47-b47';
-            const modName = (updateData && updateData.model) || 'JioRouter AX6000';
+            const curVer = (updateData && updateData.current) || 'v2.2.59';
+            const modName = (updateData && updateData.model) || 'MAXNET Gateway AX6000';
 
             if (pulseEl) {
               pulseEl.style.background = '#10b981';
@@ -18647,7 +18335,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const filEl = document.getElementById('flashFileName');
       const sizEl = document.getElementById('flashFileSize');
 
-      const curVer = _lastFirmwareUpdateData?.current || window._lastDataCache?.system?.version || 'v2.2.47-b47';
+      const curVer = _lastFirmwareUpdateData?.current || window._lastDataCache?.system?.version || 'v2.2.59';
       if (curEl) curEl.textContent = curVer;
       if (latEl) latEl.textContent = 'Manual Flash (.bin)';
       if (filEl) filEl.textContent = _selectedManualFwFile.name;
@@ -20165,9 +19853,126 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       if (enabled) setupTimer(true);
     }
 
+    function initMaxnetWebSocket() {
+      if (window._maxnetWs && (window._maxnetWs.readyState === WebSocket.OPEN || window._maxnetWs.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      const token = localStorage.getItem('maxnet_token') || '';
+      if (!token) return;
+
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsPort = 7682;
+      const wsHost = window.location.hostname || '10.0.0.1';
+      const wsUrl = `${wsProto}//${wsHost}:${wsPort}/ws?token=${encodeURIComponent(token)}`;
+
+      try {
+        const ws = new WebSocket(wsUrl);
+        window._maxnetWs = ws;
+
+        ws.onopen = () => {
+          window._wsConnected = true;
+          setupTimer();
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (!msg) return;
+
+            if (msg.type === 'telemetry') {
+              const rxM = Number(msg.rx_mbps) || 0;
+              const txM = Number(msg.tx_mbps) || 0;
+              const combM = Number(msg.combined_mbps) || (rxM + txM);
+              window._currentRxMbps = rxM;
+              window._currentTxMbps = txM;
+
+              const rtrComb = document.getElementById('rtrCombinedSpeed');
+              if (rtrComb) {
+                rtrComb.textContent = `⇄ ${combM.toFixed(1)} Mbps`;
+              }
+
+              const cpuEl = document.getElementById('topoDockCpu');
+              if (cpuEl && msg.cpu_pct !== undefined) {
+                cpuEl.textContent = `${Math.round(Number(msg.cpu_pct) || 0)}%`;
+              }
+
+              const ramEl = document.getElementById('topoDockRam');
+              if (ramEl && msg.ram_pct !== undefined) {
+                const usedMb = Number(msg.phys_used_mb) || 0;
+                const totMb = Number(msg.phys_total_mb) || 442;
+                const pct = Math.round(Number(msg.ram_pct) || 0);
+                ramEl.textContent = `${pct}%`;
+                ramEl.title = `Physical RAM: ${usedMb} MB / ${totMb} MB (${pct}%)`;
+              }
+
+              const zramEl = document.getElementById('topoDockZram');
+              if (zramEl && msg.zram_used_pct !== undefined) {
+                zramEl.textContent = `${Math.round(Number(msg.zram_used_pct) || 0)}%`;
+              }
+
+              const tempEl = document.getElementById('topoDockTemp');
+              if (tempEl && msg.temp_c !== undefined) {
+                tempEl.textContent = `${Math.round(Number(msg.temp_c) || 39)}°C`;
+              }
+
+              const rxEl = document.getElementById('bannerLiveRxSpeed');
+              if (rxEl) rxEl.innerText = `↓ ${rxM.toFixed(1)} Mbps`;
+
+              const txEl = document.getElementById('bannerLiveTxSpeed');
+              if (txEl) txEl.innerText = `↑ ${txM.toFixed(1)} Mbps`;
+
+              if (msg.wan_rx_bytes !== undefined && msg.wan_tx_bytes !== undefined) {
+                const totBytes = msg.wan_rx_bytes + msg.wan_tx_bytes;
+                const bTot = document.getElementById('bannerTotUsage');
+                if (bTot) bTot.innerText = fmtBytes(totBytes);
+                const bRx = document.getElementById('bannerRxUsage');
+                if (bRx) bRx.innerText = `↓ ` + fmtBytes(msg.wan_rx_bytes);
+                const bTx = document.getElementById('bannerTxUsage');
+                if (bTx) bTx.innerText = `↑ ` + fmtBytes(msg.wan_tx_bytes);
+              }
+
+              if (msg.firmware) {
+                const hdr = document.getElementById('headerVer');
+                if (hdr) hdr.textContent = msg.firmware.toLowerCase();
+              }
+
+              if (!window._rxHistory) window._rxHistory = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+              if (!window._txHistory) window._txHistory = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+              window._rxHistory.push(rxM);
+              window._txHistory.push(txM);
+              if (window._rxHistory.length > 20) window._rxHistory.shift();
+              if (window._txHistory.length > 20) window._txHistory.shift();
+              drawTrafficSparkline(window._rxHistory, window._txHistory);
+
+            } else if (msg.topology_layers || msg.router || msg.multilink) {
+              renderData(msg);
+              if (typeof checkSystemAlerts === 'function') checkSystemAlerts(msg);
+            }
+          } catch (err) {}
+        };
+
+        ws.onerror = () => {
+          window._wsConnected = false;
+        };
+
+        ws.onclose = () => {
+          window._wsConnected = false;
+          window._maxnetWs = null;
+          setupTimer();
+          const dash = document.getElementById('dashboardContainer');
+          if (dash && dash.style.display !== 'none' && localStorage.getItem('maxnet_token')) {
+            setTimeout(initMaxnetWebSocket, 3000);
+          }
+        };
+      } catch (e) {
+        window._wsConnected = false;
+      }
+    }
+
     function getPollingInterval() {
       if (typeof document !== 'undefined' && document.hidden) return 0;
       if (window._currentSettingPage === 'acc-terminal-cli') return 0;
+      if (window._wsConnected) return 30000;
       if (window._currentSettingPage) return 20000;
       const tabSet = document.getElementById('tabSettings');
       const isSettingsVisible = tabSet && tabSet.style.display !== 'none';
@@ -20647,7 +20452,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
 
         // System & Firmware
         const boardModelEl = document.getElementById('sysBoardModel');
-        if (boardModelEl) boardModelEl.textContent = sys.model || 'JioRouter AX6000 JIDU6J11-6811';
+        if (boardModelEl) boardModelEl.textContent = sys.model || 'MAXNET Gateway AX6000';
 
         const kernelEl = document.getElementById('sysKernelVersion');
         if (kernelEl) kernelEl.textContent = sys.kernel || 'Linux 6.18';

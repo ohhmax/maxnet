@@ -3,7 +3,7 @@
 <body>
 
   <!-- ==================== 1. FULL-PAGE MONOCHROME MINIMALIST LOGIN ==================== -->
-  <div id="loginScreen" class="login-screen-shell" style="display:none; min-height:100vh; width:100%; flex-direction:column; justify-content:space-between; padding:28px 24px; box-sizing:border-box;">
+  <div id="loginScreen" class="login-screen-shell" style="display:none; height:100dvh; max-height:100dvh; width:100%; flex-direction:column; justify-content:space-between; padding:20px 24px; box-sizing:border-box; overflow:hidden;">
 
     <!-- TOP BAR -->
     <div style="display:flex; align-items:center; justify-content:space-between; width:100%; max-width:1160px; margin:0 auto;">
@@ -134,14 +134,18 @@
             </svg>
             <div class="topo-brand-text-col">
               <span class="topo-brand-title" id="dashBrandTitle">MAXNET</span>
-              <span class="topo-brand-subtitle" id="headerVer">v2.2.29</span>
+              <span class="topo-brand-subtitle" id="headerVer">v2.2.59</span>
             </div>
           </div>
 
-          <!-- TOPOLOGY CANVAS CONTROLS (RESET + NOTIFICATIONS + MENU BUTTON) -->
+          <!-- TOPOLOGY CANVAS CONTROLS (RESET + THEME TOGGLE + NOTIFICATIONS + MENU BUTTON) -->
           <div class="topo-toolbar" role="toolbar" aria-label="Topology Controls">
             <button class="topo-tool-btn" onclick="resetTopologyZoom()" id="btnResetTopoView" title="Reset Topology to Default View" aria-label="Reset Topology View">
               <svg viewBox="0 0 24 24" class="topo-tool-icon"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>
+            <button class="topo-tool-btn" onclick="toggleTheme()" id="btnTopoThemeToggle" title="Toggle Theme (Dark / Light)" aria-label="Toggle Theme">
+              <svg viewBox="0 0 24 24" class="topo-tool-icon" id="topoThemeSun" style="display:none;"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <svg viewBox="0 0 24 24" class="topo-tool-icon" id="topoThemeMoon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
             </button>
             <button class="topo-tool-btn" onclick="toggleNotificationCenter()" id="btnTopoNotifications" title="Notifications" aria-label="Notifications" style="position:relative;">
               <svg viewBox="0 0 24 24" class="topo-tool-icon"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -284,12 +288,12 @@
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:var(--card-inner, #161822); border:1px solid var(--border-sub, rgba(255,255,255,0.06)); border-radius:8px;">
           <div>
             <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Current Version</div>
-            <div id="flashCurrentVer" style="font-size:13px; font-weight:700; color:var(--text-main); font-family:var(--font-mono);">v2.2.47</div>
+            <div id="flashCurrentVer" style="font-size:13px; font-weight:700; color:var(--text-main); font-family:var(--font-mono);">v2.2.59</div>
           </div>
           <div style="font-size:16px; color:var(--text-dim); font-weight:700;">&rarr;</div>
           <div style="text-align:right;">
             <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">New Version</div>
-            <div id="flashLatestVer" style="font-size:13px; font-weight:700; color:#38bdf8; font-family:var(--font-mono);">v2.2.48</div>
+            <div id="flashLatestVer" style="font-size:13px; font-weight:700; color:#38bdf8; font-family:var(--font-mono);">v2.2.59</div>
           </div>
         </div>
 
@@ -735,26 +739,26 @@
 
   <!-- TOPOLOGY RICH NODE DETAILS MODAL SHEET -->
   <div id="topoNodeDetailOverlay" class="android-modal-overlay" style="display:none;" onclick="if(event.target===this)closeTopoNodeDetail()">
-    <div class="android-modal-card" style="max-width:min(500px, calc(100vw - 20px)); width:100%; box-sizing:border-box; overflow-x:hidden;" id="topoNodeDetailCard">
-      <div class="android-modal-header" style="border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:10px;">
-          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-            <div id="topoNodeDetailIconBox" style="width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:rgba(56,189,248,0.12); color:#38bdf8;"></div>
+    <div id="topoNodeDetailCard">
+      <div class="android-modal-header">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+            <div id="topoNodeDetailIconBox"></div>
             <div style="min-width:0;">
-              <div class="android-modal-title" id="topoNodeDetailTitle" style="font-size:15px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Node Details</div>
-              <div class="android-modal-desc" id="topoNodeDetailSub" style="font-size:11px; font-family:var(--font-mono); color:var(--text-dim); margin-top:2px;">--</div>
+              <div class="android-modal-title" id="topoNodeDetailTitle" style="font-size:12.5px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Node Details</div>
+              <div class="android-modal-desc" id="topoNodeDetailSub" style="font-size:10px; font-family:var(--font-mono); color:var(--text-dim); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">--</div>
             </div>
           </div>
-          <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
-            <span class="card-badge emerald" id="topoNodeDetailStatusBadge" style="font-size:10px; font-weight:800;">ONLINE</span>
-            <button type="button" class="android-modal-close-round" onclick="closeTopoNodeDetail()" aria-label="Close device details" title="Close">
-              <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <div style="display:flex; align-items:center; gap:6px; flex:0 0 auto;">
+            <span class="card-badge emerald" id="topoNodeDetailStatusBadge" style="font-size:9px; font-weight:800; padding:1.5px 6px;">ONLINE</span>
+            <button type="button" class="android-modal-close-round" onclick="closeTopoNodeDetail()" aria-label="Close device details" title="Close" style="width:24px; height:24px; min-width:24px; min-height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; padding:0; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.18); cursor:pointer;">
+              <svg viewBox="0 0 24 24" style="width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         </div>
       </div>
-      <div class="android-modal-body" id="topoNodeDetailBody" style="padding:14px 18px 18px 18px; max-height:75vh; overflow-y:auto; overflow-x:hidden; box-sizing:border-box;">
-        <!-- Dynamically populated parameters grid -->
+      <div class="android-modal-body" id="topoNodeDetailBody">
+        <!-- Dynamically populated parameters rows -->
       </div>
     </div>
   </div>
@@ -3307,7 +3311,7 @@
               <div class="setting-row-item">
                 <div class="setting-label-col">
                   <span class="setting-label-bold">Device Board Model</span>
-                  <span class="setting-label-sub" id="sysBoardModel">JioRouter AX6000 JIDU6J11-6811</span>
+                  <span class="setting-label-sub" id="sysBoardModel">MAXNET Gateway AX6000</span>
                 </div>
               </div>
 
@@ -4799,7 +4803,7 @@
                 <div class="setting-label-col">
                   <span class="setting-label-bold" id="fwStatusMainLabel">Firmware Update</span>
                   <span class="setting-label-sub" id="fwStatusSubtitle">
-                    Installed: <strong id="fwCurrentVerBadge" style="color:var(--text-main); font-family:var(--font-mono);">v2.2.47-b47</strong> &bull; <span id="fwModelVal">JioRouter AX6000</span>
+                    Installed: <strong id="fwCurrentVerBadge" style="color:var(--text-main); font-family:var(--font-mono);">v2.2.59</strong> &bull; <span id="fwModelVal">MAXNET Gateway AX6000</span>
                   </span>
                 </div>
                 <div class="setting-control-col" style="display:flex; align-items:center; gap:8px;">
@@ -4814,7 +4818,7 @@
                 <div style="display:flex; flex-direction:column; gap:3px;">
                   <div style="display:flex; align-items:center; gap:6px;">
                     <span class="card-badge" style="background:#0284c7; color:#fff; font-weight:800; font-size:10px; padding:2px 7px;">NEW RELEASE</span>
-                    <strong id="fwLatestVerVal" style="font-size:13px; color:#38bdf8; font-family:var(--font-mono);">v2.2.48-b48</strong>
+                    <strong id="fwLatestVerVal" style="font-size:13px; color:#38bdf8; font-family:var(--font-mono);">v2.2.59</strong>
                   </div>
                   <span id="fwSysupgradeSub" style="font-size:11.5px; color:var(--text-dim);">
                     Verified update available (<span id="fwSizeVal">29.40 MB</span>)

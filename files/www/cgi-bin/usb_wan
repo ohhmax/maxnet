@@ -25,7 +25,7 @@ config usb_wan 'global'
 	option ping_interval '15'
 	option dns_override '1.1.1.1 8.8.8.8'
 	option auto_reconnect '1'
-	option tether_proto 'rndis'
+	option tether_proto 'ncm'
 
 config device 'usb0'
 	option name 'USB Modem 1 (Primary)'
@@ -110,7 +110,7 @@ if [ "$ACTION" = "save" ] || [ "$ACTION" = "save_config" ]; then
     PING_INT=$(echo "$POST_DATA" | jq -r '.ping_interval // 15' 2>/dev/null)
     DNS_OVERRIDE=$(echo "$POST_DATA" | jq -r '.dns_override // "1.1.1.1 8.8.8.8"' 2>/dev/null)
     AUTO_REC=$(echo "$POST_DATA" | jq -r '.auto_reconnect // 1' 2>/dev/null)
-    TETHER_PROTO=$(echo "$POST_DATA" | jq -r '.tether_proto // "rndis"' 2>/dev/null)
+    TETHER_PROTO=$(echo "$POST_DATA" | jq -r '.tether_proto // "ncm"' 2>/dev/null)
 
     uci -q set usb_wan.global.mode="$MODE"
     uci -q set usb_wan.global.watchdog="$WATCHDOG"
@@ -216,13 +216,20 @@ if [ "$ACTION" = "add_device" ]; then
 fi
 
 # DEFAULT GET ACTION: Scan system for all USB interfaces & return status
+USB_MAX_SPEED=$(cat /sys/bus/usb/devices/*-*/speed 2>/dev/null | sort -n | tail -n 1)
+DEFAULT_PROTO="rndis"
+if [ -n "$USB_MAX_SPEED" ] && [ "$USB_MAX_SPEED" -ge 5000 ] 2>/dev/null; then
+    DEFAULT_PROTO="ncm"
+fi
+
 MODE=$(uci -q get usb_wan.global.mode || echo "balanced")
 WATCHDOG=$(uci -q get usb_wan.global.watchdog || echo "1")
 PING_TARGET=$(uci -q get usb_wan.global.ping_target || echo "1.1.1.1")
 PING_INT=$(uci -q get usb_wan.global.ping_interval || echo "15")
 DNS_OVERRIDE=$(uci -q get usb_wan.global.dns_override || echo "1.1.1.1 8.8.8.8")
 AUTO_REC=$(uci -q get usb_wan.global.auto_reconnect || echo "1")
-TETHER_PROTO=$(uci -q get usb_wan.global.tether_proto || echo "rndis")
+TETHER_PROTO=$(uci -q get usb_wan.global.tether_proto || echo "$DEFAULT_PROTO")
+[ -z "$TETHER_PROTO" ] && TETHER_PROTO="$DEFAULT_PROTO"
 
 ALL_DEVS="usb0 usb1 usb2 usb3 usb4 usb5"
 DEVICES_JSON=""
@@ -247,7 +254,7 @@ for dev in $ALL_DEVS; do
     RX_BYTES=0
     TX_BYTES=0
     SPEED="USB 3.0 (5 Gbps)"
-    DRIVER="rndis_host"
+    DRIVER="cdc_ncm"
 
     if [ "$PHYS_PRESENT" = "true" ]; then
         IP_ADDR=$(ip -4 -o addr show dev "$dev" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n 1)
@@ -259,12 +266,13 @@ for dev in $ALL_DEVS; do
         
         # Check driver
         DRIVER=$(readlink "$SYS_PATH/device/driver" 2>/dev/null | awk -F/ '{print $NF}')
-        [ -z "$DRIVER" ] && DRIVER="cdc_ether"
+        [ -z "$DRIVER" ] && DRIVER="cdc_ncm"
 
         # Check USB speed
         USB_VER=$(cat "$SYS_PATH/device/../speed" 2>/dev/null || echo "5000")
         if [ "$USB_VER" = "480" ]; then
             SPEED="USB 2.0 (480 Mbps)"
+            [ -z "$(readlink "$SYS_PATH/device/driver" 2>/dev/null)" ] && DRIVER="rndis_host"
         elif [ "$USB_VER" = "5000" ] || [ "$USB_VER" = "10000" ]; then
             SPEED="USB 3.0 (5000 Mbps SuperSpeed)"
         fi

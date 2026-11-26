@@ -78,122 +78,14 @@ case "$QS" in
     sync
     ;;
   *action=auto_scan*|*action=auto*)
-    SAVED_WAN_MODE=$(jq -r '.tree.wan_mode // "disconnected"' "$CONF_FILE" 2>/dev/null)
-    [ -n "$SAVED_WAN_MODE" ] || SAVED_WAN_MODE=disconnected
-    STATUS_JSON=$(HTTP_COOKIE="${HTTP_COOKIE:-}" HTTP_AUTHORIZATION="${HTTP_AUTHORIZATION:-}" HTTP_X_SESSION_TOKEN="${HTTP_X_SESSION_TOKEN:-}" HTTP_ACCEPT_ENCODING= QUERY_STRING="action=status&token=${CURRENT_AUTH_TOKEN:-}" /www/cgi-bin/status 2>/dev/null | sed '1,/^$/d')
-    AUTO_TREE=$(echo "$STATUS_JSON" | jq --arg saved_wan_mode "$SAVED_WAN_MODE" '
-      .clients as $all
-      | ($all | map(select(.is_self != true and .connected == true))) as $active
-      | ($active | map(select(.port == "LAN 1"))) as $lan1_devs
-      | ($active | map(select(.port == "LAN 2"))) as $lan2_devs
-      | ($active | map(select(.port == "LAN 3"))) as $lan3_devs
-      | ($active | map(select(.port == "LAN 4"))) as $lan4_devs
-      | ($active | map(select(.port == "WiFi" or ((.conn_type // "") | contains("WiFi")) or .is_wifi == true or (.port != "LAN 1" and .port != "LAN 2" and .port != "LAN 3" and .port != "LAN 4")))) as $wifi_devs
-      | {
-          status: "ok",
-          version: 2,
-          tree: {
-            id: "root",
-            type: "router",
-            name: (.router.hostname // "MAXNET"),
-            ip: ((.network.lan_ip // "10.0.0.1") | split(" ")[0] | split("/")[0]),
-            mac: (.network.lan_mac // "52:5a:4e:e9:61:a0"),
-            uplinkPort: (if (.network.uplink.connected // false) then .network.uplink.device else null end),
-            active_uplink: (.network.uplink // {device:"",interface:"",mode:"disconnected",speed_mbps:0,connected:false,gateway:""}),
-            repeater_uplink: (if .network.uplink.mode == "repeater" then (.repeater // {connected: false, ssid: ""}) else {connected: false, ssid: ""} end),
-            numPorts: 4,
-            wan_mode: $saved_wan_mode,
-            wan_speed: (if ((.network.uplink.speed_mbps // 0) | tonumber) > 0 then ((.network.uplink.speed_mbps | tostring)) else "unknown" end),
-            usb_config: {
-              mode: "hub",
-              num_ports: ((.usb_devices // []) | length),
-              speed_std: "usb3",
-              ports: [
-                range(0; ((.usb_devices // []) | length)) as $i | {
-                  id: ("usb-" + ($i + 1 | tostring)),
-                  label: ("USB " + ($i + 1 | tostring)),
-                  role: "device",
-                  name: ((.usb_devices[$i].product) // "USB Device"),
-                  speed: (if ((.usb_devices[$i].speed_mbps // 5000) < 1000) then "usb2" else "usb3" end)
-                }
-              ]
-            },
-            ports: [
-              {
-                id: "root-lan1",
-                label: "LAN 1",
-                role: (if ($lan1_devs | length) > 0 then "device" else "empty" end),
-                child: (if ($lan1_devs | length) > 0 then {
-                  id: ("dev-" + ($lan1_devs[0].mac | split(":") | join(""))),
-                  type: "device",
-                  name: $lan1_devs[0].name,
-                  ip: $lan1_devs[0].ip,
-                  mac: $lan1_devs[0].mac,
-                  status: "online",
-                  uplinkPort: "root-lan1"
-                } else null end)
-              },
-              {
-                id: "root-lan2",
-                label: "LAN 2",
-                role: (if ($lan2_devs | length) > 0 then "device" else "empty" end),
-                child: (if ($lan2_devs | length) > 0 then {
-                  id: ("dev-" + ($lan2_devs[0].mac | split(":") | join(""))),
-                  type: "device",
-                  name: $lan2_devs[0].name,
-                  ip: $lan2_devs[0].ip,
-                  mac: $lan2_devs[0].mac,
-                  status: "online",
-                  uplinkPort: "root-lan2"
-                } else null end)
-              },
-              {
-                id: "root-lan3",
-                label: "LAN 3",
-                role: (if ($lan3_devs | length) > 0 then "device" else "empty" end),
-                child: (if ($lan3_devs | length) > 0 then {
-                  id: ("dev-" + ($lan3_devs[0].mac | split(":") | join(""))),
-                  type: "device",
-                  name: $lan3_devs[0].name,
-                  ip: $lan3_devs[0].ip,
-                  mac: $lan3_devs[0].mac,
-                  status: "online",
-                  uplinkPort: "root-lan3"
-                } else null end)
-              },
-              {
-                id: "root-lan4",
-                label: "LAN 4",
-                role: (if ($lan4_devs | length) > 0 then "device" else "empty" end),
-                child: (if ($lan4_devs | length) > 0 then {
-                  id: ("dev-" + ($lan4_devs[0].mac | split(":") | join(""))),
-                  type: "device",
-                  name: $lan4_devs[0].name,
-                  ip: $lan4_devs[0].ip,
-                  mac: $lan4_devs[0].mac,
-                  status: "online",
-                  uplinkPort: "root-lan4"
-                } else null end)
-              }
-            ],
-            wireless_clients: [
-              $wifi_devs[] | {
-                name: .name,
-                ip: .ip,
-                mac: .mac,
-                status: "online",
-                band: (.band // "WiFi"),
-                linkSpeed: (.link_speed // "144 Mbps")
-              }
-            ]
-          }
-        }
-    ' 2>/dev/null)
-    if [ -n "$AUTO_TREE" ] && echo "$AUTO_TREE" | jq -e '.tree' >/dev/null 2>&1; then
-      echo "$AUTO_TREE" > "$CONF_FILE"
-      sync
-      echo "$AUTO_TREE"
-      exit 0
+    if [ -x /usr/bin/topology_auto_detect.sh ]; then
+      AUTO_TREE=$(/usr/bin/topology_auto_detect.sh 2>/dev/null)
+      if [ -n "$AUTO_TREE" ] && echo "$AUTO_TREE" | jq -e '.tree' >/dev/null 2>&1; then
+        echo "$AUTO_TREE" > "$CONF_FILE"
+        sync
+        echo "$AUTO_TREE"
+        exit 0
+      fi
     fi
     init_default > "$CONF_FILE"
     sync

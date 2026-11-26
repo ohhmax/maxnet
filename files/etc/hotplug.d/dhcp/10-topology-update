@@ -1,0 +1,12 @@
+#!/bin/sh
+# Auto-update topology layers on device connect / disconnect
+case "$ACTION" in
+    add|del)
+        (
+            flock -n 200 || exit 0
+            sleep 3
+            /usr/bin/topology_auto_detect.sh > /etc/topology_layers.json.tmp && mv /etc/topology_layers.json.tmp /etc/topology_layers.json
+            sync
+        ) 200>/tmp/topo_update.lock &
+        ;;
+esac

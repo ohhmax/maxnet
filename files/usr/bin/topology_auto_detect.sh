@@ -206,6 +206,14 @@ for ip in $UNIQUE_IPS; do
       role="device"
       device_type="nas"
       confidence="High"
+    elif [ "$vendor" = "Intel Corporation" ] || [ "$vendor" = "Intel" ]; then
+      role="device"
+      device_type="pc"
+      confidence="High"
+    elif [ "$vendor" = "ASUSTek Computer Inc." ] || [ "$oui_prefix" = "a8:1b:5a" ]; then
+      role="ap"
+      device_type="router"
+      confidence="High"
     elif [ "$sig_count" -ge 2 ]; then
       role="ap"
       device_type="ap"
@@ -324,6 +332,7 @@ fi
 
 # Assemble Topology Hierarchy Tree via jq
 FINAL_JSON=$(jq -n \
+  --arg now "$NOW" \
   --arg lan_ip "$LAN_IP" \
   --arg lan_mac "$LAN_MAC" \
   --arg host_name "$HOST_NAME" \
@@ -348,11 +357,105 @@ FINAL_JSON=$(jq -n \
   def get_locked_port(p_id):
     ($locked_ports | map(select(.id == p_id and (.is_locked == true or .child.is_locked == true))) | first);
 
-  # Identify real devices per LAN port
-  ($all_devs | map(select(.port == "LAN 1")) | first) as $lan1_node |
-  ($all_devs | map(select(.port == "LAN 2")) | first) as $lan2_node |
-  ($all_devs | map(select(.port == "LAN 3")) | first) as $lan3_node |
-  ($all_devs | map(select(.port == "LAN 4")) | first) as $lan4_node |
+  def is_phone_name(d):
+    (if (d.mac | startswith("a8:1b:5a")) then false
+     else ((d.name // "") | ascii_downcase) as $l |
+          ($l | contains("poco") or contains("motorola") or contains("vivo") or contains("oppo") or contains("phone") or contains("mobile") or contains("iphone") or contains("galaxy"))
+     end);
+
+  def is_router_dev(d):
+    ((d.mac | startswith("a8:1b:5a")) or
+     (((d.vendor // "") | ascii_downcase) | contains("asus")) or
+     (((d.name // "") | ascii_downcase) | (contains("router") or contains("asus") or contains("gateway"))) or
+     (d.role == "ap" and (is_phone_name(d) | not) and (((d.vendor // "") | ascii_downcase | contains("intel")) | not)));
+
+  def make_port_object(p_label; p_id):
+    ($all_devs | map(select(.port == p_label))) as $devs |
+    (if get_locked_port(p_id) != null then get_locked_port(p_id)
+     elif ($devs | length) == 0 then
+       { id: p_id, label: p_label, role: "empty", child: null }
+     else
+       (($devs | map(select(is_router_dev(.))) | first) // (if ($devs | length) > 1 then $devs[0] else null end)) as $rtr_dev |
+       (if $rtr_dev != null and (($devs | length) > 1 or is_router_dev($rtr_dev)) then
+         ($devs | map(select(.mac != $rtr_dev.mac))) as $sub_devs |
+         ($sub_devs | map(select(is_phone_name(.)))) as $sub_wifi |
+         ($sub_devs | map(select(is_phone_name(.) | not))) as $sub_wired |
+         {
+           id: p_id,
+           label: p_label,
+           role: "node",
+           child: {
+             id: ("node-" + (p_id | split("-")[1]) + "-" + ($rtr_dev.mac | split(":") | join(""))),
+             type: "router",
+             name: (if ($rtr_dev.mac | startswith("a8:1b:5a")) or (((($rtr_dev.vendor // "") | ascii_downcase)) | contains("asus")) then "Asus Router" else ($rtr_dev.name // "Subordinate Router") end),
+             ip: $rtr_dev.ip,
+             mac: $rtr_dev.mac,
+             status: (if $rtr_dev.is_online then "online" else "offline" end),
+             confidence: "High",
+             uplinkPort: p_id,
+             numPorts: 4,
+             ports: [
+               (if ($sub_wired | length) > 0 then {
+                 id: ("node-" + (p_id | split("-")[1]) + "-p1"),
+                 label: "LAN 1",
+                 role: "device",
+                 child: {
+                   id: ("dev-" + ($sub_wired[0].mac | split(":") | join(""))),
+                   type: "device",
+                   name: $sub_wired[0].name,
+                   ip: $sub_wired[0].ip,
+                   mac: $sub_wired[0].mac,
+                   status: "online",
+                   uplinkPort: ("node-" + (p_id | split("-")[1]) + "-p1")
+                 }
+               } else { id: ("node-" + (p_id | split("-")[1]) + "-p1"), label: "LAN 1", role: "empty", child: null } end),
+               (if ($sub_wired | length) > 1 then {
+                 id: ("node-" + (p_id | split("-")[1]) + "-p2"),
+                 label: "LAN 2",
+                 role: "device",
+                 child: {
+                   id: ("dev-" + ($sub_wired[1].mac | split(":") | join(""))),
+                   type: "device",
+                   name: $sub_wired[1].name,
+                   ip: $sub_wired[1].ip,
+                   mac: $sub_wired[1].mac,
+                   status: "online",
+                   uplinkPort: ("node-" + (p_id | split("-")[1]) + "-p2")
+                 }
+               } else { id: ("node-" + (p_id | split("-")[1]) + "-p2"), label: "LAN 2", role: "empty", child: null } end),
+               { id: ("node-" + (p_id | split("-")[1]) + "-p3"), label: "LAN 3", role: "empty", child: null },
+               { id: ("node-" + (p_id | split("-")[1]) + "-p4"), label: "LAN 4", role: "empty", child: null }
+             ],
+             wireless_clients: ($sub_wifi | map({
+                 name: .name,
+                 ip: .ip,
+                 mac: .mac,
+                 status: "online",
+                 band: "5GHz",
+                 linkSpeed: "866 Mbps"
+               }))
+           }
+         }
+       else
+         ($devs[0]) as $single_dev |
+         {
+           id: p_id,
+           label: p_label,
+           role: "device",
+           child: {
+             id: ("dev-" + ($single_dev.mac | split(":") | join(""))),
+             type: "device",
+             name: $single_dev.name,
+             ip: $single_dev.ip,
+             mac: $single_dev.mac,
+             status: (if $single_dev.is_online then "online" else "offline" end),
+             confidence: $single_dev.confidence,
+             uplinkPort: p_id
+           }
+         }
+       end)
+     end);
+
   ($all_devs | map(select(.port == "WiFi" or .is_direct_wifi == true))) as $wifi_nodes |
 
   # Helper to generate concrete evidence list
@@ -382,7 +485,7 @@ FINAL_JSON=$(jq -n \
   {
     status: "ok",
     version: 2,
-    scan_timestamp: ('$NOW'),
+    scan_timestamp: ($now | tonumber),
     tree: {
       id: "root",
       type: "router",
@@ -405,69 +508,12 @@ FINAL_JSON=$(jq -n \
         ] end)
       },
       ports: [
-        (if get_locked_port("root-lan1") != null then get_locked_port("root-lan1") else {
-          id: "root-lan1",
-          label: "LAN 1",
-          role: (if $lan1_node then "device" else "empty" end),
-          child: (if $lan1_node then {
-            id: ("dev-" + ($lan1_node.mac | split(":") | join(""))),
-            type: "device",
-            name: $lan1_node.name,
-            ip: $lan1_node.ip,
-            mac: $lan1_node.mac,
-            status: (if $lan1_node.is_online then "online" else "offline" end),
-            confidence: $lan1_node.confidence,
-            uplinkPort: "root-lan1"
-          } else null end)
-        } end),
-        (if get_locked_port("root-lan2") != null then get_locked_port("root-lan2") else {
-          id: "root-lan2",
-          label: "LAN 2",
-          role: (if $lan2_node then "device" else "empty" end),
-          child: (if $lan2_node then {
-            id: ("dev-" + ($lan2_node.mac | split(":") | join(""))),
-            type: "device",
-            name: $lan2_node.name,
-            ip: $lan2_node.ip,
-            mac: $lan2_node.mac,
-            status: (if $lan2_node.is_online then "online" else "offline" end),
-            confidence: $lan2_node.confidence,
-            uplinkPort: "root-lan2"
-          } else null end)
-        } end),
-        (if get_locked_port("root-lan3") != null then get_locked_port("root-lan3") else {
-          id: "root-lan3",
-          label: "LAN 3",
-          role: (if $lan3_node then "device" else "empty" end),
-          child: (if $lan3_node then {
-            id: ("dev-" + ($lan3_node.mac | split(":") | join(""))),
-            type: "device",
-            name: $lan3_node.name,
-            ip: $lan3_node.ip,
-            mac: $lan3_node.mac,
-            status: (if $lan3_node.is_online then "online" else "offline" end),
-            confidence: $lan3_node.confidence,
-            uplinkPort: "root-lan3"
-          } else null end)
-        } end),
-        (if get_locked_port("root-lan4") != null then get_locked_port("root-lan4") else {
-          id: "root-lan4",
-          label: "LAN 4",
-          role: (if $lan4_node then "device" else "empty" end),
-          child: (if $lan4_node then {
-            id: ("dev-" + ($lan4_node.mac | split(":") | join(""))),
-            type: "device",
-            name: $lan4_node.name,
-            ip: $lan4_node.ip,
-            mac: $lan4_node.mac,
-            status: (if $lan4_node.is_online then "online" else "offline" end),
-            confidence: $lan4_node.confidence,
-            uplinkPort: "root-lan4"
-          } else null end)
-        } end)
+        make_port_object("LAN 1"; "root-lan1"),
+        make_port_object("LAN 2"; "root-lan2"),
+        make_port_object("LAN 3"; "root-lan3"),
+        make_port_object("LAN 4"; "root-lan4")
       ],
-      wireless_clients: [
-        $wifi_nodes[] | select(.is_online == true) | {
+      wireless_clients: ($wifi_nodes | map(select(.is_online == true) | {
           name: .name,
           ip: .ip,
           mac: .mac,
@@ -475,8 +521,7 @@ FINAL_JSON=$(jq -n \
           confidence: .confidence,
           band: "WiFi",
           linkSpeed: "144 Mbps"
-        }
-      ]
+        }))
     }
   }
 ')

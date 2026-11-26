@@ -1,0 +1,23 @@
+#!/bin/sh
+# MAXNET Cybernetic Gateway - Public Gateway Health Snapshot (Pre-Auth)
+echo "Content-Type: application/json"
+echo "Cache-Control: no-cache, no-store, must-revalidate"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+HOSTNAME=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")
+[ -z "$HOSTNAME" ] && HOSTNAME="MAXNET"
+
+FW_VER=$(sed -n 's/^VERSION=//p' /etc/maxnet_version 2>/dev/null | head -n 1)
+[ -z "$FW_VER" ] && FW_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1)
+[ -z "$FW_VER" ] && FW_VER="2.2.59"
+
+cat << JSON
+{
+  "status": "ok",
+  "hostname": "$HOSTNAME",
+  "firmware": "$FW_VER",
+  "soc": "Qualcomm IPQ5018",
+  "brand": "MAXNET"
+}
+JSON
