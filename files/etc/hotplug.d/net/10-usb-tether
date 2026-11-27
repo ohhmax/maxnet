@@ -25,13 +25,23 @@ if [ "$ACTION" = "add" ]; then
         fi
     done
 
-    # Maximum Throughput MTU (1500) & Ultra-Deep queue sizing (10000)
-    ip link set "$DEVICENAME" mtu 1500 qlen 10000 2>/dev/null || ifconfig "$DEVICENAME" mtu 1500 txqueuelen 10000 2>/dev/null || true
+    # Match carrier cellular path MTU (1400/1420) and bounded qlen (1000) to avoid rndis_host NETDEV WATCHDOG TX stalls
+    USB_SEC="usb0"
+    NET_SEC="wan_usb"
+    case "$DEVICENAME" in
+        usb[1-5])
+            USB_SEC="$DEVICENAME"
+            NET_SEC="wan_usb${DEVICENAME#usb}"
+            ;;
+    esac
+    USB_MTU=$(uci -q get "usb_wan.${USB_SEC}.mtu" || uci -q get "network.${NET_SEC}.mtu" || echo 1420)
+    [ -z "$USB_MTU" ] && USB_MTU=1420
+    ip link set "$DEVICENAME" mtu "$USB_MTU" qlen 1000 2>/dev/null || ifconfig "$DEVICENAME" mtu "$USB_MTU" txqueuelen 1000 2>/dev/null || true
 
     # Smart Queue Management (CAKE / FQ-CoDel)
     tc qdisc replace dev "$DEVICENAME" root cake diffserv4 ack-filter 2>/dev/null || true
 
-    # Disable USB autosuspend on controller and root hub
+    # Disable USB autosuspend on controller and root hub (control=on only, avoid deprecated power/level)
     for f in /sys/bus/usb/devices/*/power/control; do echo on > "$f" 2>/dev/null; done
     for f in /sys/bus/usb/devices/*/power/autosuspend; do echo -1 > "$f" 2>/dev/null; done
 
@@ -44,17 +54,22 @@ if [ "$ACTION" = "add" ]; then
     sysctl -w "net.ipv6.conf.$DEVICENAME.ndisc_notify=1" >/dev/null 2>&1 || true
     ip link set "$DEVICENAME" allmulticast on 2>/dev/null || true
 
-    ifup wan_usb
-    
-    # Wait for gateway IP address assignment and update ADB-Forward redirect
+    ifup "$NET_SEC"
+
+    # Wait for gateway IP address assignment and update ADB-Forward redirect only if defined and changed
     (
         for i in $(seq 1 15); do
             sleep 1
             gw=$(ip route show default dev "$DEVICENAME" 2>/dev/null | awk '{print $3}' | head -n 1)
             if [ -n "$gw" ]; then
-                uci set firewall.adb_forward.dest_ip="$gw"
-                uci commit firewall
-                /etc/init.d/firewall reload >/dev/null 2>&1
+                if uci -q get firewall.adb_forward >/dev/null 2>&1; then
+                    cur_dest=$(uci -q get firewall.adb_forward.dest_ip)
+                    if [ "$cur_dest" != "$gw" ]; then
+                        uci set firewall.adb_forward.dest_ip="$gw"
+                        uci commit firewall
+                        /etc/init.d/firewall reload >/dev/null 2>&1
+                    fi
+                fi
                 break
             fi
         done

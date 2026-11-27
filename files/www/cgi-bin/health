@@ -10,14 +10,24 @@ HOSTNAME=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")
 
 FW_VER=$(sed -n 's/^VERSION=//p' /etc/maxnet_version 2>/dev/null | head -n 1)
 [ -z "$FW_VER" ] && FW_VER=$(grep -o 'v2\.[0-9.]*' /etc/banner 2>/dev/null | head -n 1)
-[ -z "$FW_VER" ] && FW_VER="2.2.59"
+[ -z "$FW_VER" ] && FW_VER="2.2.61"
+
+BOARD=$(cat /tmp/sysinfo/board_name 2>/dev/null)
+COMPAT=$(tr '\0' ' ' < /proc/device-tree/compatible 2>/dev/null)
+SOC_NAME="Qualcomm IPQ5018"
+case "$BOARD $COMPAT" in
+  *ipq95*|*jidu6911*|*jidu6j11*|*al02*) SOC_NAME="Qualcomm IPQ9574" ;;
+  *ipq53*|*jidu6801*) SOC_NAME="Qualcomm IPQ5332" ;;
+  *ipq60*|*jidu6611*|*jidu6601*) SOC_NAME="Qualcomm IPQ6018" ;;
+  *mt7986*|*filogic*) SOC_NAME="MediaTek MT7986A" ;;
+esac
 
 cat << JSON
 {
   "status": "ok",
   "hostname": "$HOSTNAME",
   "firmware": "$FW_VER",
-  "soc": "Qualcomm IPQ5018",
+  "soc": "$SOC_NAME",
   "brand": "MAXNET"
 }
 JSON

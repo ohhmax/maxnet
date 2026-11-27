@@ -241,6 +241,9 @@ let timer = null;
       fetchData();
       setupTimer();
       setTimeout(checkUpdateStatus, 2000);
+      if (typeof initWebUiSettingsPage === 'function') initWebUiSettingsPage();
+      if (typeof loadNotificationsPage === 'function') loadNotificationsPage();
+      if (typeof checkForSystemFirmwareUpdates === 'function') checkForSystemFirmwareUpdates();
       if (window.location.hash && window.location.hash.startsWith('#setting=')) {
         const sId = decodeURIComponent(window.location.hash.replace('#setting=', '')).split('&')[0];
         if (sId) {
@@ -7446,20 +7449,18 @@ function drawStorageIconSmall(x, y, color, parent) {
             const m = (c.mac || '').toLowerCase();
             const n = (c.name || '').toLowerCase();
             const vend = (c.vendor || '').toLowerCase();
-            return m.startsWith('a8:1b:5a') || m.startsWith('00:11:32') ||
-              /asus|router|gateway|access point|openwrt|mesh|switch/i.test(n) ||
-              /asus|tp-link|netgear|cisco/i.test(vend) ||
+            return m.startsWith('8c:a3:99') ||
+              /asus|router|gateway|access point|openwrt|mesh|switch|maxnet-b/i.test(n) ||
+              (/asus|tp-link|netgear|cisco/i.test(vend) && !m.startsWith('a8:1b:5a')) ||
               c.device_type === 'router' || c.device_type === 'ap';
           });
-          if (!routerCandidate && candidates.length > 1) {
-            routerCandidate = candidates.find(c => !/poco|motorola|oppo|vivo|iphone|samsung|pixel|phone|mobile/i.test(c.name || '')) || candidates[0];
-          }
 
           const matchedClient = routerCandidate || candidates.find(c => stableValue && String(discoveryMode === 'ip' ? c.ip : (c.mac || '')).toLowerCase() === String(stableValue).toLowerCase()) || candidates[0];
 
           if (matchedClient) {
             const hasMultiple = candidates.length > 1;
-            const isAsusRouter = (matchedClient.mac && matchedClient.mac.toLowerCase().startsWith('a8:1b:5a')) || /asus/i.test(matchedClient.name || '');
+            const mMac = (matchedClient.mac || '').toLowerCase();
+            const isAsusRouter = mMac.startsWith('8c:a3:99') || /asus|maxnet-b/i.test(matchedClient.name || '');
             const isNetworkNode = hasMultiple || matchedClient.device_type === 'router' || matchedClient.device_type === 'switch' || matchedClient.device_type === 'ap' ||
               isAsusRouter ||
               /asus|router|switch|repeater|access point|mesh|gateway|maxnet/i.test(matchedClient.name || '') ||
@@ -7467,7 +7468,7 @@ function drawStorageIconSmall(x, y, color, parent) {
 
             if (isNetworkNode) {
               port.role = 'node';
-              const nodeName = isAsusRouter ? 'Asus Router' : (matchedClient.name && !/poco|motorola|oppo|vivo|iphone|samsung|pixel/i.test(matchedClient.name) ? matchedClient.name : 'Subordinate Router');
+              const nodeName = isAsusRouter ? 'Asus Router' : ((routerCandidate && matchedClient.name && !/poco|motorola|oppo|vivo|iphone|samsung|pixel|maxos|device/i.test(matchedClient.name)) ? matchedClient.name : `LAN ${portNum} Switch / AP`);
               if (!port.child || port.child.role === 'device' || port.child.type === 'device') {
                 port.child = {
                   id: `node-lan${portNum}-${(matchedClient.mac || '').replace(/[:]/g, '')}`,
@@ -7505,15 +7506,17 @@ function drawStorageIconSmall(x, y, color, parent) {
               }
 
               // Attach other devices learned on this port under the subordinate router
-              const subClients = candidates.filter(c => c.mac && c.mac.toLowerCase() !== matchedClient.mac.toLowerCase());
-              if (subClients.length > 0 && Array.isArray(port.child.ports)) {
+              const subClients = routerCandidate ? candidates.filter(c => c.mac && c.mac.toLowerCase() !== matchedClient.mac.toLowerCase()) : candidates;
+              if (Array.isArray(port.child.ports)) {
                 let subWiredIdx = 0;
                 subClients.forEach(sc => {
-                  const isScWifi = /poco|motorola|vivo|oppo|phone|mobile|iphone|galaxy/i.test(sc.name || '') || sc.is_wifi;
+                  const scMac = (sc.mac || '').toLowerCase();
+                  const isRandPhone = /^.[26ae]:/i.test(scMac) && /^(device|\*|android)?$/i.test((sc.name || 'device').trim());
+                  const isScWifi = isRandPhone || /poco|motorola|vivo|oppo|phone|mobile|iphone|galaxy|redmi|oneplus/i.test(sc.name || '') || sc.is_wifi;
                   if (isScWifi) {
-                    if (!port.child.wireless_clients.some(wc => wc.mac && wc.mac.toLowerCase() === sc.mac.toLowerCase())) {
+                    if (!port.child.wireless_clients.some(wc => wc.mac && wc.mac.toLowerCase() === scMac)) {
                       port.child.wireless_clients.push({
-                        id: `wdev-${(sc.mac || '').replace(/[:]/g, '')}`,
+                        id: `wdev-${scMac.replace(/[:]/g, '')}`,
                         name: sc.name || 'Wireless Device',
                         ip: sc.ip || '',
                         mac: sc.mac || '',
@@ -7525,7 +7528,7 @@ function drawStorageIconSmall(x, y, color, parent) {
                   } else if (subWiredIdx < port.child.ports.length) {
                     port.child.ports[subWiredIdx].role = 'device';
                     port.child.ports[subWiredIdx].child = {
-                      id: `dev-${(sc.mac || '').replace(/[:]/g, '')}`,
+                      id: `dev-${scMac.replace(/[:]/g, '')}`,
                       type: 'device',
                       name: sc.name || 'Wired Host',
                       ip: sc.ip || '',
@@ -7536,6 +7539,12 @@ function drawStorageIconSmall(x, y, color, parent) {
                     subWiredIdx++;
                   }
                 });
+                for (let pi = subWiredIdx; pi < port.child.ports.length; pi++) {
+                  if (!port.child.ports[pi].child || !port.child.ports[pi].child.isCustom) {
+                    port.child.ports[pi].role = 'empty';
+                    port.child.ports[pi].child = null;
+                  }
+                }
               }
             } else {
               port.role = 'device';
@@ -16603,6 +16612,41 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       return _termLoadingPromise;
     }
 
+    let _pendingTermInputs = [];
+
+    function flushPendingTermInputs() {
+      if (!_nativeTermWs || _nativeTermWs.readyState !== WebSocket.OPEN) return;
+      while (_pendingTermInputs.length > 0) {
+        const str = _pendingTermInputs.shift();
+        const bytes = new TextEncoder().encode(str);
+        const msg = new Uint8Array(1 + bytes.length);
+        msg[0] = 48; // '0' for pty input
+        msg.set(bytes, 1);
+        _nativeTermWs.send(msg);
+      }
+    }
+
+    function sendRawToTerminal(str) {
+      if (!_nativeTermWs || (_nativeTermWs.readyState !== WebSocket.OPEN && _nativeTermWs.readyState !== WebSocket.CONNECTING)) {
+        _pendingTermInputs.push(str);
+        if (_nativeTerminal) {
+          try { _nativeTerminal.writeln('\r\n\x1b[36m[Reconnecting terminal session...]\x1b[0m'); } catch (e) {}
+        }
+        _nativeTermWs = null;
+        connectTerminalWebSocket();
+        return;
+      }
+      if (_nativeTermWs.readyState === WebSocket.CONNECTING) {
+        _pendingTermInputs.push(str);
+        return;
+      }
+      const bytes = new TextEncoder().encode(str);
+      const msg = new Uint8Array(1 + bytes.length);
+      msg[0] = 48; // '0'
+      msg.set(bytes, 1);
+      _nativeTermWs.send(msg);
+    }
+
     async function initNativeTerminal() {
       const container = document.getElementById('terminalContainer');
       if (!container) return;
@@ -16613,7 +16657,13 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           _nativeTerminal.options.fontSize = getTerminalResponsiveFontSize();
         }
         updateTerminalTheme();
-        if (_nativeFitAddon) {
+        if (!_nativeTermWs || (_nativeTermWs.readyState !== WebSocket.OPEN && _nativeTermWs.readyState !== WebSocket.CONNECTING)) {
+          _nativeTermWs = null;
+          connectTerminalWebSocket();
+        }
+        if (typeof window._updateTerminalLayout === 'function') {
+          setTimeout(() => window._updateTerminalLayout(), 60);
+        } else if (_nativeFitAddon) {
           try { _nativeFitAddon.fit(); } catch (e) {}
         }
         setTimeout(() => { try { _nativeTerminal.focus(); } catch (e) {} }, 100);
@@ -16659,8 +16709,12 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       container.innerHTML = '';
       _nativeTerminal.open(container);
 
-      // Tap container anywhere to refocus terminal & show keyboard
+      // Tap container anywhere to refocus terminal & auto-reconnect if disconnected
       container.addEventListener('click', () => {
+        if (!_nativeTermWs || (_nativeTermWs.readyState !== WebSocket.OPEN && _nativeTermWs.readyState !== WebSocket.CONNECTING)) {
+          _nativeTermWs = null;
+          connectTerminalWebSocket();
+        }
         if (_nativeTerminal) {
           try {
             _nativeTerminal.scrollToBottom();
@@ -16766,6 +16820,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         window.visualViewport.addEventListener('scroll', updateTerminalLayout);
       }
 
+      window._updateTerminalLayout = updateTerminalLayout;
       window.addEventListener('resize', updateTerminalLayout);
       setTimeout(updateTerminalLayout, 50);
       setTimeout(updateTerminalLayout, 200);
@@ -16785,7 +16840,6 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     window.clearTerminalScreen = clearTerminalScreen;
 
     function sendTerminalKey(key) {
-      if (!_nativeTermWs || _nativeTermWs.readyState !== WebSocket.OPEN) return;
       let code = '';
       if (key === 'ESC') code = '\x1b';
       else if (key === 'TAB') code = '\t';
@@ -16796,12 +16850,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       else if (key === 'ENTER') code = '\r';
       else code = key;
 
-      const payload = new Uint8Array(1 + code.length);
-      payload[0] = '0'.charCodeAt(0);
-      for (let i = 0; i < code.length; i++) {
-        payload[i + 1] = code.charCodeAt(i);
-      }
-      _nativeTermWs.send(payload);
+      sendRawToTerminal(code);
       if (_nativeTerminal) {
         try {
           _nativeTerminal.scrollToBottom();
@@ -16821,17 +16870,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const input = document.getElementById('termQuickInput');
       if (!input) return;
       const cmd = input.value;
-      if (cmd === null || cmd === undefined || cmd.trim() === '') return;
-      if (!_nativeTermWs || _nativeTermWs.readyState !== WebSocket.OPEN) {
-        if (typeof showToast === 'function') showToast('Terminal session not connected');
-        return;
-      }
-      const payloadStr = cmd + '\r';
-      const inputBytes = new TextEncoder().encode(payloadStr);
-      const msg = new Uint8Array(1 + inputBytes.length);
-      msg[0] = 48; // '0' for pty input
-      msg.set(inputBytes, 1);
-      _nativeTermWs.send(msg);
+      const payloadStr = (cmd !== null && cmd !== undefined && cmd.trim() !== '') ? (cmd + '\r') : '\r';
+      sendRawToTerminal(payloadStr);
       input.value = '';
       if (_nativeTerminal) {
         try {
@@ -16844,27 +16884,29 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     window.submitMobileTermCmd = submitMobileTermCmd;
 
     function connectTerminalWebSocket() {
-      if (_nativeTermWs && _nativeTermWs.readyState === WebSocket.OPEN) return;
+      if (_nativeTermWs && (_nativeTermWs.readyState === WebSocket.OPEN || _nativeTermWs.readyState === WebSocket.CONNECTING)) return;
 
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${window.location.hostname}:7681/ws`;
 
       try {
-        _nativeTermWs = new WebSocket(wsUrl, ['tty']);
-        _nativeTermWs.binaryType = 'arraybuffer';
+        const ws = new WebSocket(wsUrl, ['tty']);
+        _nativeTermWs = ws;
+        ws.binaryType = 'arraybuffer';
 
-        _nativeTermWs.onopen = () => {
-          _nativeTermWs.send(new TextEncoder().encode(JSON.stringify({ AuthToken: '' })));
+        ws.onopen = () => {
+          ws.send(new TextEncoder().encode(JSON.stringify({ AuthToken: '' })));
           if (_nativeTerminal) {
             const cols = _nativeTerminal.cols || 80;
             const rows = _nativeTerminal.rows || 24;
             const resMsg = new TextEncoder().encode('1' + JSON.stringify({ columns: cols, rows: rows }));
-            _nativeTermWs.send(resMsg);
+            ws.send(resMsg);
             try { _nativeTerminal.scrollToBottom(); } catch (e) {}
           }
+          flushPendingTermInputs();
         };
 
-        _nativeTermWs.onmessage = (e) => {
+        ws.onmessage = (e) => {
           const u8 = new Uint8Array(e.data);
           const cmd = String.fromCharCode(u8[0]);
           if (cmd === '0' && _nativeTerminal) {
@@ -16878,35 +16920,34 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           }
         };
 
-        _nativeTermWs.onclose = () => {
+        ws.onclose = () => {
+          if (_nativeTermWs === ws) _nativeTermWs = null;
           if (_nativeTerminal) {
-            _nativeTerminal.writeln('\r\n\x1b[33m[Session disconnected. Press back or re-open Terminal to reconnect]\x1b[0m');
+            _nativeTerminal.writeln('\r\n\x1b[33m[Session disconnected. Tap terminal or press Enter to reconnect]\x1b[0m');
           }
         };
 
-        _nativeTermWs.onerror = () => {
+        ws.onerror = () => {
           if (_nativeTerminal) {
-            _nativeTerminal.writeln('\r\n\x1b[31m[WebSocket connection to port 7681 failed]\x1b[0m');
+            _nativeTerminal.writeln('\r\n\x1b[31m[WebSocket connection to port 7681 failed — ensure ttyd is running and HTTP/WS is reachable]\x1b[0m');
           }
         };
 
-        _nativeTerminal.onData((data) => {
-          if (_nativeTerminal) {
-            try {
-              _nativeTerminal.scrollToBottom();
-              const vp = document.querySelector('#terminalContainer .xterm-viewport');
-              if (vp) vp.scrollTop = vp.scrollHeight;
-            } catch (e) {}
-          }
-          if (_nativeTermWs && _nativeTermWs.readyState === WebSocket.OPEN) {
-            const inputBytes = new TextEncoder().encode(data);
-            const msg = new Uint8Array(1 + inputBytes.length);
-            msg[0] = 48; // '0'
-            msg.set(inputBytes, 1);
-            _nativeTermWs.send(msg);
-          }
-        });
+        if (!_nativeTerminal._maxnetDataBound) {
+          _nativeTerminal._maxnetDataBound = true;
+          _nativeTerminal.onData((data) => {
+            if (_nativeTerminal) {
+              try {
+                _nativeTerminal.scrollToBottom();
+                const vp = document.querySelector('#terminalContainer .xterm-viewport');
+                if (vp) vp.scrollTop = vp.scrollHeight;
+              } catch (e) {}
+            }
+            sendRawToTerminal(data);
+          });
+        }
       } catch (err) {
+        _nativeTermWs = null;
         if (_nativeTerminal) {
           _nativeTerminal.writeln('\r\n\x1b[31mFailed to establish terminal WebSocket: ' + err.message + '\x1b[0m');
         }
@@ -20222,9 +20263,11 @@ function onRemoveWifiClient(nodeId, clientIdent) {
     }
     window.clearAllNotificationsWebui = clearAllNotificationsWebui;
 
-    // Initialize WebUI stored settings
+    // Initialize WebUI stored settings only when session token is present (avoids pre-login 401 console spam)
     applyThemeMode();
-    initWebUiSettingsPage();
+    if (localStorage.getItem('maxnet_token')) {
+      initWebUiSettingsPage();
+    }
 
     try {
       if (localStorage.getItem('maxnet_anim_flow') === '0') {
@@ -20534,12 +20577,14 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }).join('');
     }
 
-    // Startup Initialization: Load notifications and check for OS updates
+    // Startup Initialization: Load notifications and check for OS updates only after login
     setTimeout(() => {
+      if (!localStorage.getItem('maxnet_token')) return;
       if (typeof loadNotificationsPage === 'function') loadNotificationsPage();
       if (typeof checkForSystemFirmwareUpdates === 'function') checkForSystemFirmwareUpdates();
     }, 1500);
     setInterval(() => {
+      if (!localStorage.getItem('maxnet_token')) return;
       if (typeof checkForSystemFirmwareUpdates === 'function') checkForSystemFirmwareUpdates();
     }, 30 * 60 * 1000);
 

@@ -105,16 +105,16 @@ BEGIN {
   # Known friendly device names
   known_name["10:65:30:7a:9c:02"] = "maxos";
   known_name["00:11:32:92:02:1b"] = "Synology NAS";
-  known_name["a8:1b:5a:c3:01:13"] = "Asus Router";
+  known_name["a8:1b:5a:c3:01:13"] = "OPPO-A37";
   known_name["8c:a3:99:7b:81:2b"] = "maxnet-b";
   known_name["f2:82:95:8f:db:29"] = "Vivo V2153";
   known_name["76:74:c6:67:5a:89"] = "POCO-X6-5G";
   known_name["f6:93:15:10:10:d2"] = "POCO-X6-5G";
 
   # Known ports
-  known_port["10:65:30:7a:9c:02"] = "LAN 2";
+  known_port["10:65:30:7a:9c:02"] = "LAN 1";
   known_port["00:11:32:92:02:1b"] = "LAN 3";
-  known_port["a8:1b:5a:c3:01:13"] = "LAN 3";
+  known_port["a8:1b:5a:c3:01:13"] = "LAN 1";
   known_port["8c:a3:99:7b:81:2b"] = "LAN 3";
   known_port["f2:82:95:8f:db:29"] = "LAN 3";
   known_port["76:74:c6:67:5a:89"] = "LAN 3";

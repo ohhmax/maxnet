@@ -204,9 +204,16 @@ CFG
 }
 
 init_notif() {
-    if [ ! -f "$NOTIF_FILE" ]; then
+    if [ ! -f "$NOTIF_FILE" ] || ! jq -e 'type=="array"' "$NOTIF_FILE" >/dev/null 2>&1; then
         echo "[]" > "$NOTIF_FILE"
     fi
+}
+
+with_notif_lock() {
+    (
+        flock -w 4 200 || true
+        "$@"
+    ) 200>/tmp/maxnet_notif.lock
 }
 
 init_local_config() {
@@ -458,15 +465,19 @@ if [ "$ACTION" = "dispatch" ]; then
 
     # Keep distinct events even when their titles match; only duplicate IDs are replaced.
     if [ "$SAVE_LOCAL" = "true" ] && [ -n "$NEW_ENTRY" ]; then
-        NOTIF_TMP="/tmp/notif_new_$$.json"
-        jq --argjson new "$NEW_ENTRY" --argjson max "$MAX_NOTIFS" '
-            ([$new] + (if type=="array" then map(select(.id != $new.id)) else [] end))
-            | .[0:$max]
-        ' "$NOTIF_FILE" > "$NOTIF_TMP" 2>/dev/null
-        if [ -s "$NOTIF_TMP" ] && jq -e 'type=="array"' "$NOTIF_TMP" >/dev/null 2>&1; then
-            mv -f "$NOTIF_TMP" "$NOTIF_FILE"
-        fi
-        rm -f "$NOTIF_TMP"
+        save_notif_entry() {
+            init_notif
+            NOTIF_TMP="${NOTIF_FILE}.tmp.$$"
+            jq --argjson new "$NEW_ENTRY" --argjson max "$MAX_NOTIFS" '
+                ([$new] + (if type=="array" then map(select(.id != $new.id)) else [] end))
+                | .[0:$max]
+            ' "$NOTIF_FILE" > "$NOTIF_TMP" 2>/dev/null
+            if [ -s "$NOTIF_TMP" ] && jq -e 'type=="array"' "$NOTIF_TMP" >/dev/null 2>&1; then
+                mv -f "$NOTIF_TMP" "$NOTIF_FILE"
+            fi
+            rm -f "$NOTIF_TMP"
+        }
+        with_notif_lock save_notif_entry
     fi
 
     # Forward to Webhooks if enabled
@@ -513,19 +524,24 @@ fi
 
 # ==================== ACTION: GET_NOTIFICATIONS ====================
 if [ "$ACTION" = "get_notifications" ]; then
-    init_notif
+    with_notif_lock init_notif
     send_json_file "$NOTIF_FILE"
     exit 0
 fi
 
 # ==================== ACTION: DELETE_NOTIFICATION ====================
 if [ "$ACTION" = "delete_notification" ]; then
-    init_notif
     DEL_ID=$(echo "$QUERY_STRING" | sed -n 's/^.*id=\([^&]*\).*$/\1/p')
     [ -z "$DEL_ID" ] && DEL_ID=$(echo "$POST_DATA" | sed -n 's/.*"id"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
 
     if [ -n "$DEL_ID" ]; then
-        jq --arg id "$DEL_ID" 'map(select(.id != $id))' "$NOTIF_FILE" > "${NOTIF_FILE}.tmp" && mv "${NOTIF_FILE}.tmp" "$NOTIF_FILE"
+        del_notif_entry() {
+            init_notif
+            NOTIF_TMP="${NOTIF_FILE}.tmp.$$"
+            jq --arg id "$DEL_ID" 'map(select(.id != $id))' "$NOTIF_FILE" > "$NOTIF_TMP" 2>/dev/null && mv -f "$NOTIF_TMP" "$NOTIF_FILE"
+            rm -f "$NOTIF_TMP"
+        }
+        with_notif_lock del_notif_entry
         send_json_str '{"status":"ok","message":"Notification deleted."}'
     else
         send_json_str '{"status":"error","message":"No notification ID specified."}'
@@ -535,7 +551,12 @@ fi
 
 # ==================== ACTION: CLEAR_NOTIFICATIONS ====================
 if [ "$ACTION" = "clear_notifications" ]; then
-    echo "[]" > "$NOTIF_FILE"
+    clear_notif_file() {
+        NOTIF_TMP="${NOTIF_FILE}.tmp.$$"
+        echo "[]" > "$NOTIF_TMP" && mv -f "$NOTIF_TMP" "$NOTIF_FILE"
+        rm -f "$NOTIF_TMP"
+    }
+    with_notif_lock clear_notif_file
     send_json_str '{"status":"ok","message":"All notifications cleared."}'
     exit 0
 fi
@@ -543,13 +564,14 @@ fi
 # ==================== ACTION: GET_LOCAL_CONFIG ====================
 if [ "$ACTION" = "get_local_config" ]; then
     init_local_config
-    init_notif
+    with_notif_lock init_notif
     COUNT=$(jq 'length' "$NOTIF_FILE" 2>/dev/null || echo 0)
     SIZE=$(ls -lh "$NOTIF_FILE" 2>/dev/null | awk '{print $5}')
-    jq --argjson cnt "$COUNT" --arg sz "${SIZE:-0B}" '. + {count: $cnt, file_size: $sz}' "$LOCAL_CONF_FILE" 2>/dev/null > /tmp/lcfg_out.json
-    if [ -s /tmp/lcfg_out.json ]; then
-        send_json_file /tmp/lcfg_out.json
-        rm -f /tmp/lcfg_out.json
+    TMP_LCFG="/tmp/lcfg_out_$$.json"
+    jq --argjson cnt "$COUNT" --arg sz "${SIZE:-0B}" '. + {count: $cnt, file_size: $sz}' "$LOCAL_CONF_FILE" 2>/dev/null > "$TMP_LCFG"
+    if [ -s "$TMP_LCFG" ]; then
+        send_json_file "$TMP_LCFG"
+        rm -f "$TMP_LCFG"
     else
         send_json_file "$LOCAL_CONF_FILE"
     fi
@@ -560,10 +582,18 @@ fi
 if [ "$ACTION" = "set_local_config" ]; then
     init_local_config
     if [ -n "$POST_DATA" ] && echo "$POST_DATA" | jq . >/dev/null 2>&1; then
-        echo "$POST_DATA" | jq . > "$LOCAL_CONF_FILE"
+        TMP_LCFG="${LOCAL_CONF_FILE}.tmp.$$"
+        echo "$POST_DATA" | jq . > "$TMP_LCFG" && mv -f "$TMP_LCFG" "$LOCAL_CONF_FILE"
+        rm -f "$TMP_LCFG"
         NEW_MAX=$(echo "$POST_DATA" | jq -r '.retention_max_count // empty' 2>/dev/null)
         if [ -n "$NEW_MAX" ] && [ "$NEW_MAX" -gt 0 ] 2>/dev/null && [ -f "$NOTIF_FILE" ]; then
-            jq --argjson m "$NEW_MAX" '.[0:$m]' "$NOTIF_FILE" > "${NOTIF_FILE}.tmp" 2>/dev/null && mv -f "${NOTIF_FILE}.tmp" "$NOTIF_FILE"
+            prune_notif_cfg() {
+                init_notif
+                NOTIF_TMP="${NOTIF_FILE}.tmp.$$"
+                jq --argjson m "$NEW_MAX" '.[0:$m]' "$NOTIF_FILE" > "$NOTIF_TMP" 2>/dev/null && mv -f "$NOTIF_TMP" "$NOTIF_FILE"
+                rm -f "$NOTIF_TMP"
+            }
+            with_notif_lock prune_notif_cfg
         fi
         send_json_str '{"status":"ok","message":"Local notification preferences updated."}'
         exit 0
@@ -575,7 +605,7 @@ fi
 # ==================== ACTION: GET_RETENTION ====================
 if [ "$ACTION" = "get_retention" ]; then
     init_local_config
-    init_notif
+    with_notif_lock init_notif
     COUNT=$(jq 'length' "$NOTIF_FILE" 2>/dev/null || echo 0)
     MAX=$(jq -r '.retention_max_count // 50' "$LOCAL_CONF_FILE" 2>/dev/null)
     DAYS=$(jq -r '.retention_days // 30' "$LOCAL_CONF_FILE" 2>/dev/null)
@@ -592,12 +622,18 @@ if [ "$ACTION" = "set_retention" ]; then
     [ -z "$NEW_MAX" ] && NEW_MAX=$(echo "$QUERY_STRING" | sed -n 's/^.*max_count=\([^&]*\).*$/\1/p')
     [ -z "$NEW_DAYS" ] && NEW_DAYS=$(echo "$QUERY_STRING" | sed -n 's/^.*retention_days=\([^&]*\).*$/\1/p')
 
-    [ -n "$NEW_MAX" ] && jq --argjson m "$NEW_MAX" '.retention_max_count = $m' "$LOCAL_CONF_FILE" > "${LOCAL_CONF_FILE}.tmp" && mv -f "${LOCAL_CONF_FILE}.tmp" "$LOCAL_CONF_FILE"
-    [ -n "$NEW_DAYS" ] && jq --argjson d "$NEW_DAYS" '.retention_days = $d' "$LOCAL_CONF_FILE" > "${LOCAL_CONF_FILE}.tmp" && mv -f "${LOCAL_CONF_FILE}.tmp" "$LOCAL_CONF_FILE"
+    [ -n "$NEW_MAX" ] && jq --argjson m "$NEW_MAX" '.retention_max_count = $m' "$LOCAL_CONF_FILE" > "${LOCAL_CONF_FILE}.tmp.$$" && mv -f "${LOCAL_CONF_FILE}.tmp.$$" "$LOCAL_CONF_FILE"
+    [ -n "$NEW_DAYS" ] && jq --argjson d "$NEW_DAYS" '.retention_days = $d' "$LOCAL_CONF_FILE" > "${LOCAL_CONF_FILE}.tmp.$$" && mv -f "${LOCAL_CONF_FILE}.tmp.$$" "$LOCAL_CONF_FILE"
 
     # Prune notifications if current count exceeds new max
     if [ -n "$NEW_MAX" ] && [ -f "$NOTIF_FILE" ]; then
-        jq --argjson m "$NEW_MAX" '.[0:$m]' "$NOTIF_FILE" > "${NOTIF_FILE}.tmp" && mv -f "${NOTIF_FILE}.tmp" "$NOTIF_FILE"
+        prune_notif_ret() {
+            init_notif
+            NOTIF_TMP="${NOTIF_FILE}.tmp.$$"
+            jq --argjson m "$NEW_MAX" '.[0:$m]' "$NOTIF_FILE" > "$NOTIF_TMP" 2>/dev/null && mv -f "$NOTIF_TMP" "$NOTIF_FILE"
+            rm -f "$NOTIF_TMP"
+        }
+        with_notif_lock prune_notif_ret
     fi
 
     send_json_str '{"status":"ok","message":"Notification retention policy updated."}'

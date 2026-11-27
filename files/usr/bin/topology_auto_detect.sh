@@ -128,8 +128,8 @@ for ip in $UNIQUE_IPS; do
   case "$oui_prefix" in
     "00:11:32") vendor="Synology Inc." ;;
     "10:65:30") vendor="Intel Corporation" ;;
-    "8c:a3:99") vendor="Xiaomi Communications Co Ltd" ;;
-    "a8:1b:5a") vendor="ASUSTek Computer Inc." ;;
+    "8c:a3:99") vendor="ASUSTek Computer Inc." ;;
+    "a8:1b:5a") vendor="OPPO Mobile Communications" ;;
     "a6:10:eb") vendor="Xiaomi Communications Co Ltd" ;;
     "92:8f:fb" | "22:b7:58") vendor="Motorola Mobility LLC" ;;
     "0a:8b:3b" | "ee:e5:0b" | "f2:82:95" | "52:60:c0") vendor="Vivo Mobile Communication Co Ltd" ;;
@@ -210,9 +210,13 @@ for ip in $UNIQUE_IPS; do
       role="device"
       device_type="pc"
       confidence="High"
-    elif [ "$vendor" = "ASUSTek Computer Inc." ] || [ "$oui_prefix" = "a8:1b:5a" ]; then
+    elif [ "$vendor" = "ASUSTek Computer Inc." ] || [ "$oui_prefix" = "8c:a3:99" ]; then
       role="ap"
       device_type="router"
+      confidence="High"
+    elif [ "$oui_prefix" = "a8:1b:5a" ]; then
+      role="device"
+      device_type="phone"
       confidence="High"
     elif [ "$sig_count" -ge 2 ]; then
       role="ap"
@@ -358,13 +362,14 @@ FINAL_JSON=$(jq -n \
     ($locked_ports | map(select(.id == p_id and (.is_locked == true or .child.is_locked == true))) | first);
 
   def is_phone_name(d):
-    (if (d.mac | startswith("a8:1b:5a")) then false
-     else ((d.name // "") | ascii_downcase) as $l |
-          ($l | contains("poco") or contains("motorola") or contains("vivo") or contains("oppo") or contains("phone") or contains("mobile") or contains("iphone") or contains("galaxy"))
-     end);
+    ((d.mac // "") | ascii_downcase) as $m |
+    ((d.name // "") | ascii_downcase) as $l |
+    ((($m | startswith("a8:1b:5a")) or
+      (($m | length >= 2) and (($m[1:2]) as $c2 | ($c2 == "2" or $c2 == "6" or $c2 == "a" or $c2 == "e")) and ($l == "device" or $l == "" or $l == "*")) or
+      ($l | contains("poco") or contains("motorola") or contains("vivo") or contains("oppo") or contains("phone") or contains("mobile") or contains("iphone") or contains("galaxy"))));
 
   def is_router_dev(d):
-    ((d.mac | startswith("a8:1b:5a")) or
+    (((d.mac // "") | ascii_downcase | startswith("8c:a3:99")) or
      (((d.vendor // "") | ascii_downcase) | contains("asus")) or
      (((d.name // "") | ascii_downcase) | (contains("router") or contains("asus") or contains("gateway"))) or
      (d.role == "ap" and (is_phone_name(d) | not) and (((d.vendor // "") | ascii_downcase | contains("intel")) | not)));
@@ -375,9 +380,10 @@ FINAL_JSON=$(jq -n \
      elif ($devs | length) == 0 then
        { id: p_id, label: p_label, role: "empty", child: null }
      else
-       (($devs | map(select(is_router_dev(.))) | first) // (if ($devs | length) > 1 then $devs[0] else null end)) as $rtr_dev |
+       (($devs | map(select(is_router_dev(.))) | first) // (if ($devs | length) > 1 then { ip: "", mac: p_id, name: "LAN Trunk AP / Switch", vendor: "", is_online: true } else null end)) as $rtr_dev |
        (if $rtr_dev != null and (($devs | length) > 1 or is_router_dev($rtr_dev)) then
-         ($devs | map(select(.mac != $rtr_dev.mac))) as $sub_devs |
+         ($devs | map(select(.mac != $rtr_dev.mac or is_router_dev(.) == false))) as $raw_sub |
+         (if ($devs | map(select(is_router_dev(.))) | length) > 0 then ($devs | map(select(.mac != $rtr_dev.mac))) else $devs end) as $sub_devs |
          ($sub_devs | map(select(is_phone_name(.)))) as $sub_wifi |
          ($sub_devs | map(select(is_phone_name(.) | not))) as $sub_wired |
          {
@@ -387,7 +393,7 @@ FINAL_JSON=$(jq -n \
            child: {
              id: ("node-" + (p_id | split("-")[1]) + "-" + ($rtr_dev.mac | split(":") | join(""))),
              type: "router",
-             name: (if ($rtr_dev.mac | startswith("a8:1b:5a")) or (((($rtr_dev.vendor // "") | ascii_downcase)) | contains("asus")) then "Asus Router" else ($rtr_dev.name // "Subordinate Router") end),
+             name: (if (($rtr_dev.mac // "") | ascii_downcase | startswith("8c:a3:99")) or (((($rtr_dev.vendor // "") | ascii_downcase)) | contains("asus")) then "Asus Router" else ($rtr_dev.name // "Subordinate Router") end),
              ip: $rtr_dev.ip,
              mac: $rtr_dev.mac,
              status: (if $rtr_dev.is_online then "online" else "offline" end),
@@ -423,8 +429,34 @@ FINAL_JSON=$(jq -n \
                    uplinkPort: ("node-" + (p_id | split("-")[1]) + "-p2")
                  }
                } else { id: ("node-" + (p_id | split("-")[1]) + "-p2"), label: "LAN 2", role: "empty", child: null } end),
-               { id: ("node-" + (p_id | split("-")[1]) + "-p3"), label: "LAN 3", role: "empty", child: null },
-               { id: ("node-" + (p_id | split("-")[1]) + "-p4"), label: "LAN 4", role: "empty", child: null }
+               (if ($sub_wired | length) > 2 then {
+                 id: ("node-" + (p_id | split("-")[1]) + "-p3"),
+                 label: "LAN 3",
+                 role: "device",
+                 child: {
+                   id: ("dev-" + ($sub_wired[2].mac | split(":") | join(""))),
+                   type: "device",
+                   name: $sub_wired[2].name,
+                   ip: $sub_wired[2].ip,
+                   mac: $sub_wired[2].mac,
+                   status: "online",
+                   uplinkPort: ("node-" + (p_id | split("-")[1]) + "-p3")
+                 }
+               } else { id: ("node-" + (p_id | split("-")[1]) + "-p3"), label: "LAN 3", role: "empty", child: null } end),
+               (if ($sub_wired | length) > 3 then {
+                 id: ("node-" + (p_id | split("-")[1]) + "-p4"),
+                 label: "LAN 4",
+                 role: "device",
+                 child: {
+                   id: ("dev-" + ($sub_wired[3].mac | split(":") | join(""))),
+                   type: "device",
+                   name: $sub_wired[3].name,
+                   ip: $sub_wired[3].ip,
+                   mac: $sub_wired[3].mac,
+                   status: "online",
+                   uplinkPort: ("node-" + (p_id | split("-")[1]) + "-p4")
+                 }
+               } else { id: ("node-" + (p_id | split("-")[1]) + "-p4"), label: "LAN 4", role: "empty", child: null } end)
              ],
              wireless_clients: ($sub_wifi | map({
                  name: .name,

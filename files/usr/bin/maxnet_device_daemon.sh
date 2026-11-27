@@ -42,13 +42,57 @@ sanitize_name() {
     echo "$1" | sed 's/[^a-zA-Z0-9_-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//'
 }
 
+PREV_VIRT_IPS=""
+
+ensure_adb_all_interfaces() {
+    # Keep ADB daemon bound to all interfaces (-a) so adb forward listens on 0.0.0.0:155xx
+    if ! ps w 2>/dev/null | grep -q '[a]db -a'; then
+        adb kill-server >/dev/null 2>&1
+        adb -a nodaemon server >/dev/null 2>&1 &
+        sleep 1
+    fi
+}
+
 ensure_nftables_dnat() {
+    if ! nft list set inet fw4 usb_virtual_ips >/dev/null 2>&1; then
+        nft add set inet fw4 usb_virtual_ips '{ type ipv4_addr; }' 2>/dev/null
+    fi
     if ! nft list map inet fw4 usb_virtual_dnat >/dev/null 2>&1; then
         nft add map inet fw4 usb_virtual_dnat '{ type ipv4_addr : ipv4_addr; }' 2>/dev/null
+    fi
+    if ! nft list chain inet fw4 dstnat_usb_virtual >/dev/null 2>&1; then
         nft add chain inet fw4 dstnat_usb_virtual '{ type nat hook prerouting priority dstnat - 1; policy accept; }' 2>/dev/null
-        nft add rule inet fw4 dstnat_usb_virtual dnat ip to ip daddr map @usb_virtual_dnat 2>/dev/null
-        nft add chain inet fw4 nat_output_usb_virtual '{ type nat hook output priority -100; policy accept; }' 2>/dev/null
-        nft add rule inet fw4 nat_output_usb_virtual dnat ip to ip daddr map @usb_virtual_dnat 2>/dev/null
+    fi
+    if ! nft list chain inet fw4 nat_output_usb_virtual >/dev/null 2>&1; then
+        nft add chain inet fw4 nat_output_usb_virtual '{ type nat hook output priority dstnat - 1; policy accept; }' 2>/dev/null
+    fi
+    if ! nft list chain inet fw4 filter_usb_virtual 2>/dev/null | grep -q 'usb_virtual_ips'; then
+        nft add chain inet fw4 filter_usb_virtual '{ type filter hook input priority filter - 5; policy accept; }' 2>/dev/null
+        nft flush chain inet fw4 filter_usb_virtual 2>/dev/null
+        nft add rule inet fw4 filter_usb_virtual ip daddr @usb_virtual_ips ip protocol icmp accept 2>/dev/null
+        nft add rule inet fw4 filter_usb_virtual ct status dnat tcp dport 15551-15599 accept 2>/dev/null
+        nft add rule inet fw4 filter_usb_virtual ip daddr @usb_virtual_ips meta l4proto tcp reject with tcp reset 2>/dev/null
+        nft add rule inet fw4 filter_usb_virtual ip daddr @usb_virtual_ips drop 2>/dev/null
+        nft add rule inet fw4 filter_usb_virtual tcp dport 15551-15599 iifname != "lo" meta l4proto tcp reject with tcp reset 2>/dev/null
+    fi
+}
+
+ensure_adb_tcpip_port() {
+    local _ser="$1"
+    [ -z "$_ser" ] && return
+    local _stamp="/tmp/adb_tcpip_chk_${_ser}"
+    local _now _last
+    _now=$(date +%s 2>/dev/null || echo 0)
+    _last=$(cat "$_stamp" 2>/dev/null || echo 0)
+    if ! grep -qs "$_ser" "$INITED_ADB_FILE" 2>/dev/null || [ $((_now - _last)) -ge 30 ]; then
+        echo "$_now" > "$_stamp"
+        (
+            cur_tp=$(adb -s "$_ser" shell getprop service.adb.tcp.port 2>/dev/null | tr -d '\r\n ')
+            if [ "$cur_tp" != "5555" ]; then
+                adb -s "$_ser" tcpip 5555 >/dev/null 2>&1
+            fi
+        ) &
+        grep -qs "$_ser" "$INITED_ADB_FILE" 2>/dev/null || echo "$_ser" >> "$INITED_ADB_FILE"
     fi
 }
 
@@ -207,21 +251,17 @@ while true; do
             ACTIVE_VIRT_IPS="$ACTIVE_VIRT_IPS $virt_lan_ip"
             if [ -n "$phone_peer_ip" ]; then
                 ACTIVE_DNAT_ENTRIES="$ACTIVE_DNAT_ENTRIES ${virt_lan_ip}:${phone_peer_ip}"
+            elif [ "$adb_ok" = "true" ] && [ -n "$ser" ]; then
+                # Tethering OFF / no peer IP yet + ADB ON: forward virt_lan_ip:5555 via USB ADB tunnel
+                ACTIVE_DNAT_ENTRIES="$ACTIVE_DNAT_ENTRIES ${virt_lan_ip}:ADB:${ser}"
             fi
-            # Auto-enable ADB over TCP port 5555 once when detected
-            if [ "$adb_ok" = "true" ] && [ -n "$ser" ]; then
-                if ! grep -qs "$ser" "$INITED_ADB_FILE" 2>/dev/null; then
-                    adb -s "$ser" tcpip 5555 >/dev/null 2>&1 &
-                    echo "$ser" >> "$INITED_ADB_FILE"
-                fi
-            fi
+            [ "$adb_ok" = "true" ] && [ -n "$ser" ] && ensure_adb_tcpip_port "$ser"
         elif [ "$dev_type" = "storage" ]; then
             real_ip="$router_lan_ip"
             hostname="storage-${clean_model}.lan"
             virt_ip="$virt_lan_ip"
             ip addr show dev br-lan | grep -q "${virt_lan_ip}/" || ip addr add "${virt_lan_ip}/24" dev br-lan 2>/dev/null
             echo "$virt_lan_ip $hostname smb.lan disk.lan pendrive.lan" >> /tmp/hosts/devices.hosts.tmp
-            ACTIVE_VIRT_IPS="$ACTIVE_VIRT_IPS $virt_lan_ip"
         else
             real_ip="--"
             hostname="usb${port}-${clean_model}.lan"
@@ -237,6 +277,11 @@ while true; do
             fi
             echo "$virt_lan_ip $alias_names" >> /tmp/hosts/devices.hosts.tmp
             ACTIVE_VIRT_IPS="$ACTIVE_VIRT_IPS $virt_lan_ip"
+            if [ "$adb_ok" = "true" ] && [ -n "$ser" ]; then
+                # Tethering OFF ($net_if empty) + ADB ON: forward virt_lan_ip:5555 via USB ADB tunnel instead of exposing router ports
+                ACTIVE_DNAT_ENTRIES="$ACTIVE_DNAT_ENTRIES ${virt_lan_ip}:ADB:${ser}"
+                ensure_adb_tcpip_port "$ser"
+            fi
         fi
 
         # Check internet state from multilink status (reads from RAM, zero subprocesses)
@@ -377,16 +422,53 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
         fi
     done
 
-    # Update nftables dynamic DNAT map only if changed
-    if [ "$ACTIVE_DNAT_ENTRIES" != "$PREV_DNAT_ENTRIES" ]; then
+    # Update nftables isolation set, DNAT map, and USB-ADB forwards on change or fw4 reload
+    if [ "$ACTIVE_DNAT_ENTRIES" != "$PREV_DNAT_ENTRIES" ] || [ "$ACTIVE_VIRT_IPS" != "$PREV_VIRT_IPS" ] || ! nft list chain inet fw4 filter_usb_virtual 2>/dev/null | grep -q 'usb_virtual_ips' || { [ -n "$ACTIVE_VIRT_IPS" ] && ! nft list set inet fw4 usb_virtual_ips 2>/dev/null | grep -q 'elements'; }; then
+        ensure_adb_all_interfaces
         ensure_nftables_dnat
+        nft flush set inet fw4 usb_virtual_ips 2>/dev/null
+        for v_ip in $ACTIVE_VIRT_IPS; do
+            [ -n "$v_ip" ] && nft add element inet fw4 usb_virtual_ips { "$v_ip" } 2>/dev/null
+        done
+
         nft flush map inet fw4 usb_virtual_dnat 2>/dev/null
+        nft flush chain inet fw4 dstnat_usb_virtual 2>/dev/null
+        nft flush chain inet fw4 nat_output_usb_virtual 2>/dev/null
+        nft add rule inet fw4 dstnat_usb_virtual dnat ip to ip daddr map @usb_virtual_dnat 2>/dev/null
+        nft add rule inet fw4 nat_output_usb_virtual dnat ip to ip daddr map @usb_virtual_dnat 2>/dev/null
+
+        desired_fwd_ports=""
         for entry in $ACTIVE_DNAT_ENTRIES; do
             v_ip=$(echo "$entry" | cut -d: -f1)
-            p_ip=$(echo "$entry" | cut -d: -f2)
-            [ -n "$v_ip" ] && [ -n "$p_ip" ] && nft add element inet fw4 usb_virtual_dnat { "$v_ip" : "$p_ip" } 2>/dev/null
+            mode=$(echo "$entry" | cut -d: -f2)
+            if [ "$mode" = "ADB" ]; then
+                f_ser=$(echo "$entry" | cut -d: -f3-)
+                v_last="${v_ip##*.}"
+                fwd_port=$((15350 + v_last))
+                if [ -n "$v_ip" ] && [ -n "$f_ser" ] && [ "$fwd_port" -ge 15551 ] 2>/dev/null; then
+                    adb -s "$f_ser" forward "tcp:${fwd_port}" tcp:5555 >/dev/null 2>&1
+                    nft add rule inet fw4 dstnat_usb_virtual ip daddr "$v_ip" tcp dport 5555 redirect to :"$fwd_port" 2>/dev/null
+                    nft add rule inet fw4 nat_output_usb_virtual ip daddr "$v_ip" tcp dport 5555 redirect to :"$fwd_port" 2>/dev/null
+                    desired_fwd_ports="$desired_fwd_ports tcp:${fwd_port}"
+                fi
+            else
+                p_ip="$mode"
+                [ -n "$v_ip" ] && [ -n "$p_ip" ] && nft add element inet fw4 usb_virtual_dnat { "$v_ip" : "$p_ip" } 2>/dev/null
+            fi
         done
+
+        # Prune stale USB ADB forwards when tethering activates or phone disconnects
+        for old_fwd in $(adb forward --list 2>/dev/null | awk '$2 ~ /^tcp:155[0-9][0-9]$/ {print $1 "|" $2}'); do
+            o_ser="${old_fwd%%|*}"
+            o_port="${old_fwd#*|}"
+            case " $desired_fwd_ports " in
+                *" $o_port "*) ;;
+                *) adb -s "$o_ser" forward --remove "$o_port" >/dev/null 2>&1 || adb forward --remove "$o_port" >/dev/null 2>&1 ;;
+            esac
+        done
+
         PREV_DNAT_ENTRIES="$ACTIVE_DNAT_ENTRIES"
+        PREV_VIRT_IPS="$ACTIVE_VIRT_IPS"
     fi
 
     # Clean inited serials file if devices unplugged

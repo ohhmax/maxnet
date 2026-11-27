@@ -127,10 +127,18 @@ fi
 # Enable uhttpd web monitor on port 80
 [ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd enable && /etc/init.d/uhttpd restart
 
+# Ensure executable bits on MAXNET daemons, hotplug hooks, and CGI handlers
+chmod +x /etc/init.d/maxnet* /etc/hotplug.d/net/* /etc/hotplug.d/dhcp/* 2>/dev/null || true
+
 # Enable MAXNET Core Background Daemons & Services (On-demand SMB/Storage, Zero Idle Bloat)
-for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog phone_telemetry ttyd; do
+for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog maxnet_wsd phone_telemetry ttyd; do
 	[ -x "/etc/init.d/$s" ] && /etc/init.d/"$s" enable 2>/dev/null && /etc/init.d/"$s" start 2>/dev/null || true
 done
+
+# Generate baseline topology map if missing
+if [ ! -s /etc/topology_layers.json ] && [ -x /usr/bin/topology_auto_detect.sh ]; then
+	( /usr/bin/topology_auto_detect.sh > /etc/topology_layers.json.tmp 2>/dev/null && [ -s /etc/topology_layers.json.tmp ] && mv -f /etc/topology_layers.json.tmp /etc/topology_layers.json ) &
+fi
 # Conserve DDR4 RAM by default on clean factory install, but preserve if already enabled
 if [ "$(uci -q get samba4.@samba[0].enabled)" = "1" ] || [ -f /etc/rc.d/S*samba4 ]; then
 	[ -x /etc/init.d/samba4 ] && /etc/init.d/samba4 enable 2>/dev/null || true

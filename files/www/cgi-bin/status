@@ -234,7 +234,8 @@ function get_vendor(m,   p, c2) {
   p = substr(m, 1, 8);
   if (p == "10:65:30" || p == "f8:59:71") return "Intel Corporation";
   if (p == "00:11:32") return "Synology Incorporated";
-  if (p == "8c:a3:99" || p == "a8:1b:5a") return "Broadcom / ASUSTeK";
+  if (p == "8c:a3:99") return "Broadcom / ASUSTeK";
+  if (p == "a8:1b:5a") return "OPPO Mobile Communications";
   if (p == "16:cb:1a" || p == "f6:93:15" || p == "76:74:c6" || p == "9e:9c:3c") return "Xiaomi Communications";
   if (p == "f2:82:95" || p == "ee:e5:0b" || p == "52:60:c0") return "Vivo Mobile Communication";
   if (p == "46:df:eb") return "Realme Chongqing Mobile";
@@ -287,7 +288,7 @@ BEGIN {
   name["f8:59:71:1c:1a:d8"] = "maxos";
   name["00:11:32:92:02:1b"] = "Synology NAS";
   name["8c:a3:99:7b:81:2b"] = "maxnet-b";
-  name["a8:1b:5a:c3:01:13"] = "Asus Router";
+  name["a8:1b:5a:c3:01:13"] = "OPPO-A37";
   name["16:cb:1a:6a:a2:81"] = "POCO-X6-5G";
   name["f6:93:15:10:10:d2"] = "POCO-X6-5G";
   name["f2:82:95:8f:db:29"] = "Vivo V2153";
@@ -298,7 +299,7 @@ BEGIN {
   ip_name["10.0.0.111"] = "maxos";
   ip_name["10.0.0.5"] = "Synology NAS";
   ip_name["10.0.0.2"] = "maxnet-b";
-  ip_name["10.0.0.166"] = "Asus Router";
+  ip_name["10.0.0.166"] = "OPPO-A37";
   ip_name["10.0.0.110"] = "POCO-X6-5G";
   ip_name["10.0.0.118"] = "POCO-X6-5G";
   ip_name["10.0.0.238"] = "Vivo V2153";

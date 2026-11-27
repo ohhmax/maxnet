@@ -94,7 +94,7 @@ if [ "$ACTION" = "import_keys" ]; then
     export HOME=/root
     export ADB_VENDOR_KEYS=/root/.android
     adb kill-server >/dev/null 2>&1
-    adb start-server >/dev/null 2>&1
+    adb -a nodaemon server >/dev/null 2>&1 &
     sleep 1
 
     NEW_DEVS=$(adb devices 2>/dev/null | tail -n +2 | tr '\t' ' ' | grep -v '^$')

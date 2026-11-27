@@ -2,6 +2,10 @@ map usb_virtual_dnat {
 	type ipv4_addr : ipv4_addr
 }
 
+set usb_virtual_ips {
+	type ipv4_addr
+}
+
 chain dstnat_usb_virtual {
 	type nat hook prerouting priority dstnat - 1; policy accept;
 	dnat ip to ip daddr map @usb_virtual_dnat
@@ -10,4 +14,13 @@ chain dstnat_usb_virtual {
 chain nat_output_usb_virtual {
 	type nat hook output priority -100; policy accept;
 	dnat ip to ip daddr map @usb_virtual_dnat
+}
+
+chain filter_usb_virtual {
+	type filter hook input priority filter - 5; policy accept;
+	ip daddr @usb_virtual_ips ip protocol icmp accept
+	ct status dnat tcp dport 15551-15599 accept
+	ip daddr @usb_virtual_ips meta l4proto tcp reject with tcp reset
+	ip daddr @usb_virtual_ips drop
+	tcp dport 15551-15599 iifname != "lo" meta l4proto tcp reject with tcp reset
 }
