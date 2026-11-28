@@ -7,7 +7,7 @@ echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
 echo ""
 
-[ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] && read -r POST_DATA 2>/dev/null
+[ "$REQUEST_METHOD" = "POST" ] && [ "${CONTENT_LENGTH:-0}" -gt 0 ] 2>/dev/null && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
 
 ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
 [ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
@@ -216,14 +216,17 @@ if [ "$ACTION" = "set" ]; then
 
     # Device Hostname
     if [ -n "$DEV_HOST" ]; then
+        ACTIVE_LAN_IP="${LAN_IP:-$OLD_LAN_IP}"
+        ACTIVE_LAN_IP=$(echo "$ACTIVE_LAN_IP" | awk '{print $1}' | cut -d/ -f1)
+        [ -z "$ACTIVE_LAN_IP" ] && ACTIVE_LAN_IP="10.0.0.1"
         uci -q set system.@system[0].hostname="$DEV_HOST"
         uci commit system
         echo "$DEV_HOST" > /proc/sys/kernel/hostname 2>/dev/null
         h_lower=$(echo "$DEV_HOST" | tr 'A-Z' 'a-z')
-        sed -i "s/127.0.0.1 localhost.*/127.0.0.1 localhost $DEV_HOST/" /etc/hosts 2>/dev/null
-        sed -i "/^10\.0\.0\.1 /d" /etc/hosts 2>/dev/null
-        echo "10.0.0.1 maxnet.local maxnet.lan maxnet ${h_lower}.lan ${h_lower}.local ${DEV_HOST} smb.local smb.lan disk.local disk.lan" >> /etc/hosts
-        echo "10.0.0.1 maxnet.local maxnet.lan maxnet ${h_lower}.local" > /etc/avahi/hosts 2>/dev/null
+        sed -i "s/127.0.0.1 localhost.*/127.0.0.1 localhost/" /etc/hosts 2>/dev/null
+        sed -i "/^${ACTIVE_LAN_IP} /d;/^${OLD_LAN_IP} /d" /etc/hosts 2>/dev/null
+        echo "${ACTIVE_LAN_IP} ${h_lower}.lan ${h_lower}.local ${DEV_HOST} maxnet.local maxnet.lan maxnet smb.local smb.lan disk.local disk.lan" >> /etc/hosts
+        echo "${ACTIVE_LAN_IP} ${h_lower}.local maxnet.local maxnet.lan maxnet" > /etc/avahi/hosts 2>/dev/null
         killall -HUP dnsmasq 2>/dev/null
         /etc/init.d/avahi-daemon reload 2>/dev/null || /etc/init.d/avahi-daemon restart 2>/dev/null
     fi
@@ -384,8 +387,8 @@ IPV6_WAN_ADDR=$(ip -6 -o addr show dev usb0 scope global 2>/dev/null | awk '{pri
 [ -z "$IPV6_WAN_ADDR" ] && IPV6_WAN_ADDR="--"
 
 # Hardware acceleration & firewall tuning
-FLOW_OFF=$(uci -q get firewall.@defaults[0].flow_offloading || echo '1')
-FLOW_OFF_HW=$(uci -q get firewall.@defaults[0].flow_offloading_hw || echo '1')
+FLOW_OFF=$(uci -q get firewall.@defaults[0].flow_offloading || echo '0')
+FLOW_OFF_HW=$(uci -q get firewall.@defaults[0].flow_offloading_hw || echo '0')
 MSS_CLAMP=$(uci -q get firewall.@zone[1].mtu_fix || echo '1')
 DNS_REBIND=$(uci -q get dhcp.@dnsmasq[0].rebind_protection || echo '1')
 
@@ -413,8 +416,9 @@ WAN_PROTO=$(uci -q get network.wan.proto || echo "dhcp")
 WAN_USER=$(uci -q get network.wan.username || echo "")
 WAN_SRV_VAL=$(uci -q get network.wan.service || echo "")
 WAN_MTU_VAL=$(uci -q get network.wan.mtu || echo "1500")
+USB_MTU_VAL=$(uci -q get network.wan_usb.mtu || uci -q get usb_wan.usb0.mtu || echo "1420")
 WAN_CUST_MAC=$(uci -q get network.wan.macaddr || echo "")
-WAN_HW_MAC=$(cat /sys/class/net/wan/address 2>/dev/null || cat /sys/class/net/eth1/address 2>/dev/null || echo "ce:b2:bb:ae:4d:17")
+WAN_HW_MAC=$(cat /sys/class/net/wan/address 2>/dev/null || cat /sys/class/net/eth1/address 2>/dev/null || echo "")
 WAN_STATUS=$(ubus call network.interface.wan status 2>/dev/null || echo "{}")
 WAN_IP=$(echo "$WAN_STATUS" | jq -r '.["ipv4-address"][0].address // "--"' 2>/dev/null)
 [ -z "$WAN_IP" ] && WAN_IP="--"
@@ -427,7 +431,7 @@ USB_WAN_UP=$([ "$USB_WAN_IP" != "--" ] && echo true || echo false)
 
 DEV_HOST=$(uci -q get system.@system[0].hostname || cat /proc/sys/kernel/hostname 2>/dev/null || echo 'MAXNET')
 [ -z "$DEV_HOST" ] && DEV_HOST="MAXNET"
-HW_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo 'ca:e7:b7:34:8f:ac')
+HW_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo '')
 CUST_MAC=$(uci -q get network.lan.macaddr || echo '')
 
 cat << JSON
@@ -488,7 +492,7 @@ cat << JSON
       "proto": "dhcp",
       "ip": "$USB_WAN_IP",
       "mac": "$USB_WAN_MAC",
-      "mtu": "1400",
+      "mtu": "$USB_MTU_VAL",
       "up": $USB_WAN_UP
     },
     {

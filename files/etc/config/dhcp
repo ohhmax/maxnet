@@ -18,7 +18,7 @@ config dnsmasq
 	option nonwildcard '1'
 	option localservice '0'
 	option ednspacket_max '1232'
-	option filter_aaaa '1'
+	option filter_aaaa '0'
 	option filter_a '0'
 	option noping '1'
 	option allservers '1'
@@ -58,44 +58,4 @@ config odhcpd 'odhcpd'
 	option loglevel '1'
 	option piodir '/tmp/odhcpd-piodir'
 	option hostsdir '/tmp/hosts'
-
-config host
-	option name 'Max'
-	option mac '7a:31:f7:e8:20:e4'
-	option ip '10.0.0.77'
-
-config host
-	option name 'maxos'
-	option mac '10:65:30:7a:9c:02'
-	option ip '10.0.0.111'
-
-config host
-	option name 'POCO-X6-5G'
-	option mac '16:cb:1a:6a:a2:81'
-	option ip '10.0.0.110'
-
-config host
-	option name 'Vivo-V2153'
-	option mac 'f2:82:95:8f:db:29'
-	option ip '10.0.0.238'
-
-config host
-	option name 'V2111'
-	option mac 'ee:e5:0b:24:d5:eb'
-	option ip '10.0.0.232'
-
-config host
-	option name 'Synology-NAS'
-	option mac '00:11:32:92:02:1b'
-	option ip '10.0.0.5'
-
-config host
-	option name 'maxnet-b'
-	option mac '8c:a3:99:7b:81:2b'
-	option ip '10.0.0.2'
-
-config host
-	option name 'realme-6'
-	option mac '46:df:eb:aa:43:32'
-	option ip '10.0.0.197'
 

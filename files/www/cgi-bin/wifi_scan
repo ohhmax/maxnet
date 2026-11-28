@@ -42,7 +42,8 @@ esac
 
 SCAN_JSON='[]'
 if [ "$ACTION" = scan ]; then
-    SCAN_JSON=$( (iwinfo phy0-ap0 scan 2>/dev/null; iwinfo phy1-ap0 scan 2>/dev/null) | awk '
+    SCAN_RAW=$(for wdev in $(iw dev 2>/dev/null | awk '/Interface/{print $2}'); do iwinfo "$wdev" scan 2>/dev/null; done)
+    SCAN_JSON=$(printf '%s\n' "$SCAN_RAW" | awk '
     function quote_json(value, result, i, character) {
         result = "\""
         for (i = 1; i <= length(value); i++) {

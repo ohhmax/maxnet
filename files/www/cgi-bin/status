@@ -128,7 +128,9 @@ LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | awk -F
 [ -z "$LAN_IP" ] && LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null | awk '{print $1}' | sed 's/\/.*//' || echo "10.0.0.1")
 LAN_IP=$(echo "$LAN_IP" | awk '{print $1}' | sed 's/\/.*//')
 ROUTER_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
-[ -z "$ROUTER_MAC" ] && ROUTER_MAC="d2:61:fb:c9:5e:c5"
+[ -z "$ROUTER_MAC" ] && ROUTER_MAC="00:00:00:00:00:00"
+ROUTER_MODEL=$(cat /tmp/sysinfo/model 2>/dev/null || cat /proc/device-tree/model 2>/dev/null | tr -d '\0')
+[ -z "$ROUTER_MODEL" ] && ROUTER_MODEL="MAXNET AX6000 Gateway"
 
 DEFAULT_ROUTE=$(ip route show default 2>/dev/null | awk 'NR == 1 {print; exit}')
 DEFAULT_WAN_DEV=$(printf '%s\n' "$DEFAULT_ROUTE" | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
@@ -184,13 +186,15 @@ for p in lan1 lan2 lan3 lan4 wan; do
     PORTS="$PORTS{\"id\":\"$p\",\"speed\":$s,\"duplex\":\"$d\",\"status\":\"$st\"}"
 done
 
-# USB0 Traffic & Speed
-USB_RX_B=$(cat /sys/class/net/usb0/statistics/rx_bytes 2>/dev/null || echo 0)
-USB_TX_B=$(cat /sys/class/net/usb0/statistics/tx_bytes 2>/dev/null || echo 0)
-USB_RX_P=$(cat /sys/class/net/usb0/statistics/rx_packets 2>/dev/null || echo 0)
-USB_TX_P=$(cat /sys/class/net/usb0/statistics/tx_packets 2>/dev/null || echo 0)
-USB_RX_E=$(cat /sys/class/net/usb0/statistics/rx_errors 2>/dev/null || echo 0)
-USB_TX_E=$(cat /sys/class/net/usb0/statistics/tx_errors 2>/dev/null || echo 0)
+# Active WAN Traffic & Speed (default uplink or usb0)
+WAN_STAT_DEV="${DEFAULT_WAN_DEV:-usb0}"
+[ -d "/sys/class/net/$WAN_STAT_DEV" ] || WAN_STAT_DEV="usb0"
+USB_RX_B=$(cat "/sys/class/net/${WAN_STAT_DEV}/statistics/rx_bytes" 2>/dev/null || echo 0)
+USB_TX_B=$(cat "/sys/class/net/${WAN_STAT_DEV}/statistics/tx_bytes" 2>/dev/null || echo 0)
+USB_RX_P=$(cat "/sys/class/net/${WAN_STAT_DEV}/statistics/rx_packets" 2>/dev/null || echo 0)
+USB_TX_P=$(cat "/sys/class/net/${WAN_STAT_DEV}/statistics/tx_packets" 2>/dev/null || echo 0)
+USB_RX_E=$(cat "/sys/class/net/${WAN_STAT_DEV}/statistics/rx_errors" 2>/dev/null || echo 0)
+USB_TX_E=$(cat "/sys/class/net/${WAN_STAT_DEV}/statistics/tx_errors" 2>/dev/null || echo 0)
 USB_RX_MB=$(awk -v b="$USB_RX_B" 'BEGIN {printf "%.2f", b/1048576}')
 USB_TX_MB=$(awk -v b="$USB_TX_B" 'BEGIN {printf "%.2f", b/1048576}')
 
@@ -232,21 +236,14 @@ CLIENTS_JSON=$(awk -v lan_ip="$LAN_IP" -v router_mac="$ROUTER_MAC" '
 function get_vendor(m,   p, c2) {
   if (m in vendor) return vendor[m];
   p = substr(m, 1, 8);
-  if (p == "10:65:30" || p == "f8:59:71") return "Intel Corporation";
   if (p == "00:11:32") return "Synology Incorporated";
-  if (p == "8c:a3:99") return "Broadcom / ASUSTeK";
-  if (p == "a8:1b:5a") return "OPPO Mobile Communications";
-  if (p == "16:cb:1a" || p == "f6:93:15" || p == "76:74:c6" || p == "9e:9c:3c") return "Xiaomi Communications";
-  if (p == "f2:82:95" || p == "ee:e5:0b" || p == "52:60:c0") return "Vivo Mobile Communication";
-  if (p == "46:df:eb") return "Realme Chongqing Mobile";
-  if (p == "d2:61:fb" || p == "36:c5:a4") return "Qualcomm Atheros";
   c2 = tolower(substr(m, 2, 1));
   if (c2 == "2" || c2 == "6" || c2 == "a" || c2 == "e") return "Private / Randomized MAC";
   return "Standard Network Device";
 }
 BEGIN {
   if (lan_ip == "") lan_ip = "10.0.0.1";
-  if (router_mac == "") router_mac = "d2:61:fb:c9:5e:c5";
+  if (router_mac == "") router_mac = "00:00:00:00:00:00";
   lan_prefix = lan_ip;
   sub(/\.[0-9]+$/, ".", lan_prefix);
   src_pat = "^src=" lan_prefix;
@@ -282,30 +279,6 @@ BEGIN {
     }
   }
   close("/etc/blocked_clients.json");
-
-  # Dynamic known device mappings
-  name["10:65:30:7a:9c:02"] = "maxos";
-  name["f8:59:71:1c:1a:d8"] = "maxos";
-  name["00:11:32:92:02:1b"] = "Synology NAS";
-  name["8c:a3:99:7b:81:2b"] = "maxnet-b";
-  name["a8:1b:5a:c3:01:13"] = "OPPO-A37";
-  name["16:cb:1a:6a:a2:81"] = "POCO-X6-5G";
-  name["f6:93:15:10:10:d2"] = "POCO-X6-5G";
-  name["f2:82:95:8f:db:29"] = "Vivo V2153";
-  name["ee:e5:0b:24:d5:eb"] = "V2111";
-  name["46:df:eb:aa:43:32"] = "realme-6";
-  name["76:74:c6:67:5a:89"] = "POCO-X6-5G";
-
-  ip_name["10.0.0.111"] = "maxos";
-  ip_name["10.0.0.5"] = "Synology NAS";
-  ip_name["10.0.0.2"] = "maxnet-b";
-  ip_name["10.0.0.166"] = "OPPO-A37";
-  ip_name["10.0.0.110"] = "POCO-X6-5G";
-  ip_name["10.0.0.118"] = "POCO-X6-5G";
-  ip_name["10.0.0.238"] = "Vivo V2153";
-  ip_name["10.0.0.232"] = "V2111";
-  ip_name["10.0.0.197"] = "realme-6";
-  ip_name["10.0.0.104"] = "POCO-X6-5G";
 
   while ((getline nbline < "/tmp/netbios_cache.json") > 0) {
     if (nbline ~ /": "/) {
@@ -449,10 +422,10 @@ BEGIN {
   }
   close("/proc/net/arp");
 
-  printf "[{\"ip\":\"%s\",\"ipv6\":\"fd00::1\",\"mac\":\"%s\",\"name\":\"MAXNET GATEWAY (Host)\",\"port\":\"LOCAL (Router)\",\"vendor\":\"Qualcomm Atheros\",\"dns_name\":\"maxnet-gateway.lan\",\"domain\":\"lan\",\"mdns\":\"maxnet-gateway.local\",\"netbios\":\"MAXNET-GATEWAY\",\"llmnr\":\"MAXNET-GATEWAY\",\"rx_mb\":\"0.00\",\"tx_mb\":\"0.00\",\"total_mb\":\"0.00\",\"rx_bytes\":0,\"tx_bytes\":0,\"total_bytes\":0,\"is_self\":true,\"connected\":true,\"blocked\":false}", lan_ip, router_mac;
+  printf "[{\"ip\":\"%s\",\"ipv6\":\"fd00::1\",\"mac\":\"%s\",\"name\":\"MAXNET GATEWAY (Host)\",\"port\":\"LOCAL (Router)\",\"vendor\":\"MAXNET\",\"dns_name\":\"maxnet-gateway.lan\",\"domain\":\"lan\",\"mdns\":\"maxnet-gateway.local\",\"netbios\":\"MAXNET-GATEWAY\",\"llmnr\":\"MAXNET-GATEWAY\",\"rx_mb\":\"0.00\",\"tx_mb\":\"0.00\",\"total_mb\":\"0.00\",\"rx_bytes\":0,\"tx_bytes\":0,\"total_bytes\":0,\"is_self\":true,\"connected\":true,\"blocked\":false}", lan_ip, router_mac;
 
   for (mac in all_macs) {
-    if (mac == router_mac || mac == "d2:61:fb:c9:5e:c5" || mac == "36:c5:a4:72:17:40") continue;
+    if (mac == router_mac) continue;
     ip = (mac in mac_ip) ? mac_ip[mac] : "";
     if (ip == "" && (mac in lease_ip)) {
       ip = lease_ip[mac];
@@ -513,10 +486,10 @@ BEGIN {
         if (hp[k] == "ip") hip = hp[k+2];
         if (hp[k] == "name") hname = hp[k+2];
       }
-      if (hmac != "" && !(hmac in all_macs) && hip != "" && hip != lan_ip && hmac != router_mac && hmac != "d2:61:fb:c9:5e:c5") {
+      if (hmac != "" && !(hmac in all_macs) && hip != "" && hip != lan_ip && hmac != router_mac) {
         all_macs[hmac] = 1;
         blk = ((hmac in is_blk) || (hip in is_blk)) ? "true" : "false";
-        pt = (hmac in port) ? port[hmac] : "LAN 3";
+        pt = (hmac in port) ? port[hmac] : "LAN";
         rx_mb = sprintf("%.2f", ((hmac in rx) ? rx[hmac] : 0) / 1048576);
         tx_mb = sprintf("%.2f", ((hmac in tx) ? tx[hmac] : 0) / 1048576);
         tot_mb = sprintf("%.2f", (((hmac in rx) ? rx[hmac] : 0) + ((hmac in tx) ? tx[hmac] : 0)) / 1048576);
@@ -562,7 +535,7 @@ BEGIN {
 if [ -f /etc/traffic_lifetime.json ]; then
     LIFETIME_JSON=$(cat /etc/traffic_lifetime.json 2>/dev/null)
 else
-    LIFETIME_JSON='{"lifetime_rx_bytes":23362494768,"lifetime_tx_bytes":27862730402,"lifetime_total_bytes":51225225170,"lifetime_rx_gb":"22.28","lifetime_tx_gb":"26.57","lifetime_total_gb":"48.85"}'
+    LIFETIME_JSON='{"lifetime_rx_bytes":0,"lifetime_tx_bytes":0,"lifetime_total_bytes":0,"lifetime_rx_gb":"0.00","lifetime_tx_gb":"0.00","lifetime_total_gb":"0.00"}'
 fi
 
 if [ -f /etc/topology_layers.json ]; then
@@ -582,19 +555,19 @@ fi
 if [ -f /tmp/phone_telemetry.json ]; then
     MOBILE_JSON=$(cat /tmp/phone_telemetry.json)
 else
-    MOBILE_JSON='{"connected":false,"model":"No Device","cellular":{"pci":0,"band":"--","frequency":"--","arfcn":"--","rsrp_dbm":-105,"sinr_db":0,"operator":"Offline"}}'
+    MOBILE_JSON='{"connected":false,"model":"No Device","cellular":{"pci":0,"band":"--","frequency":"--","arfcn":"--","rsrp_dbm":0,"sinr_db":0,"operator":"Offline"}}'
 fi
 
 P_CONN=$(echo "$MOBILE_JSON" | jq -r '.connected // false')
 P_PCI=$(echo "$MOBILE_JSON" | jq -r '.cellular.pci // 0')
-P_BAND=$(echo "$MOBILE_JSON" | jq -r '.cellular.band // "n77"' | tr -d 'n')
-P_FREQ=$(echo "$MOBILE_JSON" | jq -r '.cellular.frequency // "3.5 GHz C-Band"')
-P_ARFCN=$(echo "$MOBILE_JSON" | jq -r '.cellular.arfcn // "634080"')
-P_RSRP=$(echo "$MOBILE_JSON" | jq -r '.cellular.rsrp_dbm // -98')
-P_SINR=$(echo "$MOBILE_JSON" | jq -r '.cellular.sinr_db // 13')
-P_OP=$(echo "$MOBILE_JSON" | jq -r '.cellular.operator // "Jio True5G"')
-P_PA_TEMP=$(echo "$MOBILE_JSON" | jq -r '.cellular.pa_temp_c // 44.0')
-P_CELL_IP=$(echo "$MOBILE_JSON" | jq -r '.cell_ip // "192.0.0.2"')
+P_BAND=$(echo "$MOBILE_JSON" | jq -r '.cellular.band // "--"' | sed 's/^[nB]//')
+P_FREQ=$(echo "$MOBILE_JSON" | jq -r '.cellular.frequency // "--"')
+P_ARFCN=$(echo "$MOBILE_JSON" | jq -r '.cellular.arfcn // "--"')
+P_RSRP=$(echo "$MOBILE_JSON" | jq -r '.cellular.rsrp_dbm // 0')
+P_SINR=$(echo "$MOBILE_JSON" | jq -r '.cellular.sinr_db // 0')
+P_OP=$(echo "$MOBILE_JSON" | jq -r '.cellular.operator // "Offline"')
+P_PA_TEMP=$(echo "$MOBILE_JSON" | jq -r '.cellular.pa_temp_c // 0')
+P_CELL_IP=$(echo "$MOBILE_JSON" | jq -r '.cell_ip // "--"')
 P_NEIGHBORS=$(echo "$MOBILE_JSON" | jq -c '.cellular.neighbors // []')
 
 STAT_JSON="/tmp/traffic_stats.json"; [ ! -f "$STAT_JSON" ] && [ -f "/etc/traffic_stats.json" ] && STAT_JSON="/etc/traffic_stats.json"; if [ -f "$STAT_JSON" ]; then
@@ -890,7 +863,7 @@ cat << JSON
   "tailscale": {"backend_state": "${TS_STATE}", "online": ${TS_ONLINE:-false}, "ip": "${TS_IP}", "hostname": "${TS_HOST}"},
   "router": {
     "hostname": "$(uci get system.@system[0].hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")",
-    "model": "Jio AX6000 Qualcomm IPQ9574",
+    "model": "${ROUTER_MODEL}",
     "kernel": "Linux $(uname -r 2>/dev/null || echo "6.18") MAXNET",
     "boot_id": "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo '')",
     "reboot_required": ${REBOOT_REQUIRED},

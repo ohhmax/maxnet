@@ -5,7 +5,7 @@ require_auth
 
 printf "Content-Type: application/json\r\n\r\n"
 
-SMB_USER=$(uci -q get samba4.pendrive.users || echo "max")
+SMB_USER=$(uci -q get samba4.pendrive.users || echo "root")
 LAN_IP=$(uci -q get network.lan.ipaddr | awk '{print $1}')
 [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
 SMB_IP="$LAN_IP"

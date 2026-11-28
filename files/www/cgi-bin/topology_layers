@@ -15,8 +15,9 @@ CONF_FILE="/etc/topology_layers.json"
 
 # Clean Default configuration with ZERO mock devices
 init_default() {
-  LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null || echo "10.0.0.1")
-  LAN_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo "52:5a:4e:e9:61:a0")
+  LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
+  [ -z "$LAN_IP" ] && LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null | awk '{print $1}' | cut -d/ -f1 || echo "10.0.0.1")
+  LAN_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || echo "00:00:00:00:00:00")
   HOST_NAME=$(cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")
   cat << EOF
 {

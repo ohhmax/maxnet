@@ -1,26 +1,54 @@
-# 5Gbps Multi-Core RPS & High-Performance Network Tuning (MAXNET Optimized)
-sysctl -w net.core.rps_sock_flow_entries=4096
-sysctl -w net.core.netdev_max_backlog=4096
-sysctl -w net.core.rmem_max=4194304
-sysctl -w net.core.wmem_max=4194304
-sysctl -w net.ipv4.tcp_rmem="4096 131072 4194304"
-sysctl -w net.ipv4.tcp_wmem="4096 16384 4194304"
+# 5Gbps Multi-Core RPS/XPS & High-Performance Network Tuning (MAXNET Optimized)
+sysctl -w net.core.rps_sock_flow_entries=8192 >/dev/null 2>&1 || true
+sysctl -w net.core.netdev_max_backlog=8192 >/dev/null 2>&1 || true
+sysctl -w net.core.rmem_max=4194304 >/dev/null 2>&1 || true
+sysctl -w net.core.wmem_max=4194304 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.tcp_rmem="4096 131072 4194304" >/dev/null 2>&1 || true
+sysctl -w net.ipv4.tcp_wmem="4096 16384 4194304" >/dev/null 2>&1 || true
+sysctl -w net.ipv4.tcp_mtu_probing=1 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.tcp_slow_start_after_idle=0 >/dev/null 2>&1 || true
 
 # Apply LAN reliability & L4 multipath routing
 sysctl -p /etc/sysctl.d/99-lan-reliability.conf 2>/dev/null || true
 [ -d /sys/class/net/br-lan/bridge ] && echo 0 > /sys/class/net/br-lan/bridge/multicast_snooping 2>/dev/null || true
 
-# Multi-Core RPS Steering across all 4 A73 cores (Mask 0xF = 1111b)
-for q in /sys/class/net/*/queues/rx-*; do
-    [ -f "$q/rps_cpus" ] && echo f > "$q/rps_cpus" 2>/dev/null
-    [ -f "$q/rps_flow_cnt" ] && echo 4096 > "$q/rps_flow_cnt" 2>/dev/null
+# Maximize CPU Scaling Governor & fast schedutil ramp for burst throughput
+for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    [ -f "$g" ] && echo schedutil > "$g" 2>/dev/null
+done
+[ -w /sys/devices/system/cpu/cpufreq/schedutil/rate_limit_us ] && echo 500 > /sys/devices/system/cpu/cpufreq/schedutil/rate_limit_us 2>/dev/null || true
+
+# Multi-Core RPS & XPS Steering across all 4 cores
+for dev_q in /sys/class/net/*/queues; do
+    [ -d "$dev_q" ] || continue
+    for q in "$dev_q"/rx-*; do
+        [ -f "$q/rps_cpus" ] && echo f > "$q/rps_cpus" 2>/dev/null || true
+        [ -f "$q/rps_flow_cnt" ] && echo 4096 > "$q/rps_flow_cnt" 2>/dev/null || true
+    done
+    tx_cnt=$(ls -d "$dev_q"/tx-* 2>/dev/null | wc -l)
+    if [ "$tx_cnt" -ge 4 ]; then
+        idx=0
+        for q in "$dev_q"/tx-*; do
+            mask=$((1 << (idx % 4)))
+            hex_mask=$(printf '%x' "$mask")
+            [ -f "$q/xps_cpus" ] && echo "$hex_mask" > "$q/xps_cpus" 2>/dev/null || true
+            idx=$((idx + 1))
+        done
+    fi
 done
 
-# Hardware IRQ Steering: Offload USB 3.0 xHCI controller to CPU 1 (Mask 0x2)
-for irq_dir in /proc/irq/*; do
-    if [ -f "$irq_dir/xhci-hcd:usb1" ] || grep -qi "xhci" "$irq_dir/actions" 2>/dev/null; then
-        echo 2 > "$irq_dir/smp_affinity" 2>/dev/null || true
-    fi
+# Hardware IRQ Steering: Pin USB xHCI controller IRQ to CPU 3 (Mask 0x8)
+for irq in $(awk -F: '/xhci/{gsub(/ /,"",$1); print $1}' /proc/interrupts 2>/dev/null); do
+    [ -w "/proc/irq/$irq/smp_affinity" ] && echo 8 > "/proc/irq/$irq/smp_affinity" 2>/dev/null || true
+done
+
+# Spread qcom_ppe Ethernet RX queue IRQs across CPUs 0..3 (rxdesc_20..23 -> 1,2,4,8)
+eth_rx_idx=0
+for irq in $(awk -F: '/rxdesc_/{gsub(/ /,"",$1); print $1}' /proc/interrupts 2>/dev/null); do
+    mask=$((1 << (eth_rx_idx % 4)))
+    hex_mask=$(printf '%x' "$mask")
+    [ -w "/proc/irq/$irq/smp_affinity" ] && echo "$hex_mask" > "/proc/irq/$irq/smp_affinity" 2>/dev/null || true
+    eth_rx_idx=$((eth_rx_idx + 1))
 done
 
 # MAXNET Multicore Wi-Fi IRQ Steering: Distribute txcmpl and ath11k rings across CPU 1, 2, 3

@@ -46,16 +46,19 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
                 --fullchain-file /etc/uhttpd.crt \
                 --home /etc/acme >> "$LOG_FILE" 2>&1
 
-            # Configure Split-Horizon DNS in dnsmasq so LAN resolves directly to 10.0.0.1
-            uci del_list dhcp.@dnsmasq[0].address="/${FULL_DOMAIN}/10.0.0.1" 2>/dev/null
+            # Configure Split-Horizon DNS in dnsmasq so LAN resolves directly to router LAN IP
+            LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
+            [ -z "$LAN_IP" ] && LAN_IP=$(uci -q get network.lan.ipaddr | awk '{print $1}' | cut -d/ -f1)
+            [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+            uci del_list dhcp.@dnsmasq[0].address="/${FULL_DOMAIN}/${LAN_IP}" 2>/dev/null
             uci del_list dhcp.@dnsmasq[0].rebind_domain="${FULL_DOMAIN}" 2>/dev/null
-            uci add_list dhcp.@dnsmasq[0].address="/${FULL_DOMAIN}/10.0.0.1"
+            uci add_list dhcp.@dnsmasq[0].address="/${FULL_DOMAIN}/${LAN_IP}"
             uci add_list dhcp.@dnsmasq[0].rebind_domain="${FULL_DOMAIN}"
             uci commit dhcp
 
             # Add to /etc/hosts
             sed -i "/${FULL_DOMAIN}/d" /etc/hosts 2>/dev/null
-            echo "10.0.0.1 ${FULL_DOMAIN}" >> /etc/hosts
+            echo "${LAN_IP} ${FULL_DOMAIN}" >> /etc/hosts
 
             # Save configuration record
             echo "{\"provider\":\"duckdns\",\"domain\":\"${FULL_DOMAIN}\",\"subdomain\":\"${SUBDOMAIN}\",\"active\":true,\"updated\":$(date +%s)}" > /etc/ssl_custom_config.json

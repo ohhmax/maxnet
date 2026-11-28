@@ -4,6 +4,38 @@ export HOME=/root
 export ADB_MDNS_OPENSCREEN=0
 
 FAIL_COUNT=0
+LAST_V6_SOLICIT=0
+
+ensure_usb_ipv6() {
+    local _if
+    for _if in usb0 usb1 usb2 usb3 usb4 usb5 ncm0; do
+        [ -d "/sys/class/net/$_if" ] || continue
+        [ "$(cat /sys/class/net/$_if/carrier 2>/dev/null || echo 0)" = "1" ] || continue
+        if [ "$(cat /proc/sys/net/ipv6/conf/$_if/accept_ra 2>/dev/null || echo 0)" != "2" ]; then
+            sysctl -w "net.ipv6.conf.$_if.disable_ipv6=0" >/dev/null 2>&1 || true
+            sysctl -w "net.ipv6.conf.$_if.accept_ra=2" >/dev/null 2>&1 || true
+            sysctl -w "net.ipv6.conf.$_if.accept_ra_defrtr=1" >/dev/null 2>&1 || true
+            sysctl -w "net.ipv6.conf.$_if.accept_ra_pinfo=1" >/dev/null 2>&1 || true
+            sysctl -w "net.ipv6.conf.$_if.router_solicitations=3" >/dev/null 2>&1 || true
+            ip link set "$_if" allmulticast on 2>/dev/null || true
+            logger -t usb_watchdog "Restored accept_ra=2 on $_if"
+        fi
+        if ! ip -6 route show dev "$_if" 2>/dev/null | grep -q '^default'; then
+            now_s=$(date +%s 2>/dev/null || echo 0)
+            if [ $((now_s - LAST_V6_SOLICIT)) -ge 45 ]; then
+                LAST_V6_SOLICIT="$now_s"
+                logger -t usb_watchdog "No IPv6 default route on $_if; soliciting router advertisement..."
+                sysctl -w "net.ipv6.conf.$_if.disable_ipv6=1" >/dev/null 2>&1 || true
+                sysctl -w "net.ipv6.conf.$_if.disable_ipv6=0" >/dev/null 2>&1 || true
+                sysctl -w "net.ipv6.conf.$_if.accept_ra=2" >/dev/null 2>&1 || true
+                sysctl -w "net.ipv6.conf.$_if.accept_ra_defrtr=1" >/dev/null 2>&1 || true
+                sysctl -w "net.ipv6.conf.$_if.accept_ra_pinfo=1" >/dev/null 2>&1 || true
+                sysctl -w "net.ipv6.conf.$_if.router_solicitations=3" >/dev/null 2>&1 || true
+                ip link set "$_if" allmulticast on 2>/dev/null || true
+            fi
+        fi
+    done
+}
 
 while true; do
     sleep 10
@@ -13,6 +45,9 @@ while true; do
         FAIL_COUNT=0
         continue
     fi
+
+    # Keep IPv6 RA / default route alive continuously across carrier/netifd transitions
+    ensure_usb_ipv6
 
     # 1. Check if external internet is alive
     if ping -c 2 -W 3 8.8.8.8 >/dev/null 2>&1; then

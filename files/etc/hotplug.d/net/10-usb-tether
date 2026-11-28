@@ -10,19 +10,26 @@ case "$DEVICENAME" in
         ;;
 esac
 
-if [ "$ACTION" = "add" ]; then
+if [ "$ACTION" = "add" ] || [ "$ACTION" = "move" ] || [ "$ACTION" = "change" ]; then
+    # Enforce IPv6 RA acceptance immediately before netifd/kernel link transition so RS/RA are never ignored
+    sysctl -w "net.ipv6.conf.$DEVICENAME.disable_ipv6=0" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.accept_ra=2" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.accept_ra_defrtr=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.accept_ra_pinfo=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.router_solicitations=3" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.force_tllao=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.ndisc_notify=1" >/dev/null 2>&1 || true
+    ip link set "$DEVICENAME" allmulticast on 2>/dev/null || true
+
     sleep 1
     ethtool -K "$DEVICENAME" gro on 2>/dev/null || true
-    # Multi-Core RPS & RFS Steering (Cores 0-3)
-    echo f > "/sys/class/net/$DEVICENAME/queues/rx-0/rps_cpus" 2>/dev/null || true
+    # Steer xHCI USB 3.0 IRQ to CPU 3 (mask 8), keep RX SoftIRQ on CPU 0-2 (mask 7) & TX XPS on CPU 3 (mask 8)
+    echo 7 > "/sys/class/net/$DEVICENAME/queues/rx-0/rps_cpus" 2>/dev/null || true
     echo 4096 > "/sys/class/net/$DEVICENAME/queues/rx-0/rps_flow_cnt" 2>/dev/null || true
-    echo f > "/sys/class/net/$DEVICENAME/queues/tx-0/xps_cpus" 2>/dev/null || true
+    echo 8 > "/sys/class/net/$DEVICENAME/queues/tx-0/xps_cpus" 2>/dev/null || true
 
-    # Hardware IRQ Steering: Steer xHCI USB 3.0 interrupts to CPU 1
-    for irq_dir in /proc/irq/*; do
-        if [ -f "$irq_dir/xhci-hcd:usb1" ] || grep -qi "xhci" "$irq_dir/actions" 2>/dev/null; then
-            echo 2 > "$irq_dir/smp_affinity" 2>/dev/null || true
-        fi
+    for irq in $(awk -F: '/xhci/{gsub(/ /,"",$1); print $1}' /proc/interrupts 2>/dev/null); do
+        [ -w "/proc/irq/$irq/smp_affinity" ] && echo 8 > "/proc/irq/$irq/smp_affinity" 2>/dev/null || true
     done
 
     # Match carrier cellular path MTU (1400/1420) and bounded qlen (1000) to avoid rndis_host NETDEV WATCHDOG TX stalls
@@ -38,8 +45,8 @@ if [ "$ACTION" = "add" ]; then
     [ -z "$USB_MTU" ] && USB_MTU=1420
     ip link set "$DEVICENAME" mtu "$USB_MTU" qlen 1000 2>/dev/null || ifconfig "$DEVICENAME" mtu "$USB_MTU" txqueuelen 1000 2>/dev/null || true
 
-    # Smart Queue Management (CAKE / FQ-CoDel)
-    tc qdisc replace dev "$DEVICENAME" root cake diffserv4 ack-filter 2>/dev/null || true
+    # Lightweight low-latency SQM without unshaped CAKE ACK-filter overhead
+    tc qdisc replace dev "$DEVICENAME" root fq_codel flows 1024 quantum 1514 noecn 2>/dev/null || true
 
     # Disable USB autosuspend on controller and root hub (control=on only, avoid deprecated power/level)
     for f in /sys/bus/usb/devices/*/power/control; do echo on > "$f" 2>/dev/null; done
@@ -48,10 +55,11 @@ if [ "$ACTION" = "add" ]; then
     # Disable USB 3.0 LPM on Samsung Galaxy device
     echo "04e8:6864:k" > /sys/module/usbcore/parameters/quirks 2>/dev/null || true
 
-    # IPv6 Router Solicitation and Neighbor Discovery resilience
+    # Re-apply IPv6 sysctls after interface setup before ifup invokes netifd
     sysctl -w "net.ipv6.conf.$DEVICENAME.accept_ra=2" >/dev/null 2>&1 || true
-    sysctl -w "net.ipv6.conf.$DEVICENAME.force_tllao=1" >/dev/null 2>&1 || true
-    sysctl -w "net.ipv6.conf.$DEVICENAME.ndisc_notify=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.accept_ra_defrtr=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.accept_ra_pinfo=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEVICENAME.router_solicitations=3" >/dev/null 2>&1 || true
     ip link set "$DEVICENAME" allmulticast on 2>/dev/null || true
 
     ifup "$NET_SEC"

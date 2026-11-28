@@ -196,7 +196,7 @@ init_config() {
     "adult_content": true,
     "wifi_event": true
   },
-  "custom_ip_target": "10.0.0.2",
+  "custom_ip_target": "",
   "data_quota_mb": 1024
 }
 CFG
@@ -211,7 +211,7 @@ init_notif() {
 
 with_notif_lock() {
     (
-        flock -w 4 200 || true
+        flock -x 200 || true
         "$@"
     ) 200>/tmp/maxnet_notif.lock
 }
@@ -238,7 +238,7 @@ LCFG
 # ==================== ACTION: GET ====================
 if [ "$ACTION" = "get" ]; then
     init_config
-    MERGED=$(jq '.events += ({"router_login":true,"data_usage":true,"lan_plugged":true,"usb_plugged":true,"power_event":true,"custom_ip":true,"adult_content":true,"wifi_event":true} * (.events // {})) | .custom_ip_target = (.custom_ip_target // "10.0.0.2") | .data_quota_mb = (.data_quota_mb // 1024)' "$CONF_FILE" 2>/dev/null)
+    MERGED=$(jq '.events += ({"router_login":true,"data_usage":true,"lan_plugged":true,"usb_plugged":true,"power_event":true,"custom_ip":true,"adult_content":true,"wifi_event":true} * (.events // {})) | .custom_ip_target = (.custom_ip_target // "") | .data_quota_mb = (.data_quota_mb // 1024)' "$CONF_FILE" 2>/dev/null)
     if [ -n "$MERGED" ]; then
         send_json_str "$MERGED"
     else
@@ -267,6 +267,11 @@ if [ "$ACTION" = "test" ]; then
     PROVIDER=$(echo "$QUERY_STRING" | sed -n 's/^.*provider=\([^&]*\).*$/\1/p')
     [ -z "$PROVIDER" ] && PROVIDER=$(echo "$POST_DATA" | sed -n 's/.*"provider"[ ]*:[ ]*"\([^"]*\)".*/\1/p')
 
+    LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
+    [ -z "$LAN_IP" ] && LAN_IP=$(uci -q get network.lan.ipaddr | awk '{print $1}' | cut -d/ -f1)
+    [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+    LAN_PREFIX="${LAN_IP%.*}."
+
     if [ "$PROVIDER" = "telegram" ]; then
         TOKEN=$(echo "$POST_DATA" | jq -r '.token // empty' 2>/dev/null)
         CHAT_ID=$(echo "$POST_DATA" | jq -r '.chat_id // empty' 2>/dev/null)
@@ -278,7 +283,7 @@ if [ "$ACTION" = "test" ]; then
             exit 0
         fi
 
-        MSG=$(printf "%s\n%s" "✅ Telegram Connected" "Test alert verified from router (10.0.0.1)")
+        MSG=$(printf "%s\n%s" "✅ Telegram Connected" "Test alert verified from router ($LAN_IP)")
         RESP=$(curl -s -m 8 -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
             -d "chat_id=${CHAT_ID}" \
             --data-urlencode "text=${MSG}" 2>&1)
@@ -300,7 +305,7 @@ if [ "$ACTION" = "test" ]; then
             exit 0
         fi
 
-        PAYLOAD='{"username":"MAXNET Gateway","avatar_url":"https://raw.githubusercontent.com/ohhmax/maxnet/main/files/www/favicon.ico","content":"**[MAXNET GATEWAY]** Discord webhook test notification verified successfully from router (10.0.0.1)!"}'
+        PAYLOAD=$(jq -cn --arg content "**[MAXNET GATEWAY]** Discord webhook test notification verified successfully from router (${LAN_IP})!" '{username:"MAXNET Gateway",avatar_url:"https://raw.githubusercontent.com/ohhmax/maxnet/main/files/www/favicon.svg",content:$content}')
         HTTP_CODE=$(curl -s -m 8 -o /tmp/discord_resp.txt -w "%{http_code}" -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$URL" 2>&1)
 
         if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
@@ -320,7 +325,7 @@ if [ "$ACTION" = "test" ]; then
             exit 0
         fi
 
-        RESP=$(curl -s -m 8 -H "Title: MAXNET Gateway" -H "Tags: bell,rocket" -d "ntfy.sh push alert verified successfully from router (10.0.0.1)!" "$TOPIC_URL" 2>&1)
+        RESP=$(curl -s -m 8 -H "Title: MAXNET Gateway" -H "Tags: bell,rocket" -d "ntfy.sh push alert verified successfully from router ($LAN_IP)!" "$TOPIC_URL" 2>&1)
         if echo "$RESP" | grep -q '"id":'; then
             send_json_str '{"status":"ok","message":"ntfy.sh test alert published successfully!"}'
         else
@@ -346,12 +351,12 @@ if [ "$ACTION" = "test_event" ]; then
     case "$EV_TYPE" in
         router_login)
             T_TITLE="Router WebUI Login: root"
-            T_MSG="Administrator 'root' logged into MAXNET Gateway WebUI from IP 10.0.0.111."
+            T_MSG="Administrator 'root' logged into MAXNET Gateway WebUI from IP ${CLIENT_IP:-10.0.0.100}."
             T_LEVEL="info"
             ;;
         data_usage)
-            T_TITLE="Data Quota Alert: POCO-X6-5G"
-            T_MSG="Client POCO-X6-5G (10.0.0.114, MAC: d6:a7:58:73:5d:6b) consumed 1.42 GB, exceeding the 1024 MB quota threshold."
+            T_TITLE="Data Quota Alert: Sample Client"
+            T_MSG="Sample LAN client exceeded the configured 1024 MB data quota threshold."
             T_LEVEL="warning"
             ;;
         lan_plugged)
@@ -360,28 +365,30 @@ if [ "$ACTION" = "test_event" ]; then
             T_LEVEL="info"
             ;;
         usb_plugged)
-            T_TITLE="USB Modem Connected: Galaxy S21 FE 5G"
-            T_MSG="New USB tethering modem detected on USB 3.0 port: Samsung Galaxy S21 FE 5G (usb0)."
+            T_TITLE="USB Modem Connected"
+            T_MSG="New USB tethering modem detected on router USB port (usb0)."
             T_LEVEL="info"
             ;;
         power_event)
             T_TITLE="Router Reboot & Power Event"
-            T_MSG="MAXNET Gateway router has rebooted or recovered from power interruption. System uptime: 42s."
+            T_MSG="MAXNET Gateway router has rebooted or recovered from power interruption."
             T_LEVEL="warning"
             ;;
         custom_ip)
-            T_TITLE="Monitored Host Offline: 10.0.0.2"
-            T_MSG="Target host 10.0.0.2 is UNREACHABLE or stopped responding on the network."
+            CUST_IP=$(jq -r '.custom_ip_target // "192.0.2.1"' "$CONF_FILE" 2>/dev/null)
+            [ -z "$CUST_IP" ] && CUST_IP="192.0.2.1"
+            T_TITLE="Monitored Host Offline: $CUST_IP"
+            T_MSG="Target host $CUST_IP is UNREACHABLE or stopped responding on the network."
             T_LEVEL="danger"
             ;;
         adult_content)
-            T_TITLE="18+ Adult Content Detected"
-            T_MSG="Network client at IP 10.0.0.114 (POCO-X6-5G) queried adult/restricted domain (pornhub.com). Access logged."
+            T_TITLE="Restricted Content Blocked"
+            T_MSG="Sample LAN client queried a restricted category domain. Access logged."
             T_LEVEL="danger"
             ;;
         wifi_event)
-            T_TITLE="WiFi Client Associated: Realtek"
-            T_MSG="Wireless client (MAC: 46:df:eb:aa:43:32) connected to MAXNET-5G on channel 36."
+            T_TITLE="WiFi Client Associated"
+            T_MSG="Wireless client (MAC: 02:00:00:00:00:01) connected to 5GHz AP."
             T_LEVEL="info"
             ;;
     esac

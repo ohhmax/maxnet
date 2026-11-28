@@ -811,8 +811,8 @@ if echo "$SIM_STATE" | grep -qE "LOADED|READY"; then
     SIG_LINE=$(echo "$RAW" | grep -m 1 "mSignalStrength=")
     RSRP=$(echo "$SIG_LINE" | grep -oE '(ssRsrp|rsrp) = -?[0-9]+' | head -n 1 | awk '{print $3}')
     SINR=$(echo "$SIG_LINE" | grep -oE '(ssSinr|rssnr) = -?[0-9]+' | head -n 1 | awk '{print $3}')
-    [ -z "$RSRP" ] && RSRP="-98"
-    [ -z "$SINR" ] && SINR="12"
+    [ -z "$RSRP" ] && RSRP="0"
+    [ -z "$SINR" ] && SINR="0"
 
     CELL_LINE=$(echo "$RAW" | grep -m 1 "mCellIdentity")
     OP=$(echo "$CELL_LINE" | grep -o 'mAlphaLong = [^ }]*' | head -n 1 | awk '{print $3}')
@@ -824,10 +824,10 @@ if echo "$SIM_STATE" | grep -qE "LOADED|READY"; then
 
     if echo "$NET_TYPE" | grep -qi "NR"; then
         NETWORK="5G Standalone NR_SA"
-        [ -n "$BAND" ] && BAND="n${BAND}" || BAND="n77"
+        [ -n "$BAND" ] && BAND="n${BAND}" || BAND="5G NR"
     elif echo "$NET_TYPE" | grep -qi "LTE"; then
         NETWORK="4G LTE"
-        [ -n "$BAND" ] && BAND="B${BAND}" || BAND="B3"
+        [ -n "$BAND" ] && BAND="B${BAND}" || BAND="LTE"
     else
         NETWORK="${NET_TYPE:-Cellular}"
         [ -n "$BAND" ] && BAND="Band ${BAND}" || BAND="--"

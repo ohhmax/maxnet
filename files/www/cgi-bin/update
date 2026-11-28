@@ -57,8 +57,8 @@ ACTIVE_CHANNEL=$(echo "$QUERY_STRING" | sed -n 's/^.*channel=\([^&]*\).*$/\1/p')
 [ -z "$ACTIVE_CHANNEL" ] && [ -f /etc/maxnet_ota_channel ] && ACTIVE_CHANNEL=$(cat /etc/maxnet_ota_channel 2>/dev/null | tr -d '\r\n ')
 [ "$ACTIVE_CHANNEL" != "staging" ] && ACTIVE_CHANNEL="stable"
 
-BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "jiorouter,ax6000-jidu6j11-6911")
-MODEL_NAME=$(cat /tmp/sysinfo/model 2>/dev/null || echo "JioRouter AX6000")
+BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || tr '\0' '\n' < /proc/device-tree/compatible 2>/dev/null | head -n 1)
+MODEL_NAME=$(cat /tmp/sysinfo/model 2>/dev/null || cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || echo "JioRouter AX6000")
 HW_REV=$(cat /tmp/sysinfo/board_revision 2>/dev/null || echo "default")
 
 CURRENT_BUILD=""
@@ -78,10 +78,10 @@ if [ -z "$CURRENT_BUILD" ]; then
 fi
 
 # Fallback for initial legacy installs that lack the version stamp
-[ -z "$CURRENT_VER" ] && CURRENT_VER="v2.2.47-b47"
-[ -z "$CURRENT_BUILD" ] && CURRENT_BUILD=47
+[ -z "$CURRENT_VER" ] && CURRENT_VER="v2.2.0"
+[ -z "$CURRENT_BUILD" ] && CURRENT_BUILD=0
 
-# Resolve router model key
+# Resolve router model key strictly from hardware board_name
 DEV_KEY=""
 case "$BOARD_NAME" in
     *6911*) DEV_KEY="jidu6911" ;;
@@ -95,7 +95,7 @@ case "$BOARD_NAME" in
     *6701*) DEV_KEY="jidu6701" ;;
     *6101*) DEV_KEY="jidu6101" ;;
     *6j01*) DEV_KEY="jidu6j01" ;;
-    *) DEV_KEY="jidu6911" ;;
+    *) DEV_KEY="unknown" ;;
 esac
 
 # ==================== VERIFIED UPDATE MANIFEST PIPELINE ====================
@@ -277,7 +277,7 @@ jq -n \
         size: $size,
         title: $title,
         description: $description,
-        signature_verified: true,
+        signature_verified: ($sig_url != ""),
         anti_rollback_ok: ($latest_build >= $current_build),
         signature_warning: ""
     }'

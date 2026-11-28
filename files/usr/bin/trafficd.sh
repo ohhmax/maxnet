@@ -15,8 +15,8 @@ LIVE_JSON="/tmp/traffic_stats.json"
 
 # Initialize lifetime traffic if not present
 if [ ! -f "$LIFETIME_JSON" ]; then
-    WAN_R=23359818489
-    WAN_T=27781118139
+    WAN_R=0
+    WAN_T=0
     if [ -f "$PERSIST_JSON" ]; then
         R=$(jq -r '.wan.rx_bytes // 0' "$PERSIST_JSON" 2>/dev/null)
         T=$(jq -r '.wan.tx_bytes // 0' "$PERSIST_JSON" 2>/dev/null)
@@ -43,7 +43,11 @@ save_and_exit() {
 
 trap 'save_and_exit' TERM INT HUP QUIT EXIT
 
-awk '
+LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null | awk '{print $1}' | cut -d/ -f1)
+[ -z "$LAN_IP" ] && LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
+[ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+
+awk -v lan_ip="$LAN_IP" '
 BEGIN {
   persist_tsv = "/etc/traffic_totals.tsv";
   persist_json = "/etc/traffic_stats.json";
@@ -54,6 +58,11 @@ BEGIN {
   tick = 0;
   has_saved_wan = 0;
   retention_days = 30;
+  if (lan_ip == "") lan_ip = "10.0.0.1";
+  lan_prefix = lan_ip;
+  sub(/\.[0-9]+$/, ".", lan_prefix);
+  src_pat = "^src=" lan_prefix;
+
   hw_conf = "/etc/maxnet_hardware.json";
   while ((getline hline < hw_conf) > 0) {
     if (hline ~ /"retention_days":/) {
@@ -64,9 +73,9 @@ BEGIN {
   close(hw_conf);
   RETENTION_30D = retention_days * 86400;
 
-  # Load Lifetime WAN accumulator
-  lifetime_rx = 23359818489;
-  lifetime_tx = 27781118139;
+  # Load Lifetime WAN accumulator (starts at 0 on fresh install)
+  lifetime_rx = 0;
+  lifetime_tx = 0;
   while ((getline line < lifetime_json) > 0) {
     if (line ~ /"lifetime_rx_bytes":/) {
       gsub(/[^0-9]/, "", line);
@@ -102,25 +111,10 @@ BEGIN {
     wan_base_tx = 0;
   }
 
-  # Known friendly device names
-  known_name["10:65:30:7a:9c:02"] = "maxos";
-  known_name["00:11:32:92:02:1b"] = "Synology NAS";
-  known_name["a8:1b:5a:c3:01:13"] = "OPPO-A37";
-  known_name["8c:a3:99:7b:81:2b"] = "maxnet-b";
-  known_name["f2:82:95:8f:db:29"] = "Vivo V2153";
-  known_name["76:74:c6:67:5a:89"] = "POCO-X6-5G";
-  known_name["f6:93:15:10:10:d2"] = "POCO-X6-5G";
-
-  # Known ports
-  known_port["10:65:30:7a:9c:02"] = "LAN 1";
-  known_port["00:11:32:92:02:1b"] = "LAN 3";
-  known_port["a8:1b:5a:c3:01:13"] = "LAN 1";
-  known_port["8c:a3:99:7b:81:2b"] = "LAN 3";
-  known_port["f2:82:95:8f:db:29"] = "LAN 3";
-  known_port["76:74:c6:67:5a:89"] = "LAN 3";
-
   last_raw_rx = 0;
   last_raw_tx = 0;
+  last_wan_dev = "";
+  last_flushed_tot = -1;
   initialized = 0;
 
   now = systime();
@@ -135,6 +129,21 @@ BEGIN {
   while (1) {
     tick++;
     now = systime();
+
+    # Discover active Wi-Fi MACs & Ethernet bridge ports dynamically
+    delete mac_port;
+    while (("brctl showmacs br-lan 2>/dev/null" | getline line) > 0) {
+      split(line, parts, " ");
+      if (parts[3] == "no") {
+        bm = tolower(parts[2]);
+        if (parts[1] == "1") mac_port[bm] = "LAN 1";
+        else if (parts[1] == "2") mac_port[bm] = "LAN 2";
+        else if (parts[1] == "3") mac_port[bm] = "LAN 3";
+        else if (parts[1] == "4") mac_port[bm] = "LAN 4";
+        else mac_port[bm] = "WiFi";
+      }
+    }
+    close("brctl showmacs br-lan 2>/dev/null");
 
     # Read ARP mapping (IP -> MAC)
     delete ip_to_mac;
@@ -161,20 +170,33 @@ BEGIN {
     }
     close("/tmp/dhcp.leases");
 
-    # Read raw interface bytes from usb0
-    raw_rx = 0; raw_tx = 0;
-    if ((getline line < "/sys/class/net/usb0/statistics/rx_bytes") > 0) raw_rx = line + 0;
-    close("/sys/class/net/usb0/statistics/rx_bytes");
-    if ((getline line < "/sys/class/net/usb0/statistics/tx_bytes") > 0) raw_tx = line + 0;
-    close("/sys/class/net/usb0/statistics/tx_bytes");
+    # Read raw interface bytes from active WAN device (usb*, wan, etc.)
+    wan_dev = "";
+    if (("ip route show default 2>/dev/null" | getline line) > 0) {
+      n = split(line, parts, " ");
+      for (i = 1; i <= n; i++) {
+        if (parts[i] == "dev" && i < n) { wan_dev = parts[i + 1]; break; }
+      }
+    }
+    close("ip route show default 2>/dev/null");
+    if (wan_dev == "") wan_dev = "usb0";
 
-    if (!initialized) {
-      if (!has_saved_wan) {
+    raw_rx = 0; raw_tx = 0;
+    rx_path = "/sys/class/net/" wan_dev "/statistics/rx_bytes";
+    tx_path = "/sys/class/net/" wan_dev "/statistics/tx_bytes";
+    if ((getline line < rx_path) > 0) raw_rx = line + 0;
+    close(rx_path);
+    if ((getline line < tx_path) > 0) raw_tx = line + 0;
+    close(tx_path);
+
+    if (!initialized || wan_dev != last_wan_dev) {
+      if (!initialized && !has_saved_wan) {
         wan_base_rx = raw_rx;
         wan_base_tx = raw_tx;
       }
       last_raw_rx = raw_rx;
       last_raw_tx = raw_tx;
+      last_wan_dev = wan_dev;
       initialized = 1;
     } else {
       d_rx = (raw_rx >= last_raw_rx) ? (raw_rx - last_raw_rx) : raw_rx;
@@ -187,17 +209,17 @@ BEGIN {
       last_raw_tx = raw_tx;
     }
 
-    # Track conntrack deltas
+    # Track conntrack deltas dynamically for active LAN subnet
     delete curr_flow_tx;
     delete curr_flow_rx;
 
     while ((getline line < "/proc/net/nf_conntrack") > 0) {
-      if (line !~ /src=10\.0\.0\./) continue;
+      if (line !~ src_pat) continue;
       n = split(line, f, " ");
       src_ip = ""; dst_ip = ""; sport = ""; dport = "";
       b1 = 0; b2 = 0; bc = 0;
       for (i = 1; i <= n; i++) {
-        if (f[i] ~ /^src=10\.0\.0\./ && src_ip == "") src_ip = substr(f[i], 5);
+        if (f[i] ~ src_pat && src_ip == "") src_ip = substr(f[i], 5);
         else if (f[i] ~ /^dst=/ && dst_ip == "") dst_ip = substr(f[i], 5);
         else if (f[i] ~ /^sport=/ && sport == "") sport = substr(f[i], 7);
         else if (f[i] ~ /^dport=/ && dport == "") dport = substr(f[i], 7);
@@ -209,7 +231,7 @@ BEGIN {
         }
       }
 
-      if (src_ip != "" && src_ip != "10.0.0.1") {
+      if (src_ip != "" && src_ip != lan_ip) {
         fk = src_ip ":" sport ":" dst_ip ":" dport;
         curr_flow_tx[fk] = b1;
         curr_flow_rx[fk] = b2;
@@ -252,7 +274,6 @@ BEGIN {
     first = 1;
     for (m in saved_rx) {
       if (m == "WAN" || m == "") continue;
-      # 15-day pruning check
       if ((m in dev_last_seen) && (now - dev_last_seen[m] > RETENTION_30D)) {
         continue;
       }
@@ -262,7 +283,7 @@ BEGIN {
       tx_mb = sprintf("%.2f", saved_tx[m] / 1048576);
       tot_mb = sprintf("%.2f", tot_b / 1048576);
       ip = (m in mac_to_ip) ? mac_to_ip[m] : "";
-      name = (m in known_name) ? known_name[m] : ((m in mac_to_name) ? mac_to_name[m] : "Device");
+      name = (m in mac_to_name) ? mac_to_name[m] : ((m in saved_name && saved_name[m] != "") ? saved_name[m] : "Device");
 
       if (!first) printf ",\n" >> tmp_json;
       first = 0;
@@ -276,22 +297,23 @@ BEGIN {
     # Write /tmp/traffic_totals.tsv every tick
     tmp_tsv = "/tmp/traffic_totals.tmp";
     printf "# MAC IP RX_BYTES TX_BYTES NAME\n" > tmp_tsv;
-    printf "WAN 10.43.99.139 %.0f %.0f Gateway\n", wan_base_rx, wan_base_tx >> tmp_tsv;
+    printf "WAN %s %.0f %.0f Gateway\n", lan_ip, wan_base_rx, wan_base_tx >> tmp_tsv;
     for (m in saved_rx) {
       if (m == "WAN" || m == "") continue;
       if ((m in dev_last_seen) && (now - dev_last_seen[m] > RETENTION_30D)) continue;
       ip = (m in mac_to_ip) ? mac_to_ip[m] : "";
-      name = (m in known_name) ? known_name[m] : ((m in mac_to_name) ? mac_to_name[m] : "Device");
+      name = (m in mac_to_name) ? mac_to_name[m] : ((m in saved_name && saved_name[m] != "") ? saved_name[m] : "Device");
       printf "%s %s %.0f %.0f %s\n", m, ip, saved_rx[m], saved_tx[m], name >> tmp_tsv;
     }
     close(tmp_tsv);
     system("mv /tmp/traffic_totals.tmp /tmp/traffic_totals.tsv");
 
-    # Flush to persistent storage every 6 iterations (~60s)
-    if (tick % 6 == 0) {
-      # 1. Lifetime traffic persistent update
+    # Flush to persistent storage every 30 iterations (~5m) only when traffic counters changed
+    cur_tot = lifetime_rx + lifetime_tx;
+    if (tick % 30 == 0 && cur_tot != last_flushed_tot) {
+      last_flushed_tot = cur_tot;
       tmp_lt = "/tmp/traffic_lifetime.tmp";
-      lt_tot = lifetime_rx + lifetime_tx;
+      lt_tot = cur_tot;
       printf "{\n" > tmp_lt;
       printf "  \"lifetime_rx_bytes\": %.0f,\n", lifetime_rx >> tmp_lt;
       printf "  \"lifetime_tx_bytes\": %.0f,\n", lifetime_tx >> tmp_lt;
@@ -314,8 +336,8 @@ BEGIN {
         if (now - dev_last_seen[m] > RETENTION_30D) continue;
 
         ip = (m in mac_to_ip) ? mac_to_ip[m] : "";
-        name = (m in known_name) ? known_name[m] : ((m in mac_to_name) ? mac_to_name[m] : "Device");
-        port = (m in known_port) ? known_port[m] : "LAN 3";
+        name = (m in mac_to_name) ? mac_to_name[m] : ((m in saved_name && saved_name[m] != "") ? saved_name[m] : "Device");
+        port = (m in mac_port) ? mac_port[m] : "LAN";
         rx_15 = (m in saved_rx) ? saved_rx[m] : 0;
         tx_15 = (m in saved_tx) ? saved_tx[m] : 0;
         tot_15 = rx_15 + tx_15;

@@ -18,7 +18,7 @@ while true; do
 
     # 1. Identify which device is bound to an active ONLINE tether interface (from multilink)
     ONLINE_IFACE=$(jq -r '.links[] | select(.status == "CONNECTED") | .id' /tmp/multilink_status.json 2>/dev/null | head -n 1)
-    [ -z "$ONLINE_IFACE" ] && ONLINE_IFACE="usb1"
+    [ -z "$ONLINE_IFACE" ] && ONLINE_IFACE="usb0"
 
     TETHER_DEV_PATH=$(readlink -f "/sys/class/net/$ONLINE_IFACE/device" 2>/dev/null)
     TETHER_SERIAL=""
@@ -111,11 +111,17 @@ JSON
 dumpsys battery 2>/dev/null | head -n 22
 dumpsys thermalservice 2>/dev/null | grep -E "mName=(AP|PATHM|BAT)"
 dumpsys telephony.registry 2>/dev/null | grep -m 1 "mSignalStrength="
-dumpsys telephony.registry 2>/dev/null | grep -m 1 "CellIdentityNr:"
+dumpsys telephony.registry 2>/dev/null | grep -m 1 "CellIdentity"
+echo "===UPTIME==="
 cat /proc/uptime 2>/dev/null
+echo "===SIM==="
 getprop gsm.sim.state
+echo "===NET==="
 getprop gsm.network.type
+echo "===OP==="
 getprop gsm.operator.alpha
+echo "===MEM==="
+awk "/^MemTotal:|^MemAvailable:/ {print \$1, int(\$2/1024)}" /proc/meminfo 2>/dev/null
 ' 2>/dev/null)
 
     # Battery
@@ -145,7 +151,7 @@ getprop gsm.operator.alpha
     [ -z "$P_PA_TEMP" ] && P_PA_TEMP="$P_CPU_TEMP"
 
     # Uptime
-    P_UPTIME_RAW=$(echo "$DYN_OUT" | awk '/^[0-9]+\.[0-9]+/ {print int($1); exit}')
+    P_UPTIME_RAW=$(echo "$DYN_OUT" | sed -n '/===UPTIME===/{n;p;}' | awk '{print int($1); exit}')
     if [ -n "$P_UPTIME_RAW" ] && [ "$P_UPTIME_RAW" -gt 0 ]; then
         P_HRS=$((P_UPTIME_RAW / 3600))
         P_MINS=$(((P_UPTIME_RAW % 3600) / 60))
@@ -154,49 +160,49 @@ getprop gsm.operator.alpha
         P_UPTIME_FMT="--:--"
     fi
 
-    # SIM & Cellular Verification
-    P_SIM_STATE=$(echo "$DYN_OUT" | tail -n 3 | head -n 1 | tr -d '\r\n')
-    P_NET_TYPE=$(echo "$DYN_OUT" | tail -n 2 | head -n 1 | tr -d '\r\n' | awk -F, '{print $1}')
-    P_OP_NAME=$(echo "$DYN_OUT" | tail -n 1 | tr -d '\r\n' | awk -F, '{print $1}')
+    # SIM & Cellular Verification (marker-delimited so empty props never shift values)
+    P_SIM_STATE=$(echo "$DYN_OUT" | sed -n '/===SIM===/{n;p;}' | tr -d '\r\n')
+    P_NET_TYPE=$(echo "$DYN_OUT" | sed -n '/===NET===/{n;p;}' | tr -d '\r\n' | awk -F, '{print $1}')
+    P_OP_NAME=$(echo "$DYN_OUT" | sed -n '/===OP===/{n;p;}' | tr -d '\r\n' | awk -F, '{print $1}')
+    [ "$P_NET_TYPE" = "===OP===" ] && P_NET_TYPE=""
 
     if echo "$P_SIM_STATE" | grep -qE "LOADED|READY"; then
         P_HAS_SIM=true
-        P_OPERATOR="${P_OP_NAME:-Jio True5G}"
-        
-        # Signal
+        P_OPERATOR="${P_OP_NAME:-Cellular}"
+
+        # Signal (honest 0 fallback if unavailable)
         SIG_LINE=$(echo "$DYN_OUT" | grep "mSignalStrength=")
         P_RSRP=$(echo "$SIG_LINE" | grep -oE '(ssRsrp|rsrp) = -?[0-9]+' | head -n 1 | awk '{print $3}')
         P_RSRQ=$(echo "$SIG_LINE" | grep -oE '(ssRsrq|rsrq) = -?[0-9]+' | head -n 1 | awk '{print $3}')
         P_SINR=$(echo "$SIG_LINE" | grep -oE '(ssSinr|rssnr) = -?[0-9]+' | head -n 1 | awk '{print $3}')
         P_BARS=$(echo "$SIG_LINE" | grep -oE '(nrLevel|level)=[0-9]+' | head -n 1 | awk -F'=' '{print $2}')
-        [ -z "$P_RSRP" ] && P_RSRP=-98
-        [ -z "$P_RSRQ" ] && P_RSRQ=-11
-        [ -z "$P_SINR" ] && P_SINR=13
-        [ -z "$P_BARS" ] && P_BARS=4
+        [ -z "$P_RSRP" ] && P_RSRP=0
+        [ -z "$P_RSRQ" ] && P_RSRQ=0
+        [ -z "$P_SINR" ] && P_SINR=0
+        [ -z "$P_BARS" ] && P_BARS=0
 
         # Cell Identity
-        CELL_LINE=$(echo "$DYN_OUT" | grep "CellIdentityNr:")
+        CELL_LINE=$(echo "$DYN_OUT" | grep -E "CellIdentity(Nr|Lte)?:" | head -n 1)
         P_PCI=$(echo "$CELL_LINE" | grep -oE 'mPci = [0-9]+' | head -n 1 | awk '{print $3}')
-        [ -z "$P_PCI" ] && P_PCI=528
-        P_ARFCN=$(echo "$CELL_LINE" | grep -oE 'mNrArfcn = [0-9]+' | head -n 1 | awk '{print $3}')
-        [ -z "$P_ARFCN" ] && P_ARFCN="634080"
+        [ -z "$P_PCI" ] && P_PCI=0
+        P_ARFCN=$(echo "$CELL_LINE" | grep -oE '(mNrArfcn|mEarfcn|mChannelNumber) = [0-9]+' | head -n 1 | awk '{print $3}')
+        [ -z "$P_ARFCN" ] && P_ARFCN="--"
         P_BAND=$(echo "$CELL_LINE" | grep -oE 'mBands = \[[0-9]+\]' | head -n 1 | grep -oE '[0-9]+')
-        [ -z "$P_BAND" ] && P_BAND=77
 
         if echo "$P_NET_TYPE" | grep -qi "NR"; then
             P_NETWORK="5G Standalone NR_SA"
-            P_BAND_STR="n${P_BAND}"
-            P_FREQ_STR="3.5 GHz C-Band"
+            [ -n "$P_BAND" ] && P_BAND_STR="n${P_BAND}" || P_BAND_STR="5G NR"
+            P_FREQ_STR="5G Sub-6 / NR"
         elif echo "$P_NET_TYPE" | grep -qi "LTE"; then
             P_NETWORK="4G LTE"
-            P_BAND_STR="B${P_BAND}"
-            P_FREQ_STR="1800/2100 MHz"
+            [ -n "$P_BAND" ] && P_BAND_STR="B${P_BAND}" || P_BAND_STR="LTE"
+            P_FREQ_STR="4G LTE"
         else
             P_NETWORK="${P_NET_TYPE:-Cellular}"
-            P_BAND_STR="Band ${P_BAND}"
+            [ -n "$P_BAND" ] && P_BAND_STR="Band ${P_BAND}" || P_BAND_STR="--"
             P_FREQ_STR="Cellular"
         fi
-        P_NEIGHBORS='[{"pci":649,"band":"n28 (700 MHz)","arfcn":"156750"},{"pci":562,"band":"n28 (700 MHz)","arfcn":"156750"},{"pci":425,"band":"n77 (3.5 GHz)","arfcn":"634080"},{"pci":472,"band":"n77 (3.5 GHz)","arfcn":"634080"}]'
+        P_NEIGHBORS='[]'
     else
         P_HAS_SIM=false
         P_OPERATOR="No SIM Card"
@@ -225,6 +231,20 @@ getprop gsm.operator.alpha
     [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
     USB_IP=$(ip -4 a show dev usb0 2>/dev/null | awk '/inet / {print $2}' | awk -F'/' '{print $1}' | head -n 1)
     [ -z "$USB_IP" ] && USB_IP="--"
+
+    # Live Memory from /proc/meminfo
+    P_RAM_AVAIL=$(echo "$DYN_OUT" | sed -n '/===MEM===/,$p' | awk '/^MemAvailable:/ {print $2; exit}')
+    P_RAM_TOT_DYN=$(echo "$DYN_OUT" | sed -n '/===MEM===/,$p' | awk '/^MemTotal:/ {print $2; exit}')
+    { [ -z "$P_RAM_TOT" ] || [ "$P_RAM_TOT" = "0" ] || [ "$P_RAM_TOT" = "null" ]; } && P_RAM_TOT="${P_RAM_TOT_DYN:-0}"
+    if [ -n "$P_RAM_TOT" ] && [ "$P_RAM_TOT" -gt 0 ] 2>/dev/null && [ -n "$P_RAM_AVAIL" ]; then
+        P_RAM_USED=$((P_RAM_TOT - P_RAM_AVAIL))
+        [ "$P_RAM_USED" -lt 0 ] && P_RAM_USED=0
+        P_RAM_PCT=$(( (P_RAM_USED * 100) / P_RAM_TOT ))
+    else
+        P_RAM_AVAIL=0
+        P_RAM_USED=0
+        P_RAM_PCT=0
+    fi
 
     # Write full primary JSON atomically
     cat << JSON > "$TMP_FILE"
@@ -270,9 +290,9 @@ getprop gsm.operator.alpha
   },
   "memory": {
     "total_mb": ${P_RAM_TOT:-0},
-    "available_mb": 0,
-    "used_mb": 0,
-    "used_pct": 0
+    "available_mb": ${P_RAM_AVAIL:-0},
+    "used_mb": ${P_RAM_USED:-0},
+    "used_pct": ${P_RAM_PCT:-0}
   }
 }
 JSON

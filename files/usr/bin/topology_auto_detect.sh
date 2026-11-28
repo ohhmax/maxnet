@@ -7,12 +7,14 @@ HIST_FILE="/tmp/topology_evidence_history.json"
 [ -f "$HIST_FILE" ] || echo '{"nodes":{}}' > "$HIST_FILE"
 
 # 1. Gateway local info
-LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null | awk '{print $1}' | cut -d/ -f1)
+LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null | awk '{print $1}' | cut -d/ -f1)
 [ -z "$LAN_IP" ] && LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
 [ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+LAN_PREFIX="${LAN_IP%.*}."
 LAN_MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null | tr '[:upper:]' '[:lower:]')
-[ -z "$LAN_MAC" ] && LAN_MAC="52:5a:4e:e9:61:a0"
-HOST_NAME="MAXNET"
+[ -z "$LAN_MAC" ] && LAN_MAC="00:00:00:00:00:00"
+HOST_NAME=$(uci -q get system.@system[0].hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo "MAXNET")
+[ -z "$HOST_NAME" ] && HOST_NAME="MAXNET"
 
 TMP_DIR="/tmp/topo_scan_$$"
 mkdir -p "$TMP_DIR"
@@ -45,7 +47,7 @@ ip -4 neigh show dev br-lan 2>/dev/null | awk '$2 == "lladdr" {print tolower($3)
   fi
 done
 
-# Resolve hostnames from /etc/hosts (e.g. 10.0.0.2 maxnet-b)
+# Resolve hostnames from /etc/hosts
 awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {print $1, $2}' /etc/hosts 2>/dev/null | while read -r h_ip h_name; do
   [ -z "$h_ip" ] || [ -z "$h_name" ] && continue
   if grep -q " $h_ip " "$CAND_FILE" 2>/dev/null; then
@@ -58,8 +60,8 @@ awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {print $1, $2}' /etc/hosts 2>/dev/null | 
 done
 
 
-# 5. Parallel Ping sampling (5 samples per IP)
-UNIQUE_IPS=$(awk '{print $2}' "$CAND_FILE" | grep -E '^10\.0\.0\.' | sort -u)
+# 5. Parallel Ping sampling (5 samples per IP across active LAN subnet)
+UNIQUE_IPS=$(awk -v pfx="$LAN_PREFIX" 'index($2, pfx) == 1 {print $2}' "$CAND_FILE" | sort -u)
 for ip in $UNIQUE_IPS; do
   [ "$ip" = "$LAN_IP" ] && continue
   ping -c 5 -W 1 "$ip" > "$TMP_DIR/p_${ip}.txt" 2>&1 &
@@ -83,9 +85,17 @@ for ip in $UNIQUE_IPS; do
   [ -z "$name" ] && name="Device"
 
   # Physical port & port MAC count
+  is_direct_wifi=false
+  if grep -q "$mac" "$WIFI_MACS_FILE" 2>/dev/null; then
+    is_direct_wifi=true
+  fi
+
   port_num=$(awk -v mac="$mac" '$2==mac {print $1; exit}' "$PORT_MACS_FILE")
   [ -z "$port_num" ] && port_num=$(brctl showmacs br-lan 2>/dev/null | awk -v mac="$mac" '$2==mac && $3=="no" {print $1; exit}')
-  if [ -n "$port_num" ]; then
+  if [ "$is_direct_wifi" = "true" ]; then
+    port_label="WiFi"
+    port_mac_count=0
+  elif [ -n "$port_num" ]; then
     if [ "$port_num" = "1" ]; then port_label="LAN 1"
     elif [ "$port_num" = "2" ]; then port_label="LAN 2"
     elif [ "$port_num" = "3" ]; then port_label="LAN 3"
@@ -122,18 +132,11 @@ for ip in $UNIQUE_IPS; do
   is_online=true
   [ "$loss" -ge 80 ] && is_online=false
 
-  # OUI Vendor Lookup
+  # Generic IEEE OUI Vendor Hints (zero personal device bindings)
   oui_prefix=$(echo "$mac" | cut -c1-8)
   vendor="Unknown"
   case "$oui_prefix" in
     "00:11:32") vendor="Synology Inc." ;;
-    "10:65:30") vendor="Intel Corporation" ;;
-    "8c:a3:99") vendor="ASUSTek Computer Inc." ;;
-    "a8:1b:5a") vendor="OPPO Mobile Communications" ;;
-    "a6:10:eb") vendor="Xiaomi Communications Co Ltd" ;;
-    "92:8f:fb" | "22:b7:58") vendor="Motorola Mobility LLC" ;;
-    "0a:8b:3b" | "ee:e5:0b" | "f2:82:95" | "52:60:c0") vendor="Vivo Mobile Communication Co Ltd" ;;
-    "be:aa:7d") vendor="Samsung Electronics Co Ltd" ;;
   esac
 
   # Probe Web Port 80
@@ -142,12 +145,6 @@ for ip in $UNIQUE_IPS; do
     if /usr/bin/curl -s -I --connect-timeout 0.4 --max-time 0.8 "http://$ip/" >/dev/null 2>&1; then
       has_web=true
     fi
-  fi
-
-  # Check if in Gateway WiFi
-  is_direct_wifi=false
-  if grep -q "$mac" "$WIFI_MACS_FILE" 2>/dev/null; then
-    is_direct_wifi=true
   fi
 
   # Apply Classification Signals
@@ -184,12 +181,6 @@ for ip in $UNIQUE_IPS; do
   [ "$sig_name_vendor" = "true" ] && sig_count=$((sig_count + 1))
 
   # Role Assignment:
-  # - Direct WiFi client of main gateway -> "device"
-  # - Single MAC on port -> "device"
-  # - Port with 2+ MACs:
-  #   - If sig_count >= 2: "ap" (or "router")
-  #   - If vendor is Synology/storage: "device" (NAS)
-  #   - If high/jittery ping or sig_count < 2: "device" (child of the AP)
   role="device"
   confidence="High"
   device_type="client"
@@ -200,23 +191,10 @@ for ip in $UNIQUE_IPS; do
   elif [ "$port_mac_count" -eq 1 ]; then
     role="device"
     confidence="High"
-    [ "$vendor" = "Intel Corporation" ] && device_type="pc"
   elif [ "$port_mac_count" -ge 2 ]; then
     if [ "$vendor" = "Synology Inc." ]; then
       role="device"
       device_type="nas"
-      confidence="High"
-    elif [ "$vendor" = "Intel Corporation" ] || [ "$vendor" = "Intel" ]; then
-      role="device"
-      device_type="pc"
-      confidence="High"
-    elif [ "$vendor" = "ASUSTek Computer Inc." ] || [ "$oui_prefix" = "8c:a3:99" ]; then
-      role="ap"
-      device_type="router"
-      confidence="High"
-    elif [ "$oui_prefix" = "a8:1b:5a" ]; then
-      role="device"
-      device_type="phone"
       confidence="High"
     elif [ "$sig_count" -ge 2 ]; then
       role="ap"
@@ -314,19 +292,26 @@ if [ "$WWAN_UP" = "true" ]; then
       --arg bssid "${REP_BSSID:-}" \
       --arg ip "${REP_IP:-}" \
       --arg gw "${REP_GW:-}" \
-      --arg speed "${REP_SPEED:-1729 Mbps}" \
-      --arg signal "${REP_SIGNAL:--55 dBm}" \
+      --arg speed "${REP_SPEED:---}" \
+      --arg signal "${REP_SIGNAL:---}" \
       '{connected: $connected, ssid: $ssid, bssid: $bssid, ip: $ip, gateway: $gw, speed: $speed, signal: $signal}')
 else
     REPEATER_UPLINK_JSON='{"connected":false,"ssid":""}'
 fi
 
-# Prepare USB Devices detection for topology
-USB_DEVS_TMP="/tmp/usb_devs_topo.json"
-if [ -f /tmp/usb_devices.json ]; then
+# Prepare USB Devices & Locked Port Configuration safely (fresh flash may lack $CONF_FILE)
+USB_DEVS_TMP="$TMP_DIR/usb_devs_topo.json"
+if [ -s /tmp/usb_devices.json ] && jq -e . /tmp/usb_devices.json >/dev/null 2>&1; then
     cp -f /tmp/usb_devices.json "$USB_DEVS_TMP" 2>/dev/null
 else
     echo "[]" > "$USB_DEVS_TMP"
+fi
+
+CONF_TMP="$TMP_DIR/conf.json"
+if [ -s "$CONF_FILE" ] && jq -e . "$CONF_FILE" >/dev/null 2>&1; then
+    cp -f "$CONF_FILE" "$CONF_TMP" 2>/dev/null
+else
+    echo "{}" > "$CONF_TMP"
 fi
 
 WAN_MODE="standard"
@@ -343,7 +328,7 @@ FINAL_JSON=$(jq -n \
   --arg wan_mode "$WAN_MODE" \
   --argjson repeater_uplink "$REPEATER_UPLINK_JSON" \
   --slurpfile devs "$DEV_LIST_TMP" \
-  --slurpfile conf "$CONF_FILE" \
+  --slurpfile conf "$CONF_TMP" \
   --slurpfile usb_devs "$USB_DEVS_TMP" \
   '
   $devs[0] as $all_devs |
@@ -364,15 +349,12 @@ FINAL_JSON=$(jq -n \
   def is_phone_name(d):
     ((d.mac // "") | ascii_downcase) as $m |
     ((d.name // "") | ascii_downcase) as $l |
-    ((($m | startswith("a8:1b:5a")) or
-      (($m | length >= 2) and (($m[1:2]) as $c2 | ($c2 == "2" or $c2 == "6" or $c2 == "a" or $c2 == "e")) and ($l == "device" or $l == "" or $l == "*")) or
-      ($l | contains("poco") or contains("motorola") or contains("vivo") or contains("oppo") or contains("phone") or contains("mobile") or contains("iphone") or contains("galaxy"))));
+    (((($m | length >= 2) and (($m[1:2]) as $c2 | ($c2 == "2" or $c2 == "6" or $c2 == "a" or $c2 == "e")) and ($l == "device" or $l == "" or $l == "*")) or
+      ($l | contains("poco") or contains("motorola") or contains("vivo") or contains("oppo") or contains("phone") or contains("mobile") or contains("iphone") or contains("galaxy") or contains("pixel") or contains("xiaomi"))));
 
   def is_router_dev(d):
-    (((d.mac // "") | ascii_downcase | startswith("8c:a3:99")) or
-     (((d.vendor // "") | ascii_downcase) | contains("asus")) or
-     (((d.name // "") | ascii_downcase) | (contains("router") or contains("asus") or contains("gateway"))) or
-     (d.role == "ap" and (is_phone_name(d) | not) and (((d.vendor // "") | ascii_downcase | contains("intel")) | not)));
+    ((((d.name // "") | ascii_downcase) | (contains("router") or contains("ap") or contains("gateway"))) or
+     (d.role == "ap" and (is_phone_name(d) | not)));
 
   def make_port_object(p_label; p_id):
     ($all_devs | map(select(.port == p_label))) as $devs |
@@ -393,7 +375,7 @@ FINAL_JSON=$(jq -n \
            child: {
              id: ("node-" + (p_id | split("-")[1]) + "-" + ($rtr_dev.mac | split(":") | join(""))),
              type: "router",
-             name: (if (($rtr_dev.mac // "") | ascii_downcase | startswith("8c:a3:99")) or (((($rtr_dev.vendor // "") | ascii_downcase)) | contains("asus")) then "Asus Router" else ($rtr_dev.name // "Subordinate Router") end),
+             name: ($rtr_dev.name // "Subordinate Router / AP"),
              ip: $rtr_dev.ip,
              mac: $rtr_dev.mac,
              status: (if $rtr_dev.is_online then "online" else "offline" end),
@@ -494,8 +476,8 @@ FINAL_JSON=$(jq -n \
   def make_evidence(d; is_root):
     if is_root then
       [
-        "Host gateway root router (10.0.0.1)",
-        "Hardware physical interfaces: 4x Gigabit Ethernet + USB 3.0",
+        ("Host gateway root router (" + $lan_ip + ")"),
+        "Hardware physical interfaces: Gigabit Ethernet + USB 3.0",
         "Classified as Root Router with High confidence"
       ]
     elif d.role == "ap" then

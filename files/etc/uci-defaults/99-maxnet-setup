@@ -28,25 +28,33 @@ if [ -z "$cur_lan" ] || [ "$cur_lan" = "192.168.1.1" ]; then
 	uci set network.lan.ipaddr="10.0.0.1"
 	uci add_list network.lan.ipaddr="10.0.0.254/24" 2>/dev/null || true
 fi
-uci set network.@globals[0].packet_steering="1"
+uci set network.@globals[0].packet_steering="2"
+uci set network.@globals[0].steering_flows="4096"
 uci commit network
 
-# Set Default High-Performance Wi-Fi SSIDs & Balanced Tx-Power ONLY if unconfigured or default OpenWrt
-cur_ssid_0=$(uci -q get wireless.default_radio0.ssid)
-if [ -z "$cur_ssid_0" ] || [ "$cur_ssid_0" = "OpenWrt" ]; then
-	uci set wireless.default_radio0.ssid="MAXNET" 2>/dev/null || true
-	uci set wireless.default_radio0.encryption="none" 2>/dev/null || true
-	uci delete wireless.default_radio0.key 2>/dev/null || true
+# Ensure board-native wireless config exists before applying MAXNET SSID defaults (works across Qualcomm & MediaTek)
+if [ ! -s /etc/config/wireless ]; then
+	wifi config 2>/dev/null || true
 fi
-[ -z "$(uci -q get wireless.radio0.txpower)" ] && uci set wireless.radio0.txpower="20" 2>/dev/null || true
 
-cur_ssid_1=$(uci -q get wireless.default_radio1.ssid)
-if [ -z "$cur_ssid_1" ] || [ "$cur_ssid_1" = "OpenWrt" ]; then
-	uci set wireless.default_radio1.ssid="MAXNET-5G" 2>/dev/null || true
-	uci set wireless.default_radio1.encryption="none" 2>/dev/null || true
-	uci delete wireless.default_radio1.key 2>/dev/null || true
-fi
-[ -z "$(uci -q get wireless.radio1.txpower)" ] && uci set wireless.radio1.txpower="23" 2>/dev/null || true
+# Set Default High-Performance Wi-Fi SSIDs & Balanced Tx-Power ONLY if unconfigured or default OpenWrt
+for radio in $(uci -q show wireless | sed -n 's/^wireless\.\(radio[0-9]*\)=wifi-device$/\1/p'); do
+	band=$(uci -q get "wireless.${radio}.band")
+	iface="default_${radio}"
+	cur_ssid=$(uci -q get "wireless.${iface}.ssid")
+	if [ -z "$cur_ssid" ] || [ "$cur_ssid" = "OpenWrt" ]; then
+		if [ "$band" = "5g" ]; then
+			uci set "wireless.${iface}.ssid=MAXNET-5G" 2>/dev/null || true
+		else
+			uci set "wireless.${iface}.ssid=MAXNET" 2>/dev/null || true
+		fi
+		uci set "wireless.${iface}.encryption=none" 2>/dev/null || true
+		uci delete "wireless.${iface}.key" 2>/dev/null || true
+	fi
+	if [ -z "$(uci -q get "wireless.${radio}.txpower")" ]; then
+		[ "$band" = "5g" ] && uci set "wireless.${radio}.txpower=23" 2>/dev/null || uci set "wireless.${radio}.txpower=20" 2>/dev/null || true
+	fi
+done
 uci commit wireless 2>/dev/null || true
 
 # Fix dnsmasq startup sequence (START=60 after S20network)
@@ -74,10 +82,12 @@ else
 	uci commit network
 fi
 
-# Ensure wan_usb is part of the wan firewall zone
+# Ensure wan_usb is part of the wan firewall zone (idempotent, no duplicates)
 if uci get firewall.@zone[1] >/dev/null 2>&1; then
-	uci add_list firewall.@zone[1].network="wan_usb" 2>/dev/null || true
-	uci commit firewall
+	if ! uci -q get firewall.@zone[1].network | grep -qw "wan_usb"; then
+		uci add_list firewall.@zone[1].network="wan_usb" 2>/dev/null || true
+		uci commit firewall
+	fi
 fi
 
 # Ensure adb is the native ELF binary (never wrap in shell script to prevent daemon ACK failure)
@@ -128,7 +138,7 @@ fi
 [ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd enable && /etc/init.d/uhttpd restart
 
 # Ensure executable bits on MAXNET daemons, hotplug hooks, and CGI handlers
-chmod +x /etc/init.d/maxnet* /etc/hotplug.d/net/* /etc/hotplug.d/dhcp/* 2>/dev/null || true
+chmod +x /etc/init.d/maxnet* /etc/hotplug.d/net/* /etc/hotplug.d/dhcp/* /etc/hotplug.d/iface/* 2>/dev/null || true
 
 # Enable MAXNET Core Background Daemons & Services (On-demand SMB/Storage, Zero Idle Bloat)
 for s in trafficd maxnet_devices maxnet_storage multilinkd maxnet_alert_monitor maxnet_health_watchdog maxnet_wsd phone_telemetry ttyd; do

@@ -367,12 +367,8 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
             fi
 
             # Fallback for battery if dumpsys battery did not return level
-            if [ "$dev_battery_pct" = "null" ]; then
-                if [ "$ser" = "$PRIMARY_CELL_SERIAL" ] && [ -n "$t_lvl" ]; then
-                    dev_battery_pct="$t_lvl"
-                else
-                    dev_battery_pct="null"
-                fi
+            if [ "$dev_battery_pct" = "null" ] && [ -n "${t_lvl:-}" ]; then
+                [ "$ser" = "$PRIMARY_CELL_SERIAL" ] && dev_battery_pct="$t_lvl"
             fi
         fi
 
@@ -381,6 +377,7 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
         cur_free="--"
         cur_mounted=false
         cur_share="\\\\${router_lan_ip}\\Pendrive"
+        cur_smb_running=$(pgrep smbd >/dev/null 2>&1 && echo true || echo false)
         if [ "$dev_type" = "storage" ]; then
             cur_total="$STORAGE_TOTAL"
             cur_free="$STORAGE_FREE"
@@ -390,7 +387,7 @@ echo "$lvl|$temp|$sim_st|$oper|$net"
         fi
         safe_share=$(echo "$cur_share" | sed 's/\\/\\\\/g')
 
-        item="{\"bus\":\"$b\",\"port\":$port,\"serial\":\"$ser\",\"brand\":\"$brand\",\"model\":\"$model\",\"raw_model\":\"$prod\",\"manufacturer\":\"$mfg\",\"hostname\":\"$hostname\",\"virtual_ip\":\"$virt_ip\",\"status\":\"online\",\"status_color\":\"green\",\"last_seen_sec\":0,\"speed_mbps\":$spd,\"standard\":\"$std\",\"color\":\"$color\",\"is_wan\":$has_internet,\"ip\":\"$virt_ip\",\"dhcp_ip\":\"$real_ip\",\"lan_ip\":\"$router_lan_ip\",\"adb_enabled\":$adb_ok,\"adb_status\":\"$adb_st\",\"has_sim\":$dev_has_sim,\"operator\":\"$dev_operator\",\"network\":\"$dev_net_type\",\"band\":\"$dev_band\",\"battery_pct\":$dev_battery_pct,\"battery_temp_c\":${dev_battery_temp:-null},\"device_type\":\"$dev_type\",\"has_tethering\":$has_tether,\"has_adb\":$has_adb_detected,\"has_mtp\":$has_mtp,\"has_storage\":$has_storage,\"has_internet\":$has_internet,\"internet_status\":\"$internet_status\",\"net_interface\":\"$net_if\",\"mounted\":$cur_mounted,\"smb_running\":true,\"mount_point\":\"/mnt/storage\",\"total_space\":\"$cur_total\",\"free_space\":\"$cur_free\",\"share_path\":\"$safe_share\"}"
+        item="{\"bus\":\"$b\",\"port\":$port,\"serial\":\"$ser\",\"brand\":\"$brand\",\"model\":\"$model\",\"raw_model\":\"$prod\",\"manufacturer\":\"$mfg\",\"hostname\":\"$hostname\",\"virtual_ip\":\"$virt_ip\",\"status\":\"online\",\"status_color\":\"green\",\"last_seen_sec\":0,\"speed_mbps\":$spd,\"standard\":\"$std\",\"color\":\"$color\",\"is_wan\":$has_internet,\"ip\":\"$virt_ip\",\"dhcp_ip\":\"$real_ip\",\"lan_ip\":\"$router_lan_ip\",\"adb_enabled\":$adb_ok,\"adb_status\":\"$adb_st\",\"has_sim\":$dev_has_sim,\"operator\":\"$dev_operator\",\"network\":\"$dev_net_type\",\"band\":\"$dev_band\",\"battery_pct\":$dev_battery_pct,\"battery_temp_c\":${dev_battery_temp:-null},\"device_type\":\"$dev_type\",\"has_tethering\":$has_tether,\"has_adb\":$has_adb_detected,\"has_mtp\":$has_mtp,\"has_storage\":$has_storage,\"has_internet\":$has_internet,\"internet_status\":\"$internet_status\",\"net_interface\":\"$net_if\",\"mounted\":$cur_mounted,\"smb_running\":$cur_smb_running,\"mount_point\":\"/mnt/storage\",\"total_space\":\"$cur_total\",\"free_space\":\"$cur_free\",\"share_path\":\"$safe_share\"}"
 
         [ "$first" -eq 0 ] && DEVICE_LIST_JSON="$DEVICE_LIST_JSON,"
         DEVICE_LIST_JSON="$DEVICE_LIST_JSON$item"
@@ -534,16 +531,16 @@ echo "===NETWORK==="; getprop gsm.network.type
     "temp_c": ${t_temp:-35.0}
   },
   "cellular": {
-    "has_sim": true,
+    "has_sim": $([ -n "$t_oper" ] && [ "$t_oper" != "--" ] && echo true || echo false),
     "operator": "$t_oper",
     "network": "$t_net",
-    "band": "5G NR",
-    "frequency": "Sub-6GHz",
+    "band": "--",
+    "frequency": "--",
     "pci": 0,
     "arfcn": "--",
-    "rsrp_dbm": -85,
-    "sinr_db": 18,
-    "bars": 4
+    "rsrp_dbm": 0,
+    "sinr_db": 0,
+    "bars": 0
   }
 }
 JSON

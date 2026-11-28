@@ -8,9 +8,15 @@ printf "Content-Type: application/json\r\n\r\n"
 # 1. CPU & SoC
 MODEL=$(cat /tmp/sysinfo/model 2>/dev/null)
 [ -z "$MODEL" ] && MODEL=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0')
-[ -z "$MODEL" ] && MODEL="Jio AX6000 Qualcomm IPQ9574"
-
+[ -z "$MODEL" ] && MODEL="MAXNET AX6000 Gateway"
+BOARD=$(cat /tmp/sysinfo/board_name 2>/dev/null)
+COMPAT=$(tr '\0' ' ' < /proc/device-tree/compatible 2>/dev/null)
 CORES=$(grep -c "^processor" /proc/cpuinfo 2>/dev/null || echo 4)
+CPU_NAME="ARM Cortex-A73 (${CORES} Cores)"
+case "$BOARD $COMPAT" in
+  *mt7986*|*filogic*|*jidu6801*|*jidu6401*|*jidu6101*|*jidu6j01*) CPU_NAME="MediaTek MT7986A Filogic 830 (${CORES}x ARM Cortex-A53)" ;;
+  *ipq95*|*jidu6911*|*jidu6811*|*jidu6611*|*jidu6411*|*jidu6111*|*jidu6j11*|*al02*) CPU_NAME="Qualcomm IPQ9574 (${CORES}x ARM Cortex-A73)" ;;
+esac
 ARCH=$(uname -m 2>/dev/null || echo "aarch64")
 BOGOMIPS=$(grep -m1 "BogoMIPS" /proc/cpuinfo 2>/dev/null | awk '{print $3}')
 
@@ -194,7 +200,7 @@ cat << JSON_END
     "local_time": "${LOCAL_TIME}"
   },
   "cpu": {
-    "model": "Qualcomm IPQ9574 (4x ARM Cortex-A73)",
+    "model": "${CPU_NAME}",
     "architecture": "${ARCH}",
     "cores": ${CORES},
     "bogomips": "${BOGOMIPS}",

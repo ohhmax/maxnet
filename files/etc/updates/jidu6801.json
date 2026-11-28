@@ -1,9 +1,75 @@
 {
   "versions": [
     {
+      "build": 62,
+      "version": "2.2.62",
+      "tested": false,
+      "title": "MAXNET | V2.2.62",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.62-b62/maxnet-jidu6801-sysupgrade.bin",
+      "sha256": "6c76b6e44dc86f1c7efa9fd56a6064a8669ef8a1212dea8f059a116db13f3c65",
+      "itb_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.62-b62/maxnet-jidu6801-initramfs.itb",
+      "itb_sha256": "6d067a9640ac5199ddd61f836b523aad4af3db2fcce3480e5121ec184285bd6e"
+    },
+    {
+      "build": 61,
+      "version": "2.2.61",
+      "tested": false,
+      "title": "MAXNET | V2.2.61",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.61-b61/maxnet-jidu6801-sysupgrade.bin",
+      "sha256": "907b5c8031a0ee0268b7662331a7f83b886f2d1db38bdeb47ae11093903ac006",
+      "itb_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.61-b61/maxnet-jidu6801-initramfs.itb",
+      "itb_sha256": "2e470177f513342448fd7b873de1210555f45d8d3f180efd98d364e0f03d6d1b"
+    },
+    {
+      "build": 60,
+      "version": "2.2.60",
+      "tested": false,
+      "title": "MAXNET | V2.2.60",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.60-b60/maxnet-jidu6801-sysupgrade.bin",
+      "sha256": "7bae146431022dfeba153781e8ebfbdd559831b5e02c6357fdd0cb1294ff05ce",
+      "itb_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.60-b60/maxnet-jidu6801-initramfs.itb",
+      "itb_sha256": "d9ab80042f15e19db0d2dea638bf51301b99fe1dde77f6f7e10537a1273cadf4"
+    },
+    {
+      "build": 59,
+      "version": "2.2.59",
+      "tested": false,
+      "title": "MAXNET | V2.2.59",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.59-b59/maxnet-jidu6801-sysupgrade.bin",
+      "sha256": "5cebc0010541de86777c1e11955ab6e1372495f0898b701dd2f84ba840a7b9af",
+      "itb_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.59-b59/maxnet-jidu6801-initramfs.itb",
+      "itb_sha256": "47ba7c051ba1eb0b149717efd32aeff745e8bb4a8e6bd48e69e53db57d616182"
+    },
+    {
+      "build": 58,
+      "version": "2.2.58",
+      "tested": false,
+      "title": "MAXNET | V2.2.58",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.58-b58/maxnet-jidu6801-sysupgrade.bin",
+      "sha256": "4ae744056e415d99ce08cf01e93b03547633ed6566457e7d4fa903fc22521b27",
+      "itb_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.58-b58/maxnet-jidu6801-initramfs.itb",
+      "itb_sha256": "5abc6eccf2df70fb54fa6604ef0f8a0d2f5c46fefa0f5140c02e17bc2594f92d"
+    },
+    {
+      "build": 56,
+      "version": "2.2.56",
+      "tested": false,
+      "title": "MAXNET | V2.2.56",
+      "description": "N/A",
+      "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.56-b56/maxnet-jidu6801-sysupgrade.bin",
+      "sha256": "f62684d710e7fe7491ed6f284e506cfc194aa8158d382186fb3cea633536c2c7",
+      "itb_url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.56-b56/maxnet-jidu6801-initramfs.itb",
+      "itb_sha256": "bfaf54194708384e4265b6c29ace1a0bd872f28ccd013334e5e455a88263f0ec"
+    },
+    {
       "build": 54,
       "version": "2.2.54",
-      "tested": true,
+      "tested": false,
       "title": "MAXNET | V2.2.54",
       "description": "N/A",
       "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.54-b54/maxnet-jidu6801-sysupgrade.bin",
@@ -43,7 +109,7 @@
     {
       "build": 48,
       "version": "2.2.48",
-      "tested": true,
+      "tested": false,
       "title": "MAXNET | V2.2.48",
       "description": "N/A",
       "url": "https://github.com/ohhmax/maxnet/releases/download/v2.2.48-b48/maxnet-jidu6801-sysupgrade.bin",

@@ -33,7 +33,7 @@ config device 'usb0'
 	option enabled '1'
 	option metric '100'
 	option weight '50'
-	option mtu '1400'
+	option mtu '1420'
 
 config device 'usb1'
 	option name 'USB Modem 2 (Secondary)'
@@ -41,7 +41,7 @@ config device 'usb1'
 	option enabled '1'
 	option metric '110'
 	option weight '50'
-	option mtu '1400'
+	option mtu '1420'
 EOF
 fi
 
@@ -49,7 +49,8 @@ ACTION="${QUERY_STRING#*action=}"
 ACTION="${ACTION%%&*}"
 
 if [ "$REQUEST_METHOD" = "POST" ]; then
-    read -r POST_DATA 2>/dev/null
+    [ "${CONTENT_LENGTH:-0}" -gt 0 ] 2>/dev/null && POST_DATA=$(head -c "$CONTENT_LENGTH" 2>/dev/null)
+    [ -z "$POST_DATA" ] && read -r POST_DATA 2>/dev/null
     P_ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
     [ -n "$P_ACTION" ] && ACTION="$P_ACTION"
 fi
@@ -129,7 +130,7 @@ if [ "$ACTION" = "save" ] || [ "$ACTION" = "save_config" ]; then
             D_EN=$(echo "$d" | jq -r '.enabled' 2>/dev/null)
             D_WEIGHT=$(echo "$d" | jq -r '.weight // 50' 2>/dev/null)
             D_METRIC=$(echo "$d" | jq -r '.metric // 100' 2>/dev/null)
-            D_MTU=$(echo "$d" | jq -r '.mtu // 1400' 2>/dev/null)
+            D_MTU=$(echo "$d" | jq -r '.mtu // 1420' 2>/dev/null)
             D_NAME=$(echo "$d" | jq -r '.name // empty' 2>/dev/null)
 
             [ -z "$D_ID" ] && continue
@@ -197,7 +198,7 @@ if [ "$ACTION" = "add_device" ]; then
     uci -q set "usb_wan.$NEW_DEV.enabled=1"
     uci -q set "usb_wan.$NEW_DEV.metric=120"
     uci -q set "usb_wan.$NEW_DEV.weight=50"
-    uci -q set "usb_wan.$NEW_DEV.mtu=1400"
+    uci -q set "usb_wan.$NEW_DEV.mtu=1420"
     uci commit usb_wan
 
     # Create network interface if not present
@@ -207,7 +208,7 @@ if [ "$ACTION" = "add_device" ]; then
         uci -q set "network.$IFNAME.device=$NEW_DEV"
         uci -q set "network.$IFNAME.proto=dhcp"
         uci -q set "network.$IFNAME.metric=120"
-        uci -q set "network.$IFNAME.mtu=1400"
+        uci -q set "network.$IFNAME.mtu=1420"
         uci commit network
     fi
 
@@ -246,7 +247,7 @@ for dev in $ALL_DEVS; do
     ENABLED=$(uci -q get "usb_wan.$dev.enabled" || echo "1")
     METRIC=$(uci -q get "usb_wan.$dev.metric" || echo "100")
     WEIGHT=$(uci -q get "usb_wan.$dev.weight" || echo "50")
-    MTU_CONF=$(uci -q get "usb_wan.$dev.mtu" || echo "1400")
+    MTU_CONF=$(uci -q get "usb_wan.$dev.mtu" || echo "1420")
 
     IP_ADDR="--"
     MAC_ADDR=""

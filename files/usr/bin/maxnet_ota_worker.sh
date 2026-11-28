@@ -38,7 +38,7 @@ set_status() {
 set_status "validating" 2 "Verifying router hardware compatibility..." 0 0
 
 # 1. Hardware Model Verification
-BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "jiorouter,ax6000-jidu6j11-6911")
+BOARD_NAME=$(cat /tmp/sysinfo/board_name 2>/dev/null || tr '\0' '\n' < /proc/device-tree/compatible 2>/dev/null | head -n 1)
 DEV_KEY=""
 case "$BOARD_NAME" in
     *6911*) DEV_KEY="jidu6911" ;;

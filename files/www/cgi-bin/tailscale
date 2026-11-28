@@ -14,6 +14,10 @@ ACTION=$(echo "$QUERY_STRING" | sed -n 's/^.*action=\([^&]*\).*$/\1/p')
 [ -z "$ACTION" ] && ACTION=$(echo "$POST_DATA" | jq -r '.action // empty' 2>/dev/null)
 
 PREFS_FILE="/etc/tailscale_prefs.json"
+LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
+[ -z "$LAN_IP" ] && LAN_IP=$(uci -q get network.lan.ipaddr | awk '{print $1}' | cut -d/ -f1)
+[ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+LAN_CIDR="${LAN_IP%.*}.0/24"
 
 ensure_tailscale_daemon() {
     if [ -S /var/run/tailscale/tailscaled.sock ]; then
@@ -47,7 +51,7 @@ if [ "$ACTION" = "set_prefs" ] || [ "$ACTION" = "apply" ]; then
 
     set -- set --snat-subnet-routes=true
     if [ "$SHARE_LAN" = "true" ]; then
-        set -- "$@" --advertise-routes=10.0.0.0/24
+        set -- "$@" "--advertise-routes=$LAN_CIDR"
     else
         set -- "$@" --advertise-routes=
     fi
@@ -84,7 +88,7 @@ if [ "$ACTION" = "up" ]; then
     [ -z "$HOSTNAME" ] && HOSTNAME="MAXNET"
 
     ROUTES=""
-    [ "$SHARE_LAN" = "true" ] && ROUTES="--advertise-routes=10.0.0.0/24 --snat-subnet-routes=true"
+    [ "$SHARE_LAN" = "true" ] && ROUTES="--advertise-routes=$LAN_CIDR --snat-subnet-routes=true"
     EXIT_FLAG=""
     [ "$EXIT_NODE" = "true" ] && EXIT_FLAG="--advertise-exit-node"
     ACCEPT_FLAG="--accept-routes=true"
@@ -100,7 +104,7 @@ if [ "$ACTION" = "up" ]; then
         : > /tmp/ts_up.log
         rm -f /tmp/ts_up.exit
         if [ -n "$KEY" ]; then
-            [ "$SHARE_LAN" = "true" ] && ROUTES=10.0.0.0/24 || ROUTES=
+            [ "$SHARE_LAN" = "true" ] && ROUTES="$LAN_CIDR" || ROUTES=
             [ "$EXIT_NODE" = "true" ] && EXIT_FLAG=true || EXIT_FLAG=false
             [ "$ACCEPT_ROUTES" = "false" ] && ACCEPT_FLAG=false || ACCEPT_FLAG=true
             set -- up "--authkey=$KEY" "--hostname=$HOSTNAME" "--advertise-routes=$ROUTES" "--advertise-exit-node=$EXIT_FLAG" "--accept-routes=$ACCEPT_FLAG"

@@ -273,13 +273,24 @@ HIDDEN_5G=$(uci get wireless.default_radio1.hidden 2>/dev/null || echo "0")
 MASTER_EN=0
 [ "$EN_2G" -eq 1 ] || [ "$EN_5G" -eq 1 ] && MASTER_EN=1
 
-# Check hardware presence
+# Check hardware presence across Qualcomm (phy0-ap0/c000000.wifi/0001:01:00.0) & MediaTek Filogic (phy*-ap0/wl0-ap0/wlan*)
 HW_2G=0
 HW_5G=0
-[ -d /sys/class/net/wlan0 ] && HW_2G=1
-[ -d /sys/class/net/wlan1 ] && HW_5G=1
-[ -d /sys/bus/platform/devices/c000000.wifi ] && HW_2G=1
-[ -d /sys/bus/pci/devices/0001:01:00.0 ] && HW_5G=1
+for wpath in /sys/class/ieee80211/phy*; do
+    [ -d "$wpath" ] || continue
+    iw phy "$(basename "$wpath")" info 2>/dev/null | grep -qE "2412 MHz|Band 1:" && HW_2G=1
+    iw phy "$(basename "$wpath")" info 2>/dev/null | grep -qE "5180 MHz|Band 2:" && HW_5G=1
+done
+[ -d /sys/class/net/phy0-ap0 ] || [ -d /sys/class/net/wlan0 ] || [ -d /sys/bus/platform/devices/c000000.wifi ] && HW_2G=1
+[ -d /sys/class/net/phy1-ap0 ] || [ -d /sys/class/net/wlan1 ] || [ -d /sys/bus/pci/devices/0001:01:00.0 ] && HW_5G=1
+
+SOC_2G_NAME="Integrated 2.4GHz Radio"
+SOC_5G_NAME="5GHz Radio"
+COMPAT_STR=$(tr '\0' ' ' < /proc/device-tree/compatible 2>/dev/null)
+case "$COMPAT_STR" in
+    *ipq95*) SOC_2G_NAME="IPQ9574 2.4GHz"; SOC_5G_NAME="QCN9074 5GHz" ;;
+    *mt7986*) SOC_2G_NAME="MT7986 2.4GHz"; SOC_5G_NAME="MT7986 5GHz" ;;
+esac
 
 # Gather connected wireless stations
 STATIONS="[]"
@@ -359,6 +370,8 @@ jq -n \
   --arg ch_5g "$CH_5G" \
   --arg ht_5g "$HT_5G" \
   --argjson hidden_5g "${HIDDEN_5G:-0}" \
+  --arg soc2g "$SOC_2G_NAME" \
+  --arg soc5g "$SOC_5G_NAME" \
   --argjson clients "$STATIONS" \
   '{
     status: "ok",
@@ -366,8 +379,8 @@ jq -n \
     hardware: {
       radio2g: $hw_2g,
       radio5g: $hw_5g,
-      soc_wcss: "IPQ9574 2.4GHz",
-      pcie_pine: "QCN9074 5GHz"
+      soc_wcss: $soc2g,
+      pcie_pine: $soc5g
     },
     radio_2g: {
       enabled: $en_2g,

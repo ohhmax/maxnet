@@ -7,7 +7,8 @@ config interface 'loopback'
 
 config globals 'globals'
 	option ula_prefix 'fd00::/48'
-	option dhcp_default_duid '00044b022bd59fea503ca548213ce6d83962'
+	option packet_steering '2'
+	option steering_flows '4096'
 
 config device
 	option name 'br-lan'

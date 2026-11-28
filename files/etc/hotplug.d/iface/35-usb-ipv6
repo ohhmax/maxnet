@@ -1,0 +1,47 @@
+#!/bin/sh
+# Keep USB tethering IPv6 RA acceptance active after netifd ifup/ifupdate transitions
+case "$ACTION" in
+    ifup|ifupdate) ;;
+    *) exit 0 ;;
+esac
+
+case "$INTERFACE" in
+    wan_usb|wan_usb[1-5]) ;;
+    *) exit 0 ;;
+esac
+
+DEV="${DEVICE:-$(uci -q get network.${INTERFACE}.device)}"
+[ -z "$DEV" ] && exit 0
+[ -d "/sys/class/net/$DEV" ] || exit 0
+
+sysctl -w "net.ipv6.conf.$DEV.disable_ipv6=0" >/dev/null 2>&1 || true
+sysctl -w "net.ipv6.conf.$DEV.accept_ra=2" >/dev/null 2>&1 || true
+sysctl -w "net.ipv6.conf.$DEV.accept_ra_defrtr=1" >/dev/null 2>&1 || true
+sysctl -w "net.ipv6.conf.$DEV.accept_ra_pinfo=1" >/dev/null 2>&1 || true
+sysctl -w "net.ipv6.conf.$DEV.router_solicitations=3" >/dev/null 2>&1 || true
+sysctl -w "net.ipv6.conf.$DEV.force_tllao=1" >/dev/null 2>&1 || true
+sysctl -w "net.ipv6.conf.$DEV.ndisc_notify=1" >/dev/null 2>&1 || true
+ip link set "$DEV" allmulticast on 2>/dev/null || true
+
+# If netifd reset accept_ra earlier and USB0 missed initial RA, bounce IPv6 once to send RS
+if [ "$(cat /sys/class/net/$DEV/carrier 2>/dev/null || echo 0)" = "1" ] && ! ip -6 route show dev "$DEV" 2>/dev/null | grep -q '^default'; then
+    sysctl -w "net.ipv6.conf.$DEV.disable_ipv6=1" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEV.disable_ipv6=0" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEV.accept_ra=2" >/dev/null 2>&1 || true
+    sysctl -w "net.ipv6.conf.$DEV.router_solicitations=3" >/dev/null 2>&1 || true
+fi
+
+# Re-assert USB queue/qdisc/IRQ placement asynchronously after packet_steering (1s debounce) completes
+(
+    sleep 2
+    [ -d "/sys/class/net/$DEV" ] || exit 0
+    ethtool -K "$DEV" gro on 2>/dev/null || true
+    echo 7 > "/sys/class/net/$DEV/queues/rx-0/rps_cpus" 2>/dev/null || true
+    echo 4096 > "/sys/class/net/$DEV/queues/rx-0/rps_flow_cnt" 2>/dev/null || true
+    echo 8 > "/sys/class/net/$DEV/queues/tx-0/xps_cpus" 2>/dev/null || true
+    tc qdisc replace dev "$DEV" root fq_codel flows 1024 quantum 1514 noecn 2>/dev/null || true
+    for irq in $(awk -F: '/xhci/{gsub(/ /,"",$1); print $1}' /proc/interrupts 2>/dev/null); do
+        [ -w "/proc/irq/$irq/smp_affinity" ] && echo 8 > "/proc/irq/$irq/smp_affinity" 2>/dev/null || true
+    done
+) >/dev/null 2>&1 &
+exit 0

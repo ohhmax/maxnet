@@ -1704,17 +1704,17 @@ function handleSettingsBack() {
           if (pUptime) pUptime.innerText = data.uptime || '--';
 
           const sCarrier = document.getElementById('topolCarrier');
-          if (sCarrier) sCarrier.innerText = r.operator || 'Jio True5G';
+          if (sCarrier) sCarrier.innerText = r.operator || '--';
           const sBand = document.getElementById('topolServingBand');
-          if (sBand) sBand.innerText = `${r.band || 'n77'} • 3.5 GHz`;
+          if (sBand) sBand.innerText = r.band ? `${r.band}${r.frequency ? ' • ' + r.frequency : ''}` : '--';
           const sRsrp = document.getElementById('topolRsrp');
-          if (sRsrp) sRsrp.innerText = `${r.rsrp_dbm || -98} dBm`;
+          if (sRsrp) sRsrp.innerText = (r.rsrp_dbm !== undefined && r.rsrp_dbm !== null && r.rsrp_dbm !== '' && r.rsrp_dbm !== '--') ? `${r.rsrp_dbm} dBm` : '--';
           const sSinr = document.getElementById('topolSinr');
-          if (sSinr) sSinr.innerText = `${r.sinr_db || 11} dB`;
+          if (sSinr) sSinr.innerText = (r.sinr_db !== undefined && r.sinr_db !== null && r.sinr_db !== '' && r.sinr_db !== '--') ? `${r.sinr_db} dB` : '--';
           const sArfcn = document.getElementById('topolArfcn');
-          if (sArfcn) sArfcn.innerText = r.arfcn || '634080';
+          if (sArfcn) sArfcn.innerText = r.arfcn || '--';
           const sName = document.getElementById('topolServingName');
-          if (sName) sName.innerText = `Tower PCI ${r.pci || 528}`;
+          if (sName) sName.innerText = r.pci ? `Tower PCI ${r.pci}` : 'No Signal';
         }
       } catch (e) {
         console.error('fetchSelectedSlotTelemetry error', e);
@@ -1835,9 +1835,9 @@ function handleSettingsBack() {
           adb_enabled: true,
           has_sim: mob.has_sim !== false,
           battery_pct: (mob.battery && mob.battery.level) || null,
-          operator: (mob.cellular && mob.cellular.operator) || 'Jio True5G',
-          band: (mob.cellular && mob.cellular.band) || 'n77',
-          rsrp_dbm: (mob.cellular && mob.cellular.rsrp_dbm) || -97,
+          operator: (mob.cellular && mob.cellular.operator) || '--',
+          band: (mob.cellular && mob.cellular.band) || '--',
+          rsrp_dbm: (mob.cellular && mob.cellular.rsrp_dbm !== undefined) ? mob.cellular.rsrp_dbm : null,
           standard: 'USB 3.0',
           speed_mbps: 5000,
           port: 3
@@ -3431,11 +3431,6 @@ function syncMobileModalViewport() {
         if (manual && manual.trim()) return manual.trim();
       }
 
-      // Purge stale label: 10.0.0.166 is an Oppo phone client, NOT an Asus router
-      if (ip === '10.0.0.166' || mac === 'a8:1b:5a:c3:01:13' || mac.startsWith('a8:1b:5a')) {
-        return 'OPPO A37';
-      }
-
       // 2. DHCP Hostname
       const dhcp = (dev.hostname || dev.dhcp_hostname || dev.dhcp_name || '').trim();
       if (dhcp && dhcp !== '*' && !isStaleDeviceLabel(dhcp, ip)) {
@@ -3466,10 +3461,7 @@ function syncMobileModalViewport() {
       return 'Unknown Device';
     }
 
-    function isStaleDeviceLabel(str, ip) {
-      if (!str) return false;
-      const s = str.toLowerCase();
-      if (ip === '10.0.0.166' && (s.includes('asus') || s.includes('router') || s.includes('ap'))) return true;
+    function isStaleDeviceLabel() {
       return false;
     }
 
@@ -3488,8 +3480,8 @@ function syncMobileModalViewport() {
 
       // 1. Storage / NAS / Synology / TrueNAS
       if (name.includes('synology') || name.includes('nas') || name.includes('storage') || name.includes('qnap') ||
-          name.includes('truenas') || mac.startsWith('00:11:32') || ip === '10.0.0.5') {
-        return { type: 'nas', title: 'Synology NAS', icon: 'nas', color: '#c084fc', badge: 'STORAGE' };
+          name.includes('truenas') || mac.startsWith('00:11:32')) {
+        return { type: 'nas', title: (name.includes('synology') || mac.startsWith('00:11:32')) ? 'Synology NAS' : 'Network Storage / NAS', icon: 'nas', color: '#c084fc', badge: 'STORAGE' };
       }
 
       // 2. CCTV / IP Camera / DVR / NVR
@@ -3502,25 +3494,23 @@ function syncMobileModalViewport() {
       }
 
       // 3. Mobile Phone / Tablet
-      if (name.includes('phone') || name.includes('poco') || name.includes('v2153') || name.includes('iphone') ||
+      if (name.includes('phone') || name.includes('poco') || name.includes('iphone') ||
           name.includes('ipad') || name.includes('samsung') || name.includes('galaxy') || name.includes('redmi') ||
           name.includes('xiaomi') || name.includes('vivo') || name.includes('oppo') || name.includes('realme') ||
           name.includes('oneplus') || name.includes('pixel') || name.includes('android') || name.includes('huawei') ||
           name.includes('honor') || name.includes('moto') || name.includes('iqoo') || name.includes('infinix') ||
-          name.includes('tecno') || name.includes('mobile') || mac.startsWith('f2:82:95') || mac.startsWith('f6:93:15') ||
-          mac.startsWith('a8:1b:5a') || ip === '10.0.0.166' || ip === '10.0.0.238' || ip === '10.0.0.118') {
-        const title = (name.includes('poco') ? 'POCO X6 5G' : (name.includes('oppo') || ip === '10.0.0.166' || mac.startsWith('a8:1b:5a') ? 'OPPO A37' : (name.includes('vivo') || name.includes('v2153') ? 'Vivo V2153' : 'Mobile Phone')));
+          name.includes('tecno') || name.includes('mobile')) {
+        const title = name.includes('iphone') ? 'iPhone' : (name.includes('ipad') ? 'iPad' : 'Mobile Phone');
         return { type: 'phone', title: title, icon: 'phone', color: '#38bdf8', badge: 'PHONE' };
       }
 
       // 4. Laptop / Desktop / PC / Workstation
-      if (name.includes('maxos') || name.includes('laptop') || name.includes('desktop') || name.includes('pc') ||
+      if (name.includes('laptop') || name.includes('desktop') || name.includes('pc') ||
           name.includes('macbook') || name.includes('imac') || name.includes('thinkpad') || name.includes('dell') ||
           name.includes('hp') || name.includes('lenovo') || name.includes('msi') || name.includes('acer') ||
           name.includes('surface') || name.includes('workstation') || name.includes('windows') || name.includes('ubuntu') ||
-          name.includes('fedora') || name.includes('arch') || name.includes('linux') || /^desktop-/i.test(name) || /^laptop-/i.test(name) ||
-          mac.startsWith('10:65:30') || mac.startsWith('f8:59:71') || ip === '10.0.0.111') {
-        return { type: 'laptop', title: (name.includes('maxos') || ip === '10.0.0.111' ? 'Workstation (maxos)' : 'Laptop / PC'), icon: 'laptop', color: '#10b981', badge: 'PC' };
+          name.includes('fedora') || name.includes('arch') || name.includes('linux') || /^desktop-/i.test(name) || /^laptop-/i.test(name)) {
+        return { type: 'laptop', title: 'Laptop / PC', icon: 'laptop', color: '#10b981', badge: 'PC' };
       }
 
       // 5. Smart TV / Media Player / Streaming
@@ -3560,10 +3550,9 @@ function syncMobileModalViewport() {
       // 10. Secondary Router / Access Point / Switch
       if (name.includes('router') || name.includes('accesspoint') || name.includes('repeater') ||
           name.includes('extender') || name.includes('switch') || name.includes('maxnet') || name.includes('openwrt') ||
-          name.includes('maxnet-b') || name.includes('tplink') || name.includes('tenda') || name.includes('netgear') ||
-          name.includes('mercusys') || name.includes('dlink') || name.includes('miwifi') ||
-          mac.startsWith('8c:a3:99') || ip === '10.0.0.2' || (name.includes('.lan') && !name.includes('maxos') && !name.includes('oppo') && ip !== '10.0.0.166')) {
-        return { type: 'router', title: (name.includes('maxnet-b') || ip === '10.0.0.2' ? 'maxnet-b Router' : 'Access Point'), icon: 'router', color: '#0284c7', badge: 'ROUTER' };
+          name.includes('tplink') || name.includes('tp-link') || name.includes('tenda') || name.includes('netgear') ||
+          name.includes('mercusys') || name.includes('dlink') || name.includes('miwifi') || name.includes('asus')) {
+        return { type: 'router', title: 'Access Point / Router', icon: 'router', color: '#0284c7', badge: 'ROUTER' };
       }
 
       return { type: 'client', title: 'LAN Device', icon: 'client', color: '#10b981', badge: 'DEVICE' };
@@ -4780,7 +4769,7 @@ function drawStorageIconSmall(x, y, color, parent) {
 
       if (!window._topoTree) {
         const currentLanIp = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_ip) || '10.0.0.1';
-        const currentMac = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_mac) || '52:5a:4e:e9:61:a0';
+        const currentMac = (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_mac) || '--';
         window._topoTree = normalizeTopologyTree(window._topologyLayers, currentLanIp, currentMac);
       }
       const tree = window._topoTree;
@@ -5503,7 +5492,7 @@ function drawStorageIconSmall(x, y, color, parent) {
           y: l.y + 28.5,
           style: `font-size:8px; font-weight:600; font-family:var(--font-mono); fill:${topoTheme.textMuted};`
         }, chassisG);
-        const rtrRawIp = (isRoot ? ((window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_ip) || node.ip || "10.0.0.1") : (node.ip || "10.0.0.2"));
+        const rtrRawIp = (isRoot ? ((window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_ip) || node.ip || "10.0.0.1") : (node.ip || "--"));
         const rtrIp = String(rtrRawIp).split(/[\s,]+/)[0].replace(/\/\d+$/, '');
         tIp.textContent = rtrIp;
 
@@ -6476,8 +6465,8 @@ function drawStorageIconSmall(x, y, color, parent) {
       const bannerTx = document.getElementById('bannerTxUsage');
       if (bannerTx) bannerTx.innerText = '↑ ' + fmtBytes(totTx);
       const bannerWan = document.getElementById('bannerWanMode');
-      const opName = (d.mobile && d.mobile.cellular && d.mobile.cellular.operator) || 'Jio True5G';
-      if (bannerWan) bannerWan.innerText = `USB 3.0 Tether (${opName})`;
+      const opName = (d.mobile && d.mobile.cellular && d.mobile.cellular.operator) || (d.mobile && d.mobile.connected ? 'Cellular' : 'Offline');
+      if (bannerWan) bannerWan.innerText = `${(d.mobile && d.mobile.usb_standard) || 'USB'} Tether (${opName})`;
 
       const now = Date.now();
       let rxMbps = "0.0";
@@ -6578,13 +6567,13 @@ function drawStorageIconSmall(x, y, color, parent) {
       const conduitTowerPhone = document.getElementById('conduitTowerPhone');
 
       const serving = towers.find(t => t.is_serving) || {
-        pci: cell.pci || 528,
-        band: cell.band || 'n77',
-        freq: cell.frequency || '3.5 GHz (C-Band)',
-        arfcn: cell.arfcn || '634080',
-        rsrp_dbm: cell.rsrp_dbm !== undefined ? cell.rsrp_dbm : -98,
-        sinr_db: cell.sinr_db !== undefined ? cell.sinr_db : 11,
-        carrier: cell.operator || 'Jio True5G'
+        pci: cell.pci || null,
+        band: cell.band || '--',
+        freq: cell.frequency || '',
+        arfcn: cell.arfcn || '--',
+        rsrp_dbm: (cell.rsrp_dbm !== undefined && cell.rsrp_dbm !== null) ? cell.rsrp_dbm : null,
+        sinr_db: (cell.sinr_db !== undefined && cell.sinr_db !== null) ? cell.sinr_db : null,
+        carrier: cell.operator || '--'
       };
 
       const neighbors = towers.filter(t => !t.is_serving);
@@ -6656,12 +6645,12 @@ function drawStorageIconSmall(x, y, color, parent) {
           }
         }
 
-        if (servingName) servingName.innerText = 'Tower PCI ' + serving.pci;
-        if (servingBand) servingBand.innerText = serving.band + ' • ' + (serving.freq || '3.5 GHz');
-        if (topRsrp) topRsrp.innerText = serving.rsrp_dbm + ' dBm';
-        if (topSinr) topSinr.innerText = serving.sinr_db + ' dB';
-        if (topCarrier) topCarrier.innerText = serving.carrier || 'Jio True5G';
-        if (topArfcn) topArfcn.innerText = serving.arfcn || '634080';
+        if (servingName) servingName.innerText = serving.pci ? 'Tower PCI ' + serving.pci : 'No Signal';
+        if (servingBand) servingBand.innerText = (serving.band && serving.band !== '--') ? (serving.band + (serving.freq ? ' • ' + serving.freq : '')) : '--';
+        if (topRsrp) topRsrp.innerText = (serving.rsrp_dbm !== null && serving.rsrp_dbm !== undefined && serving.rsrp_dbm !== '--') ? serving.rsrp_dbm + ' dBm' : '--';
+        if (topSinr) topSinr.innerText = (serving.sinr_db !== null && serving.sinr_db !== undefined && serving.sinr_db !== '--') ? serving.sinr_db + ' dB' : '--';
+        if (topCarrier) topCarrier.innerText = serving.carrier || '--';
+        if (topArfcn) topArfcn.innerText = serving.arfcn || '--';
 
         // 5G PA IC Temperature
         const topPa = document.getElementById('topolPaTemp');
@@ -6749,8 +6738,8 @@ function drawStorageIconSmall(x, y, color, parent) {
         const phoneLanIp = document.getElementById('topolPhoneLanIp');
         if (phoneLanIp) phoneLanIp.innerText = mob.lan_ip || (window._lastDataCache && window._lastDataCache.network && window._lastDataCache.network.lan_ip) || '10.0.0.1';
         const phoneUsbIp = document.getElementById('topolPhoneUsbIp');
-        if (phoneUsbIp) phoneUsbIp.innerText = mob.usb_ip || '10.43.99.79';
-        if (phoneOs) phoneOs.innerText = mob.os || 'Android 16';
+        if (phoneUsbIp) phoneUsbIp.innerText = mob.usb_ip || '--';
+        if (phoneOs) phoneOs.innerText = mob.os || '--';
         if (phoneState) phoneState.innerText = mob.screen_state || 'Online';
         if (conduitPhoneRouter) conduitPhoneRouter.style.opacity = '1';
       } else {
@@ -6771,7 +6760,7 @@ function drawStorageIconSmall(x, y, color, parent) {
       const stor = r.storage || {};
 
       const wanIpEl = document.getElementById('topolWanIp');
-      if (wanIpEl) wanIpEl.innerText = net.wan_ip || '10.43.99.139';
+      if (wanIpEl) wanIpEl.innerText = net.wan_ip || '--';
 
       const routerIp = document.getElementById('topolRouterIp');
       if (routerIp) routerIp.innerText = net.lan_ip || '10.0.0.1';
@@ -7387,7 +7376,7 @@ function drawStorageIconSmall(x, y, color, parent) {
 
     function createDefaultTopologyTree(lanIp, routerMac) {
       const ip = lanIp || '10.0.0.1';
-      const mac = routerMac || '52:5a:4e:e9:61:a0';
+      const mac = routerMac || '--';
       return {
         id: 'root',
         type: 'router',
@@ -7446,12 +7435,10 @@ function drawStorageIconSmall(x, y, color, parent) {
 
           // Prefer existing router/node or detect subordinate router among candidates
           let routerCandidate = candidates.find(c => {
-            const m = (c.mac || '').toLowerCase();
             const n = (c.name || '').toLowerCase();
             const vend = (c.vendor || '').toLowerCase();
-            return m.startsWith('8c:a3:99') ||
-              /asus|router|gateway|access point|openwrt|mesh|switch|maxnet-b/i.test(n) ||
-              (/asus|tp-link|netgear|cisco/i.test(vend) && !m.startsWith('a8:1b:5a')) ||
+            return /asus|router|gateway|access point|openwrt|mesh|switch/i.test(n) ||
+              /asus|tp-link|netgear|cisco/i.test(vend) ||
               c.device_type === 'router' || c.device_type === 'ap';
           });
 
@@ -7459,16 +7446,13 @@ function drawStorageIconSmall(x, y, color, parent) {
 
           if (matchedClient) {
             const hasMultiple = candidates.length > 1;
-            const mMac = (matchedClient.mac || '').toLowerCase();
-            const isAsusRouter = mMac.startsWith('8c:a3:99') || /asus|maxnet-b/i.test(matchedClient.name || '');
             const isNetworkNode = hasMultiple || matchedClient.device_type === 'router' || matchedClient.device_type === 'switch' || matchedClient.device_type === 'ap' ||
-              isAsusRouter ||
               /asus|router|switch|repeater|access point|mesh|gateway|maxnet/i.test(matchedClient.name || '') ||
               /asus|router|switch|repeater/i.test(matchedClient.model || '');
 
             if (isNetworkNode) {
               port.role = 'node';
-              const nodeName = isAsusRouter ? 'Asus Router' : ((routerCandidate && matchedClient.name && !/poco|motorola|oppo|vivo|iphone|samsung|pixel|maxos|device/i.test(matchedClient.name)) ? matchedClient.name : `LAN ${portNum} Switch / AP`);
+              const nodeName = (routerCandidate && matchedClient.name && !/poco|motorola|oppo|vivo|iphone|samsung|pixel|device/i.test(matchedClient.name)) ? matchedClient.name : `LAN ${portNum} Switch / AP`;
               if (!port.child || port.child.role === 'device' || port.child.type === 'device') {
                 port.child = {
                   id: `node-lan${portNum}-${(matchedClient.mac || '').replace(/[:]/g, '')}`,
@@ -7696,7 +7680,7 @@ function drawStorageIconSmall(x, y, color, parent) {
               id: 'node-' + (ap.name ? ap.name.replace(/\s+/g, '-').toLowerCase() : 'ap-' + idx),
               type: 'ap',
               name: ap.name || 'Access Point',
-              ip: ap.ip || '10.0.0.2',
+              ip: ap.ip || '--',
               mac: ap.mac || '',
               uplinkPort: port.id,
               numPorts: 4,
@@ -11026,7 +11010,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         titleEl.textContent = 'Custom MAC Address (Hardware Cloning)';
         descEl.textContent = 'Override the bridge interface (br-lan) MAC address. Useful for ISP clone requirements or privacy.';
         const curMac = (document.getElementById('netCustomMac') ? document.getElementById('netCustomMac').value : '') || '';
-        const hwMac = (document.getElementById('netHwMac') ? document.getElementById('netHwMac').value : 'ca:e7:b7:34:8f:ac') || 'ca:e7:b7:34:8f:ac';
+        const hwMac = (document.getElementById('netHwMac') ? document.getElementById('netHwMac').value : '--') || '--';
         bodyEl.innerHTML = `
           <div>
             <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">Custom MAC Address (XX:XX:XX:XX:XX:XX)</label>
@@ -11395,20 +11379,18 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       } else if (key === 'webhook_custom_ip') {
         titleEl.textContent = 'Monitored Watchdog Target IP';
         descEl.textContent = 'Enter local or remote IPv4 address to monitor for online/offline reachability alerts.';
-        const cur = (window._cachedWebhooksConfig?.custom_ip_target) || '10.0.0.2';
+        const cur = (window._cachedWebhooksConfig?.custom_ip_target) || '';
         bodyEl.innerHTML = `
           <div>
             <label style="font-size:11px; font-weight:700; color:var(--text-dim); margin-bottom:5px; display:block; font-family:var(--font-mono);">Target Host IP</label>
-            <input type="text" id="modalInput_custom_ip_target" class="mh-input" value="${escapeHtml(cur)}" placeholder="10.0.0.2" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);">
+            <input type="text" id="modalInput_custom_ip_target" class="mh-input" value="${escapeHtml(cur)}" placeholder="e.g. 1.1.1.1 or LAN host IP" style="width:100%; padding:9px 12px; font-size:13px; font-family:var(--font-mono);">
           </div>
           <div>
             <span style="font-size:10px; font-family:var(--font-mono); color:var(--text-dim); margin-bottom:6px; display:block;">Quick Suggestions:</span>
             <div style="display:flex; flex-wrap:wrap; gap:6px;">
-              <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_custom_ip_target').value='10.0.0.2'">10.0.0.2 (Router B)</button>
-              <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_custom_ip_target').value='10.0.0.5'">10.0.0.5 (NAS Storage)</button>
-              <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_custom_ip_target').value='10.0.0.100'">10.0.0.100 (CCTV Server)</button>
               <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_custom_ip_target').value='1.1.1.1'">1.1.1.1 (Cloudflare)</button>
               <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_custom_ip_target').value='8.8.8.8'">8.8.8.8 (Google DNS)</button>
+              <button type="button" class="dns-preset-pill" onclick="document.getElementById('modalInput_custom_ip_target').value='9.9.9.9'">9.9.9.9 (Quad9 DNS)</button>
             </div>
           </div>
         `;
@@ -12465,7 +12447,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         scheduleNetworkAutoSave();
       } else if (currentModalKey === 'custom_mac') {
         const val = (document.getElementById('modalInput_custom_mac').value || '').trim();
-        const hwMac = (document.getElementById('netHwMac') ? document.getElementById('netHwMac').value : 'ca:e7:b7:34:8f:ac').toLowerCase();
+        const hwMac = (document.getElementById('netHwMac') ? document.getElementById('netHwMac').value : '').toLowerCase();
         const macEl = document.getElementById('netCustomMac');
 
         if (val && val.toLowerCase() !== hwMac) {
@@ -12759,11 +12741,11 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         if (disp) disp.textContent = `${val} MB (${(val/1024).toFixed(1)} GB)`;
         saveWebhooksConfig();
       } else if (currentModalKey === 'webhook_custom_ip') {
-        const ip = (document.getElementById('modalInput_custom_ip_target')?.value || '10.0.0.2').trim();
+        const ip = (document.getElementById('modalInput_custom_ip_target')?.value || '').trim();
         window._cachedWebhooksConfig = window._cachedWebhooksConfig || {};
         window._cachedWebhooksConfig.custom_ip_target = ip;
         const disp = document.getElementById('disp_webhook_custom_ip');
-        if (disp) disp.textContent = ip;
+        if (disp) disp.textContent = ip || 'Not configured';
         saveWebhooksConfig();
       } else if (currentModalKey === 'restart_usb_modem') {
         const target = document.getElementById('modalSelect_restart_target')?.value || 'all';
@@ -13467,7 +13449,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
         const res = await fetch(`/cgi-bin/auth?action=list_sessions&token=${encodeURIComponent(curToken)}`);
         const data = await res.json();
         const sessions = data.sessions || [];
-        const clientIp = data.current_ip || '10.0.0.111';
+        const clientIp = data.current_ip || '--';
 
         // Separate active session from other sessions
         let curSession = sessions.find(s => s.is_current || s.token === curToken);
@@ -14471,8 +14453,8 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           const disp = document.getElementById('disp_custom_mac');
           if (disp) {
             disp.textContent = data.custom_mac
-              ? `Custom: ${data.custom_mac} • Hardware: ${data.hw_mac || 'ca:e7:b7:34:8f:ac'}`
-              : `Default: ${data.hw_mac || 'ca:e7:b7:34:8f:ac'} • Hardware MAC in use`;
+              ? `Custom: ${data.custom_mac} • Hardware: ${data.hw_mac || '--'}`
+              : `Default: ${data.hw_mac || '--'} • Hardware MAC in use`;
           }
         }
         if (data.lan_ip) {
@@ -14832,7 +14814,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       }
       const inp = document.getElementById('modalInput_wan_custom_mac');
       if (inp) {
-        inp.value = detectedMac || 'ca:e7:b7:34:8f:ac';
+        inp.value = (detectedMac && detectedMac !== '--') ? detectedMac : '';
         if (typeof showToast === 'function') showToast('Cloned MAC: ' + inp.value, 'info');
       }
     }
@@ -15983,30 +15965,32 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       window._lastRecordedUptime = upSec;
 
       // 8. Custom IP Watchdog Reachability Monitor
-      const targetWatchIp = (window._cachedWebhooksConfig && window._cachedWebhooksConfig.custom_ip_target) || '10.0.0.2';
-      const isTargetReachable = clients.some(c => c.ip === targetWatchIp) || (data.network && (data.network.gateway_ip === targetWatchIp || data.network.dns_ip === targetWatchIp));
-      if (window._lastWatchdogState !== undefined && window._lastWatchdogIp === targetWatchIp) {
-        if (window._lastWatchdogState !== isTargetReachable) {
-          window._lastWatchdogState = isTargetReachable;
-          if (isTargetReachable) {
-            dispatchAlertNotification({
-              title: `Monitored Host Online: ${targetWatchIp}`,
-              message: `Monitored host device (${targetWatchIp}) is back online and responding on the network.`,
-              level: 'info',
-              event_type: 'custom_ip'
-            });
-          } else {
-            dispatchAlertNotification({
-              title: `Monitored Host Offline: ${targetWatchIp}`,
-              message: `Monitored host device (${targetWatchIp}) has gone OFFLINE or stopped responding.`,
-              level: 'danger',
-              event_type: 'custom_ip'
-            });
+      const targetWatchIp = (window._cachedWebhooksConfig && window._cachedWebhooksConfig.custom_ip_target) || '';
+      if (targetWatchIp) {
+        const isTargetReachable = clients.some(c => c.ip === targetWatchIp) || (data.network && (data.network.gateway_ip === targetWatchIp || data.network.dns_ip === targetWatchIp));
+        if (window._lastWatchdogState !== undefined && window._lastWatchdogIp === targetWatchIp) {
+          if (window._lastWatchdogState !== isTargetReachable) {
+            window._lastWatchdogState = isTargetReachable;
+            if (isTargetReachable) {
+              dispatchAlertNotification({
+                title: `Monitored Host Online: ${targetWatchIp}`,
+                message: `Monitored host device (${targetWatchIp}) is back online and responding on the network.`,
+                level: 'info',
+                event_type: 'custom_ip'
+              });
+            } else {
+              dispatchAlertNotification({
+                title: `Monitored Host Offline: ${targetWatchIp}`,
+                message: `Monitored host device (${targetWatchIp}) has gone OFFLINE or stopped responding.`,
+                level: 'danger',
+                event_type: 'custom_ip'
+              });
+            }
           }
+        } else {
+          window._lastWatchdogState = isTargetReachable;
+          window._lastWatchdogIp = targetWatchIp;
         }
-      } else {
-        window._lastWatchdogState = isTargetReachable;
-        window._lastWatchdogIp = targetWatchIp;
       }
 
       // 9. 18+ Adult Site Visit Detection
@@ -16123,7 +16107,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
           const dqDisp = document.getElementById('disp_webhook_data_quota');
           if (dqDisp) dqDisp.textContent = `${data.data_quota_mb || 1024} MB (${((data.data_quota_mb || 1024)/1024).toFixed(1)} GB)`;
           const cipDisp = document.getElementById('disp_webhook_custom_ip');
-          if (cipDisp) cipDisp.textContent = data.custom_ip_target || '10.0.0.2';
+          if (cipDisp) cipDisp.textContent = data.custom_ip_target || 'Not configured';
         }
       } catch (e) {
         console.warn('loadWebhooksConfig error:', e);
@@ -16156,7 +16140,7 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       cfg.events.adult_content = !!document.getElementById('evAdultToggle')?.checked;
       cfg.events.wifi_event = !!document.getElementById('evWifiToggle')?.checked;
       cfg.data_quota_mb = cfg.data_quota_mb || 1024;
-      cfg.custom_ip_target = cfg.custom_ip_target || '10.0.0.2';
+      cfg.custom_ip_target = cfg.custom_ip_target || '';
 
       try {
         await fetch('/cgi-bin/webhooks?action=set', {
@@ -17836,10 +17820,10 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const filEl = document.getElementById('flashFileName');
       const sizEl = document.getElementById('flashFileSize');
 
-      if (curEl) curEl.textContent = d.current || 'v2.2.59';
-      if (latEl) latEl.textContent = d.latest || d.current || 'v2.2.59';
-      if (filEl) filEl.textContent = d.file || 'maxnet-jidu6911-sysupgrade.bin';
-      if (sizEl) sizEl.textContent = d.size ? ((d.size / 1048576).toFixed(2) + ' MB') : '29.40 MB';
+      if (curEl) curEl.textContent = d.current || '--';
+      if (latEl) latEl.textContent = d.latest || d.current || '--';
+      if (filEl) filEl.textContent = d.file || (d.model_id ? ('maxnet-' + d.model_id + '-sysupgrade.bin') : '--');
+      if (sizEl) sizEl.textContent = d.size ? ((d.size / 1048576).toFixed(2) + ' MB') : '--';
 
       const titleEl = document.getElementById('flashUpdateTitle');
       const chgEl = document.getElementById('flashUpdateChangelog');
@@ -17881,9 +17865,9 @@ function onRemoveWifiClient(nodeId, clientIdent) {
       const itbLink = document.getElementById('ramBootItbDownloadLink');
       const itbSize = document.getElementById('ramBootItbSize');
 
-      if (tftpCmd) tftpCmd.textContent = d.tftp_command || 'tftpboot 0x46000000 maxnet-jidu6911-initramfs.itb; bootm 0x46000000';
+      if (tftpCmd) tftpCmd.textContent = d.tftp_command || (d.model_id ? ('tftpboot <loadaddr> maxnet-' + d.model_id + '-initramfs.itb; bootm <loadaddr>') : '--');
       if (itbLink) itbLink.href = d.itb_url || '#';
-      if (itbSize) itbSize.textContent = d.itb_size ? ((d.itb_size / 1048576).toFixed(2) + ' MB') : '34.16 MB';
+      if (itbSize) itbSize.textContent = d.itb_size ? ((d.itb_size / 1048576).toFixed(2) + ' MB') : '--';
 
       overlay.style.display = 'flex';
       requestAnimationFrame(() => overlay.classList.add('active'));

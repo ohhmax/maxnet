@@ -24,16 +24,21 @@ mkdir -p /etc/ppp
 [ ! -f "$CHAP_SECRETS" ] && touch "$CHAP_SECRETS" && chmod 600 "$CHAP_SECRETS"
 [ ! -f "$PAP_SECRETS" ] && touch "$PAP_SECRETS" && chmod 600 "$PAP_SECRETS"
 
+LAN_IP=$(ip -4 a show dev br-lan 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
+[ -z "$LAN_IP" ] && LAN_IP=$(uci -q get network.lan.ipaddr | awk '{print $1}' | cut -d/ -f1)
+[ -z "$LAN_IP" ] && LAN_IP="10.0.0.1"
+LAN_PFX="${LAN_IP%.*}"
+
 # Initialize default server config if missing
 if [ ! -f "$CONF_SERVER" ]; then
-    cat << 'EOF' > "$CONF_SERVER"
+    cat << EOF > "$CONF_SERVER"
 {
   "server_enabled": false,
   "listen_iface": "br-lan",
-  "server_ip": "10.0.0.1",
-  "pool_start": "10.0.0.150",
-  "pool_end": "10.0.0.220",
-  "dns1": "10.0.0.1",
+  "server_ip": "${LAN_IP}",
+  "pool_start": "${LAN_PFX}.150",
+  "pool_end": "${LAN_PFX}.220",
+  "dns1": "${LAN_IP}",
   "dns2": "1.1.1.1",
   "max_sessions": 32,
   "service_name": "MAXNET"
